@@ -184,8 +184,8 @@ deliberate exceptions:
    these small differences: the service's host name is
    `<hostname>-dpma.local` (Avahi uses `<hostname>.local`), and a service
    name that collides with another is renamed `name (2)` (Avahi:
-   `name #2`).  A service name that is not valid UTF-8 is announced with
-   the invalid bytes replaced by U+FFFD.  Discovery is on unless
+   `name #2`).  A service name that is not valid UTF-8 is not announced;
+   an error is logged instead.  Discovery is on unless
    `service_discovery_enabled=no`.
 9. Authentication incidents from IPv6 phones are tracked per address.  The
    original cuts the address at its first colon, so all IPv6 phones share

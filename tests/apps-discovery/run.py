@@ -269,11 +269,12 @@ ORIGINAL_CONF = None
 
 
 def set_general(options):
-    """Replace the [general] section of res_digium_phone.conf and reload."""
+    """Replace the [general] section of res_digium_phone.conf and reload.
+    Lone surrogates in a value are written as the bytes they stand for."""
     text = ORIGINAL_CONF
     body = "".join("%s=%s\n" % kv for kv in options)
     text = re.sub(r"(?ms)^\[general\]\n.*?(?=^\[)", "[general]\n" + body + "\n", text, count=1)
-    with open(CONF, "w") as f:
+    with open(CONF, "w", encoding="utf-8", errors="surrogateescape") as f:
         f.write(text)
     cli("module reload res_digium_phone.so")
 
@@ -442,6 +443,16 @@ def test_mdns():
         set_general([("service_discovery_enabled", "yes"), ("service_name", "N" * 63)])
         found = wait_browse(lambda f: "N" * 63 in f)
         same("mDNS: 63-byte name announced", sorted(found), ["N" * 63])
+        # A name that is not valid UTF-8 (Latin-1 "Café") is not announced;
+        # an error is logged instead (README, difference 8).
+        mark = log_mark()
+        set_general([("service_discovery_enabled", "yes"), ("service_name", "P14 Caf\udce9")])
+        time.sleep(2)
+        same("mDNS: non-UTF-8 name not announced", mdns_probe.browse(SERVICE, wait=0.7), {})
+        with open(MSGLOG, "rb") as f:
+            f.seek(mark)
+            check("mDNS: non-UTF-8 name logged as an error",
+                  re.search(rb"ERROR\[[^\n]*Service name 'P14 Caf\xe9' is not valid UTF-8", f.read()))
         set_general([("service_discovery_enabled", "yes"), ("service_name", "P14 dotted.name")])
         found = wait_browse(lambda f: "P14 dotted.name" in f)
         same("mDNS: name with a dot", sorted(found), ["P14 dotted.name"])

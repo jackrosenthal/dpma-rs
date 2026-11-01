@@ -37,18 +37,18 @@
 //! - On a name collision `mdns-sd` picks "<name> (2)" where Avahi's
 //!   `avahi_alternative_service_name` picks "<name> #2".
 //! - `mdns-sd` takes the instance name as UTF-8 text, so a `service_name`
-//!   that is not valid UTF-8 is announced with each invalid sequence
-//!   replaced by U+FFFD.  (Avahi passes the name over D-Bus, which
-//!   accepts only UTF-8; the original's behavior with such a name is not
-//!   known.)  The TXT record carries `mdns_address` and `mdns_transport`
-//!   as bytes.
+//!   that is not valid UTF-8 is not announced; an error is logged instead
+//!   (user decision).  (Avahi passes the name over D-Bus, which accepts
+//!   only UTF-8; the original's behavior with such a name is not known.)
+//!   The TXT record carries `mdns_address` and `mdns_transport` as bytes.
 //! - Interfaces: those that are up, multicast-capable, and not point to
 //!   point.  avahi-daemon also never uses loopback interfaces; this
 //!   responder uses one only if multicast is enabled on it (never the case
 //!   by default), which lets the tests run on `lo` in a network namespace.
 
 use crate::exports::config_api::{self as c, text};
-use dpma_ast::dpma_log;
+use dpma_ast::log::LOG_ERROR;
+use dpma_ast::{ast_log, dpma_log};
 use mdns_sd::{IfKind, IfPredicate, ServiceDaemon, ServiceInfo, TxtProperty};
 use std::ffi::CStr;
 use std::os::raw::c_char;
@@ -170,17 +170,21 @@ fn new_daemon() -> Option<ServiceDaemon> {
 }
 
 /// The DNS-SD service for `a`; None when Avahi would refuse it (an empty
-/// name or one longer than 63 bytes).
+/// name or one longer than 63 bytes) or when the name is not valid UTF-8
+/// (which `mdns-sd` cannot announce; logged as an error).
 fn service_info(a: &Announcement) -> Option<ServiceInfo> {
     if a.name.is_empty() || a.name.len() > 63 {
         return None;
     }
+    let Ok(name) = std::str::from_utf8(&a.name) else {
+        ast_log!(LOG_ERROR, "Service name '{}' is not valid UTF-8; not announcing it over mDNS", a.name);
+        return None;
+    };
     let mut txt = vec![TxtProperty::from(("serviceType", "asterisk"))];
     if let Some(url) = &a.sip_url {
         txt.push(TxtProperty::from(("sipUrl", url.as_slice())));
     }
-    let name = String::from_utf8_lossy(&a.name);
-    let info = ServiceInfo::new(SERVICE_TYPE, &name, &host_name(), (), a.port, txt).ok()?;
+    let info = ServiceInfo::new(SERVICE_TYPE, name, &host_name(), (), a.port, txt).ok()?;
     Some(info.enable_addr_auto())
 }
 
