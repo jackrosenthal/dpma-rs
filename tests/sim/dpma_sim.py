@@ -99,6 +99,27 @@ RESPONSE_FOR = {
 # The server prefixes every chunk of events and error replies with this.
 COMMAND_PREFIX = b"Command: "
 
+# Message error codes (X-Digium-AppServer-Error-ID) and the texts of the
+# server's "<error msg=... />" bodies (the original's table at 0x5bcce8;
+# other codes print "Unknown error").
+MSG_ERROR_TEXT = {
+    -1: "An Unknown Error has occurred",
+    -98: "The file requested was not found",
+    -192: "User Config token presented is invalid",
+    -195: "Specfied user not found",
+    -198: "An Invalid configuration password was provided",
+    -199: "An invalid password was provided",
+    -200: "The requested credentials where not provided",
+    -398: "Session Timeout",
+    -400: "Invalid Certificate",
+}
+
+
+def error_body(code):
+    """The body phone_msg_outgoing_send appends for a non-zero error."""
+    return '<error msg="%s" />' % MSG_ERROR_TEXT.get(code, "Unknown error")
+
+
 # The server's per-chunk plaintext limits (phone_msg_outgoing_send): UDP
 # plaintext, UDP encrypted, and TCP (response URI contains transport=tcp).
 SERVER_UDP_PLAIN_LIMIT = 0x267
@@ -449,6 +470,7 @@ class SipEndpoint:
         self._send_lock = threading.Lock()
         self._cseq = random.randint(1, 10000)
         self._sock = None
+        self._udp_side = None
         self._closed = False
         self._thread = None
 
@@ -470,6 +492,17 @@ class SipEndpoint:
             s.settimeout(None)
             self._sock = s
             self._thread = threading.Thread(target=self._tcp_loop, daemon=True)
+            # Also listen for UDP on the same port, as phones do: the
+            # server answers a session that fails validation ("Session
+            # Timeout", phone_msg_send_timeout) at the bare Response-URI,
+            # without ";transport=tcp", i.e., over UDP.
+            try:
+                u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                u.bind(s.getsockname())
+                self._udp_side = u
+                threading.Thread(target=self._udp_side_loop, daemon=True).start()
+            except OSError as e:
+                self.log(1, "--- no UDP listener next to the TCP connection: %s" % e)
         else:
             raise SimError("unknown transport %r" % self.transport)
         self._thread.start()
@@ -481,6 +514,11 @@ class SipEndpoint:
 
     def close(self):
         self._closed = True
+        if self._udp_side is not None:
+            try:
+                self._udp_side.close()
+            except OSError:
+                pass
         if self._sock is not None:
             try:
                 self._sock.shutdown(socket.SHUT_RDWR)     # wakes the reader
@@ -555,6 +593,16 @@ class SipEndpoint:
             if data.strip():
                 self._handle(data, addr)
 
+    def _udp_side_loop(self):
+        sock = self._udp_side
+        while not self._closed:
+            try:
+                data, addr = sock.recvfrom(65535)
+            except OSError:
+                return
+            if data.strip():
+                self._handle(data, addr, reply=lambda d, a: sock.sendto(d, a))
+
     def _tcp_loop(self):
         buf = b""
         while not self._closed:
@@ -586,7 +634,8 @@ class SipEndpoint:
                 self._handle(buf[:total], self.server)
                 buf = buf[total:]
 
-    def _handle(self, data, addr):
+    def _handle(self, data, addr, reply=None):
+        send = reply or self._send_raw
         try:
             msg = parse_sip(data, addr)
         except ValueError as e:
@@ -611,7 +660,7 @@ class SipEndpoint:
             old = self._seen.get(key)
         if old is not None:
             self.log(1, "<<< retransmitted %s, answered again" % msg.method)
-            self._send_raw(old, addr)
+            send(old, addr)
             return
         resp = self._response(msg, 200, "OK")
         with self._lock:
@@ -619,9 +668,9 @@ class SipEndpoint:
             if len(self._seen) > 2000:
                 for k in list(self._seen)[:1000]:
                     del self._seen[k]
-        self._send_raw(resp, addr)
-        self.log(1, "<<< %s from %s:%d (%d body bytes), answered 200 OK" % (
-            (msg.method,) + tuple(addr) + (len(msg.body),)))
+        send(resp, addr)
+        self.log(1, "<<< %s from %s:%d%s (%d body bytes), answered 200 OK" % (
+            (msg.method,) + tuple(addr) + (" (UDP)" if reply else "", len(msg.body))))
         if msg.method == "MESSAGE":
             self.incoming.put(msg)
 
@@ -1658,10 +1707,81 @@ def selftest(out=sys.stdout, pki_dir=DEFAULT_PKI, show_vectors=False):
     if os.path.exists(path):
         with open(path) as f:
             check("vectors.json matches this implementation", json.load(f) == make_vectors())
+    if os.path.exists(PROTO_VECTORS):
+        check_proto_vectors(check)
+    else:
+        print("skip proto_vectors.json (not found: %s)" % PROTO_VECTORS, file=out)
     if show_vectors:
         print(json.dumps(make_vectors(), indent=2), file=out)
     print("%d failure(s)" % len(failures), file=out)
     return not failures
+
+
+PROTO_VECTORS = os.path.join(HERE, "..", "..", "crates", "dpma-proto", "tests", "fixtures",
+                             "proto_vectors.json")
+
+
+def check_proto_vectors(check, path=PROTO_VECTORS):
+    """Cross-check this implementation against the Rust crate's vectors
+    (crates/dpma-proto/tests/fixtures/proto_vectors.json, written by
+    dpma-proto's tests/vectors.rs)."""
+    with open(path) as f:
+        v = json.load(f)
+    ok = all(evp_bytes_to_key(bytes.fromhex(c["password_hex"]), set_hex(c["salt_hex"]))
+             == (bytes.fromhex(c["key_hex"]), bytes.fromhex(c["iv_hex"])) for c in v["kdf"])
+    check("proto_vectors: key and IV (%d)" % len(v["kdf"]), ok)
+    ok = True
+    for c in v["encrypt_field"]:
+        pw, salt = bytes.fromhex(c["password_hex"]), set_hex(c["salt_hex"])
+        ok &= encrypt_field(pw, salt, c["plain"]) == c["b64"]
+        ok &= decrypt_field(pw, salt, c["b64"]) == c["plain"].encode()
+    check("proto_vectors: header fields (%d)" % len(v["encrypt_field"]), ok)
+    ok = True
+    for c in v["salt_from_hex"]:
+        try:
+            got = set_hex(c["hex"])
+            ok &= not c.get("error") and got.hex() == c["bytes_hex"]
+        except SimError:
+            ok &= bool(c.get("error"))
+    check("proto_vectors: set_hex (%d)" % len(v["salt_from_hex"]), ok)
+    ok = all(ast_base64decode(c["text"], c["max"] if c["max"] is not None else 1 << 30).hex()
+             == c["bytes_hex"] for c in v["base64_decode"])
+    check("proto_vectors: ast_base64decode (%d)" % len(v["base64_decode"]), ok)
+    ok = True
+    for c in v["split"]:
+        frames = server_frame(c["body"].encode(), c["limit"], prefix=c["prefix"].encode(),
+                              handshake_response=c["handshake_response"])
+        got = [{"sequence": int(h[H_SEQUENCE]) if H_SEQUENCE in h else None,
+                "finished": H_FINISHED in h, "plain": w.decode()} for h, w in frames]
+        ok &= got == c["chunks"]
+    check("proto_vectors: chunking (%d)" % len(v["split"]), ok)
+    ok = True
+    for c in v["outgoing_encrypted"]:
+        pw, salt = bytes.fromhex(c["password_hex"]), set_hex(c["salt_hex"])
+        frames = server_frame(c["body"].encode(), c["limit"], pw, salt, c["prefix"].encode())
+        got = [{"sequence": int(h[H_SEQUENCE]), "finished": H_FINISHED in h, "b64": w.decode()}
+               for h, w in frames]
+        ok &= got == c["chunks"]
+        plain = decrypt(pw, salt, b"".join(b64decode_strict(w["b64"]) for w in c["chunks"]))
+        ok &= plain == b"".join(c["prefix"].encode() + p for p in split_bytes(
+            c["body"].encode(), c["limit"] - len(c["prefix"])))
+    check("proto_vectors: server-to-phone encrypted chunks (%d)" % len(v["outgoing_encrypted"]),
+          ok)
+    ok = True
+    for c in v["incoming_from_phone"]:
+        pw, salt = bytes.fromhex(c["password_hex"]), set_hex(c["salt_hex"])
+        parts = frame_request_body(c["body"].encode(), c["chunk_len"], pw, salt, "split")
+        ok &= [p.decode() for p in parts] == c["parts"]
+        ok &= decrypt(pw, salt, ast_base64decode("".join(c["parts"]))) == c["body"].encode()
+    check("proto_vectors: phone-to-server encrypted chunks (%d)" % len(v["incoming_from_phone"]),
+          ok)
+    r = v["rsa_common_password"]
+    key = serialization.load_pem_private_key(r["private_key_pem"].encode(), None)
+    check("proto_vectors: RSA common password",
+          rsa_decrypt_common_password(key, r["password_b64"]).hex() == r["common_password_hex"])
+    ok = all(error_body(c["code"]) == c["body"] and MSG_ERROR_TEXT.get(c["code"], "Unknown error")
+             == c["text"] for c in v["error_bodies"])
+    check("proto_vectors: error bodies (%d)" % len(v["error_bodies"]), ok)
 
 
 def make_vectors():

@@ -3,8 +3,9 @@
 //! (`session::handshake`), HTTPRequest, AsteriskRequest, UserlistRequest,
 //! TokenRequest, ConfigRequest, FileRequest, VerifyRequest, PingRequest.
 //!
-//! Owner: P12 "request-handlers" (wave 3).  The registration list below
-//! matches the original's.
+//! Owner: P12 "request-handlers" (wave 3); `handle_echo` and `handle_ping`
+//! by P7 "session" (wave 2).  The registration list below matches the
+//! original's.
 
 use super::register_handler;
 use crate::session::Transaction;
@@ -37,8 +38,37 @@ pub fn load() -> Result<(), ()> {
     res
 }
 
-/// `handle_request_echo` (FUN_001764f0).
-pub fn handle_echo(_tx: Arc<Transaction>) -> i32 {
+/// `handle_request_echo` (FUN_001764f0): answer directly (not through the
+/// session layer, so unencrypted and in one message) with an EchoResponse
+/// carrying Error-ID 0, the request's ID and origination network, and its
+/// body.  (Implemented by P7 so the stack can be tested end to end.)
+pub fn handle_echo(tx: Arc<Transaction>) -> i32 {
+    use dpma_proto::headers as h;
+    let var = |name: &str| tx.first_msg.as_ref().and_then(|m| m.get_var(name));
+    let uri = var(h::RESPONSE_URI);
+    let Some(m) = crate::transport::new_outgoing(uri.as_deref().unwrap_or("")) else {
+        dpma_ast::ast_log!(dpma_ast::log::LOG_ERROR, "Unable to allocate msg");
+        return 0;
+    };
+    m.set_exten(crate::transport::SEND_EXTEN);
+    m.set_var(h::RESPONSE_TYPE, "EchoResponse");
+    m.set_var(h::ERROR_ID, "0");
+    if let Some(uri) = uri.filter(|u| !u.is_empty()) {
+        let uri = dpma_proto::framing::response_uri(
+            &uri,
+            var(h::PJSIP_TRANSPORT).as_deref(),
+            dpma_proto::framing::RESPONSE_URI_BUF,
+        );
+        m.set_var(h::RESPONSE_URI, &uri);
+    }
+    if let Some(id) = var(h::APPSERVER_ID).filter(|i| !i.is_empty()) {
+        m.set_var(h::APPSERVER_ID, &id);
+    }
+    if let Some(net) = var(h::ORIGINATION_NETWORK).filter(|n| !n.is_empty()) {
+        m.set_var(h::ORIGINATION_NETWORK, &net);
+    }
+    m.set_body_bytes(&tx.body_bytes);
+    let _ = crate::transport::write_msg(m);
     0
 }
 
@@ -73,7 +103,9 @@ pub fn handle_verify(_tx: Arc<Transaction>) -> i32 {
     0
 }
 
-/// `handle_request_ping` (FUN_001758e0).
-pub fn handle_ping(_tx: Arc<Transaction>) -> i32 {
+/// `handle_request_ping` (FUN_001758e0): send the (empty) PingResponse.
+/// (Implemented by P7 so the stack can be tested end to end.)
+pub fn handle_ping(tx: Arc<Transaction>) -> i32 {
+    crate::session::send_and_destroy(&tx);
     0
 }
