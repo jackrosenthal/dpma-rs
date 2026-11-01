@@ -396,9 +396,6 @@ fn userlist_reply(tx: &Transaction) {
 // AsteriskRequest and HTTPRequest
 // ---------------------------------------------------------------------------
 
-/// The start of every AsteriskResponse and HTTPResponse body.
-const HTTP_HEADER: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\n\r\n";
-
 /// `FUN_00176900`: the phone that `user:secret` authenticates (both parts
 /// stripped of blanks; no colon means no secret): the phone named `user`
 /// with pin `secret`, else the first phone with the line named `user`
@@ -437,13 +434,13 @@ struct Forwarded {
 /// JSON (`{"request": {"method": M, "parameters": ...}}`).  The method
 /// runs for the authenticated phone (`authenticate`); a method that is
 /// not built in but registered by AMI raises a `DPMAMessage` event and
-/// the reply waits for `DPMAMessageResponse` (or expires after 300 s).
+/// the reply waits for `DPMAMessageResponse` (`ami::messages`).
 ///
 /// The reply body is `HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\n\r\n`
 /// followed, when there is one, by the method's response (or an XML or
 /// JSON request error) and `\r\n\r\n`.
 pub fn handle_http_or_asterisk(tx: Arc<Transaction>) -> i32 {
-    append(&tx, HTTP_HEADER.as_bytes());
+    append(&tx, crate::ami::messages::HTTP_PREAMBLE.as_bytes());
     // The original's response buffer (ast_str_create(0x400)).
     let mut buf = String::with_capacity(0x400);
     let forwarded = asterisk_request(&tx, &mut buf);
