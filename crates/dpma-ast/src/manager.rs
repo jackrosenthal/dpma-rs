@@ -19,8 +19,29 @@ impl Request {
         unsafe { from_ptr(ffi::astman_get_header(self.m, c.as_ptr())).unwrap_or_default() }
     }
 
+    /// The raw bytes of header `name` (empty when absent), for values that
+    /// must not go through a lossy UTF-8 conversion.
+    pub fn header_bytes(&self, name: &str) -> Vec<u8> {
+        let c = cstr(name);
+        unsafe {
+            let p = ffi::astman_get_header(self.m, c.as_ptr());
+            if p.is_null() {
+                Vec::new()
+            } else {
+                std::ffi::CStr::from_ptr(p).to_bytes().to_vec()
+            }
+        }
+    }
+
     pub fn append(&self, text: &str) {
         let c = cstr(text);
+        unsafe { ffi::dpma_glue_astman_append(self.s, c.as_ptr()) };
+    }
+
+    /// `astman_append(s, "%s", text)` with raw bytes (cut at a NUL).
+    pub fn append_bytes(&self, text: &[u8]) {
+        let end = text.iter().position(|&b| b == 0).unwrap_or(text.len());
+        let c = std::ffi::CString::new(&text[..end]).unwrap_or_default();
         unsafe { ffi::dpma_glue_astman_append(self.s, c.as_ptr()) };
     }
 
@@ -107,6 +128,17 @@ pub fn event(category: i32, event: &str, body: &str) {
     let e = cstr(event);
     let b = cstr(body);
     unsafe { ffi::dpma_glue_manager_event(category, e.as_ptr(), b.as_ptr()) };
+}
+
+/// Raise a manager event that names `file`, `line`, and `func` as its
+/// origin (the `File`, `Line`, and `Func` headers shown with `manager set
+/// debug on`), as the original's `manager_event` calls do.
+pub fn event_at(category: i32, event: &str, file: &str, line: u32, func: &str, body: &str) {
+    let e = cstr(event);
+    let f = cstr(file);
+    let fu = cstr(func);
+    let b = cstr(body);
+    unsafe { ffi::dpma_glue_manager_event_at(category, e.as_ptr(), f.as_ptr(), line as c_int, fu.as_ptr(), b.as_ptr()) };
 }
 
 pub fn eventflag_system() -> i32 {

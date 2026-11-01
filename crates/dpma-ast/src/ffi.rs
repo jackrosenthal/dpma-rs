@@ -42,6 +42,14 @@ extern "C" {
     pub fn dpma_glue_manager_unregister(action: *const c_char);
     pub fn dpma_glue_astman_append(s: *mut Mansession, text: *const c_char);
     pub fn dpma_glue_manager_event(category: c_int, event: *const c_char, body: *const c_char);
+    pub fn dpma_glue_manager_event_at(
+        category: c_int,
+        event: *const c_char,
+        file: *const c_char,
+        line: c_int,
+        func: *const c_char,
+        body: *const c_char,
+    );
     pub fn dpma_glue_eventflag_system() -> c_int;
     pub fn dpma_glue_eventflag_config() -> c_int;
     pub fn dpma_glue_eventflag_reporting() -> c_int;
