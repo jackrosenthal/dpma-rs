@@ -55,5 +55,6 @@ pub fn commands() -> Vec<CliCommand> {
     v.extend(crate::method_api::voicemail::devtest_commands());
     v.extend(crate::method_api::calls::devtest_commands());
     v.extend(crate::exports::devtest_commands());
+    v.extend(crate::ami::messages::devtest_commands());
     v
 }

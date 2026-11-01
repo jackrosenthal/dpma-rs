@@ -341,6 +341,16 @@ void dpma_glue_manager_event(int category, const char *event, const char *body)
 	manager_event(category, event, "%s", body);
 }
 
+/*
+ * manager_event() with an explicit origin: the File, Line, and Func headers
+ * the event carries when manager debug is on.
+ */
+void dpma_glue_manager_event_at(int category, const char *event, const char *file, int line,
+	const char *func, const char *body)
+{
+	__ast_manager_event_multichan(category, event, 0, NULL, file, line, func, "%s", body);
+}
+
 int dpma_glue_eventflag_system(void)
 {
 	return EVENT_FLAG_SYSTEM;
