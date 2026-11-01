@@ -13,11 +13,12 @@
 //! phone's session.
 //!
 //! Each queued request also gets an expiry entry 300 s out in the AMI
-//! scheduler context.  As in the original, nothing services that context:
-//! it is created with `ast_sched_context_create` and never given a thread
-//! (`ast_sched_start_thread`) or run (`ast_sched_runq`), so the expiry never
-//! fires and a request that is never answered stays queued until unload.
-//! (`dpmadev ami runq` runs the due entries by hand.)
+//! scheduler context, which runs on its own thread: a request nobody
+//! answers is dropped after 300 s (logged "No response to request (...),
+//! expired.").  Deviation (plan section 8, item 13): the original creates
+//! the context but never starts its thread (`ast_sched_start_thread`) or
+//! runs it (`ast_sched_runq`), so its requests never expire and stay
+//! queued until unload.
 
 use super::AmiAction;
 use crate::session::{self, Outgoing, Transaction};
@@ -91,16 +92,19 @@ fn queue() -> MutexGuard<'static, Option<Vec<QueuedMsg>>> {
 // ---------------------------------------------------------------------------
 
 /// FUN_00175880: create the scheduler context ("Failed to create ami
-/// schedule context" on error, logged by the caller).  No thread is
-/// started, as in the original.
+/// schedule context" on error, logged by the caller) and start its thread
+/// (the original starts none; plan section 8, item 13).
 pub fn sched_create() -> Result<(), ()> {
     let ctx = Context::create().ok_or(())?;
+    if !ctx.start_thread() {
+        return Err(());
+    }
     *SCHED.write().unwrap_or_else(|e| e.into_inner()) = Some(ctx);
     Ok(())
 }
 
-/// FUN_001758a0: destroy the scheduler context; pending expiries are
-/// dropped without running.
+/// FUN_001758a0: destroy the scheduler context (which stops its thread);
+/// pending expiries are dropped without running.
 pub fn sched_destroy() {
     let ctx = SCHED.write().unwrap_or_else(|e| e.into_inner()).take();
     drop(ctx);
@@ -416,7 +420,8 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         CliResult::Success
     }
 
-    /// dpmadev ami runq: run the scheduler entries that are due.
+    /// dpmadev ami runq: run the scheduler entries that are due now
+    /// (normally the scheduler's thread runs them).
     fn runq(a: &CliArgs) -> CliResult {
         if a.argc() != 3 {
             return CliResult::ShowUsage;
@@ -485,7 +490,7 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         CliCommand {
             command: "dpmadev ami runq",
             summary: "Run the due AMI scheduler entries (expiries)",
-            usage: "Usage: dpmadev ami runq\n       Nothing runs the AMI scheduler otherwise (as in the original).\n",
+            usage: "Usage: dpmadev ami runq\n       Runs the due entries now instead of waiting for the scheduler thread.\n",
             exec: runq,
             complete: None,
         },

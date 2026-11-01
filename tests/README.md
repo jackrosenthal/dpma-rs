@@ -6,10 +6,12 @@ of them install their own configuration into the instance, and several
 cannot share it: `config-xml` and `methods-vm` replace
 `res_digium_phone.conf`, `methods-calls` edits `pjsip.conf`, and the
 simulator's test identify (`match=127.0.0.1`, which catches every SIP
-request from 127.0.0.1) breaks the parking and recording checks of
-`methods-calls` and must not be there for `pjsip-helpers`.  So each suite
-starts from a fresh copy of the scratch configuration: `dev/tools/ast.sh
-reset-conf`.
+request from 127.0.0.1, REGISTERs included) breaks the parking,
+recording, and voicemail play checks and must not be there for
+`pjsip-helpers`.  Where the simulator runs without it, the PJSIP helper
+identifies the simulator by its `X-Digium-User-Agent` header.  So each
+suite starts from a fresh copy of the scratch configuration:
+`dev/tools/ast.sh reset-conf`.
 
 | Suite | Setup | Run | Checks |
 |---|---|---|---|
@@ -18,11 +20,24 @@ reset-conf`.
 | `config-xml` | `config-xml/setup.sh` | `config-xml/check.py` | The configuration, contacts, and user list documents are produced and well formed |
 | `users-runtime` | `users-runtime/setup.sh` | `users-runtime/check.sh` | Tokens, lookups, presence, and `show status` |
 | `methods-vm` | `methods-vm/setup.sh` | `methods-vm/run.py` | The voicemail methods |
+| `methods-vm-phone` | `methods-vm/setup.sh`, `dev/sim/mkpki.py` | `methods-vm/run.py --via phone` | The voicemail methods called by the simulator (encrypted AsteriskRequests) |
 | `methods-calls` | `methods-calls/setup.sh` | `methods-calls/run.py` | The queue, parking, recording, phonebook, and echo methods |
+| `methods-calls-phone` | `methods-calls/setup.sh`, `dev/sim/mkpki.py` | `methods-calls/run.py --via phone` | The call methods called by the simulator (AsteriskRequests) |
+| `methods-calls-http` | `methods-calls/setup.sh`, `dev/sim/mkpki.py` | `methods-calls/run.py --via http` | The call methods called by the simulator (HTTPRequests) |
 | `pjsip-helpers` | (by `compare.sh`) | `pjsip-helpers/compare.sh`, then `stress.py 15` | The endpoint identifier helper against the original, the dialog-info supplement, and line locking ([pjsip-helpers/README.md](pjsip-helpers/README.md)) |
+| `request-handlers` | `dev/sim/mkpki.py`, `dev/sim/install-conf.sh`, `request-handlers/setup.sh` | `request-handlers/run.py`, then `request-handlers/users-flows.py` | Every request type in every authentication mode, FileRequest paths, AsteriskRequest and HTTPRequest, AMI-registered methods; then the phone users' runtime over real sessions (reconfigure, events, tokens, stale phones, restore after a restart) |
+| `ami` | `dev/sim/mkpki.py`, `dev/sim/install-conf.sh`, `ami/setup.sh` | `ami/run.py` (`--via phone`) | DPMAMessageRegister, DPMAMessageResponse, and DPMAMessageSend byte for byte, requests forwarded to AMI, reconfigure from the CLI, AMI, and reloads |
+| `apps-discovery` | `apps-discovery/setup.sh` | `apps-discovery/run.sh` (restarts the instance inside `netns.sh`'s network namespace) | DigiumControlPlayback, DigiumVoicemailPlayback, `show settings`, the mDNS responder, and unloading and loading the module |
+| `ami-expiry` (not in the default list) | as `ami` | `ami/run.py --expiry` | The `ami` checks, then a forwarded request that nobody answers expires after 300 s (about six minutes in all) |
 
 `exports` and `pjsip-helpers` load the original binaries from
 `res_digium_phone-24.0_3.6.13-x86_64/` (local testing only).
+`apps-discovery` needs unprivileged user namespaces (`unshare -rn`).
+
+`dev/tests/parity/run.py` (not part of `run-all.sh`) captures every CLI
+command and AMI action that needs no connected phone, from our module and
+from the original binary, and compares them byte for byte (usage in the
+script).
 
 ## Running them all
 
@@ -34,14 +49,14 @@ cargo test -p dpma-proto
 dev/tests/run-all.sh               # or: dev/tests/run-all.sh session methods-calls
 ```
 
-`run-all.sh` runs the suites in the order of the table, prints one line
-per suite, and keeps each suite's output in `$LOGDIR` (default: a new
-temporary directory).  For every suite that uses the instance it stops
-Asterisk, resets the configuration, runs the suite's setup, installs the
-build (`ast.sh install`, which also installs the PJSIP helpers), and
-starts Asterisk.  At the end it puts the simulator setup back (reset,
-test PKI, `install-conf.sh`) and stops Asterisk.  A full run takes about
-five minutes.
+`run-all.sh` runs the suites in the order of the table (`ami-expiry`
+only when named), prints one line per suite, and keeps each suite's
+output in `$LOGDIR` (default: a new temporary directory).  For every
+suite that uses the instance it stops Asterisk, resets the configuration,
+runs the suite's setup, installs the build (`ast.sh install`, which also
+installs the PJSIP helpers), and starts Asterisk.  At the end it puts the
+simulator setup back (reset, test PKI, `install-conf.sh`) and stops
+Asterisk.  A full run takes about twelve minutes.
 
 ## Running one suite by hand
 

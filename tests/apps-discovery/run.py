@@ -473,6 +473,23 @@ def test_mdns():
         same("mDNS load: announced again", sorted(found), ["P14 Lifecycle"])
         time.sleep(1)
         same("mDNS load: unsolicited announcement", "P14 Lifecycle" in ptrs(lst.since(mark), False), True)
+        # Again: the responder was started from the AMI session's thread
+        # (the reload above), which keeps the module's image mapped after
+        # an unload; the loader's dlclose must still succeed every time
+        # (crates/res_digium_phone/glue/module.c).
+        pos = log_mark()
+        for m in helpers + ["res_digium_phone.so"]:
+            same("unload %s again" % m, cli_raw("module unload %s" % m), "Unloaded %s\n" % m)
+        for m in ["res_digium_phone.so"] + helpers[::-1]:
+            same("load %s again" % m, cli_raw("module load %s" % m), "Loaded %s\n" % m)
+        wait_browse(lambda f: "P14 Lifecycle" in f)
+        for m in helpers + ["res_digium_phone.so"]:
+            cli_raw("module unload %s" % m)
+        for m in ["res_digium_phone.so"] + helpers[::-1]:
+            cli_raw("module load %s" % m)
+        time.sleep(0.5)
+        failed = [l for l in log_since(pos).split("\n") if "Failure in dlclose" in l]
+        same("unload and load twice more: dlclose succeeds", failed, [])
 
         # Asterisk shutdown and startup (discovery enabled in the file).
         ami.close()
