@@ -75,3 +75,55 @@ pub fn request_error_text(code: i32) -> &'static str {
         _ => "error msg unknown",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn message_errors() {
+        // The table at 0x5bcce0 and the fallbacks in phone_msg_outgoing_send.
+        let table = [
+            (-1, "An Unknown Error has occurred"),
+            (-98, "The file requested was not found"),
+            (-192, "User Config token presented is invalid"),
+            (-195, "Specfied user not found"),
+            (-198, "An Invalid configuration password was provided"),
+            (-199, "An invalid password was provided"),
+            (-200, "The requested credentials where not provided"),
+            (-398, "Session Timeout"),
+            (-400, "Invalid Certificate"),
+            (0, "Unknown error"),
+            (-2, "Unknown error"),
+            (398, "Unknown error"),
+        ];
+        for (code, text) in table {
+            assert_eq!(msg_error_text(code), text, "{}", code);
+        }
+    }
+
+    #[test]
+    fn request_errors() {
+        // FUN_00189280 (create_error_response_xml), in its hex constants.
+        let table = [
+            (0x2711, "Your request was empty"),
+            (0x2712, "Error parsing request"),
+            (0x2713, "Missing method name"),
+            (0x2715, "Method not found"),
+            (0x271b, "Parameters not found"),
+            (0x271c, "Call to phone event application failed to complete"),
+            (0x3d48, "Phonebook entry already exists"),
+            (0x6a20, "Your account is not permitted to run this action"),
+            (0xa41d, "The account id does not match the owners presence option"),
+            (0xc7c5, "Invalid phonebook_id"),
+            (0xfa7d, "Invalid mailbox folder"),
+            (0x15fb7, "Invalid presence"),
+            (99999, "Authentication failed for this request"),
+            (0x2714, "error msg unknown"),
+            (-1, "error msg unknown"),
+        ];
+        for (code, text) in table {
+            assert_eq!(request_error_text(code), text, "{}", code);
+        }
+    }
+}
