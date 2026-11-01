@@ -82,7 +82,7 @@ fn show_translations(a: &CliArgs) -> CliResult {
     }
     a.out("--- Translation tables ---\n");
     for n in names() {
-        a.out(&format!("{}\n", n));
+        a.out(&format!("    {}\n", n));
     }
     CliResult::Success
 }

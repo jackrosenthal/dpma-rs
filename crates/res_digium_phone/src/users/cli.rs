@@ -83,34 +83,44 @@ fn complete_firmware(a: &CompleteArgs) -> Option<String> {
     complete_names(a, firmware_names)
 }
 
-/// Print a list of names between a header and a count footer.
-fn show_list(a: &CliArgs, header: &str, footer: &str, f: fn(&Registry) -> Vec<String>) -> CliResult {
-    if a.argc() != 3 {
+/// Print a list of names (each with `indent` before it) between a header
+/// and a count footer.  As in the original, only some of these commands
+/// check their argument count (`check_argc`); the others ignore extra
+/// words.
+fn show_list(
+    a: &CliArgs,
+    check_argc: bool,
+    header: &str,
+    indent: &str,
+    footer: &str,
+    f: fn(&Registry) -> Vec<String>,
+) -> CliResult {
+    if check_argc && a.argc() != 3 {
         return CliResult::ShowUsage;
     }
     let names = read().as_ref().map(f).unwrap_or_default();
     a.out(header);
     for n in &names {
-        a.out(&format!("{}\n", n));
+        a.out(&format!("{}{}\n", indent, n));
     }
     a.out(&footer.replace("{}", &names.len().to_string()));
     CliResult::Success
 }
 
 fn show_phones(a: &CliArgs) -> CliResult {
-    show_list(a, "---- Digium Phones ----\n", "----  {} Phones Found    ----\n", phone_names)
+    show_list(a, false, "---- Digium Phones ----\n", "", "----  {} Phones Found    ----\n", phone_names)
 }
 
 fn show_networks(a: &CliArgs) -> CliResult {
-    show_list(a, "--- Networks ---\n", "---- {} Networks found ----\n", network_names)
+    show_list(a, true, "--- Networks ---\n", "    ", "---- {} Networks found ----\n", network_names)
 }
 
 fn show_alerts(a: &CliArgs) -> CliResult {
-    show_list(a, "--- Alerts ---\n", "---- {} Alerts found ----\n", alert_names)
+    show_list(a, false, "--- Alerts ---\n", "    ", "---- {} Alerts found ----\n", alert_names)
 }
 
 fn show_pages(a: &CliArgs) -> CliResult {
-    show_list(a, "--- Multicastpages ---\n", "---- {} Multicastpages found ----\n", page_names)
+    show_list(a, true, "--- Multicastpages ---\n", "    ", "---- {} Multicastpages found ----\n", page_names)
 }
 
 fn show_phone(a: &CliArgs) -> CliResult {
@@ -298,10 +308,8 @@ fn show_phone(a: &CliArgs) -> CliResult {
     CliResult::Success
 }
 
+/// (No argument count check, as in the original.)
 fn show_lines(a: &CliArgs) -> CliResult {
-    if a.argc() != 3 {
-        return CliResult::ShowUsage;
-    }
     let g = read();
     let Some(reg) = g.as_ref() else { return CliResult::Success };
     let kind = |l: &Line| if l.external { "External" } else { "Internal" };
@@ -357,8 +365,9 @@ fn show_line(a: &CliArgs) -> CliResult {
         let _ = writeln!(o, "Secondary Server Port: {}", l.secondary_server_port);
         let _ = writeln!(o, "Secondary Server Transport: {}", l.secondary_server_transport.type_str());
         let _ = writeln!(o, "Secondary Media Encryption: {}", l.secondary_media_encryption);
-        // The original prints the secondary server port here by mistake.
-        let _ = writeln!(o, "AuthName: {}", l.authname);
+        // The original prints the secondary server port here by mistake
+        // (the field at +0x120, not authname's at +0x128).
+        let _ = writeln!(o, "AuthName: {}", l.secondary_server_port);
         let _ = writeln!(o, "UserID: {}", l.userid);
         let _ = writeln!(o, "Register: {}", if l.no_register { "NO" } else { "YES" });
     }
@@ -442,10 +451,8 @@ fn show_page(a: &CliArgs) -> CliResult {
     CliResult::Success
 }
 
+/// (No argument count check, as in the original.)
 fn show_firmwares(a: &CliArgs) -> CliResult {
-    if a.argc() != 3 {
-        return CliResult::ShowUsage;
-    }
     crate::firmware::cli_display(a);
     a.out("--- Configured Firmware Options ---\n");
     for n in read().as_ref().map(firmware_names).unwrap_or_default() {
@@ -513,8 +520,10 @@ fn show_application(a: &CliArgs) -> CliResult {
                 }
             );
             let _ = writeln!(o, "Login Extension: {}", q.login_exten);
-            // The original shows the login extension here.
-            let _ = writeln!(o, "Logout Extension: {}", or(&q.logout_exten, "<Not Set>"));
+            // The original shows the login extension here: it prints the
+            // login field when the logout field's pointer is set, and
+            // string fields are never NULL.
+            let _ = writeln!(o, "Logout Extension: {}", q.login_exten);
         }
         Some(AppKind::Status(s)) => {
             o.push_str("Status Application\n-------------------\n");
@@ -531,7 +540,7 @@ fn show_application(a: &CliArgs) -> CliResult {
             if !s.substatuses.is_empty() {
                 o.push_str("Substatuses:\n");
                 for x in &s.substatuses {
-                    let _ = writeln!(o, "{}", x);
+                    let _ = writeln!(o, "    {}", x);
                 }
             }
         }
@@ -542,7 +551,7 @@ fn show_application(a: &CliArgs) -> CliResult {
             } else {
                 o.push_str("Parkinglots:\n");
                 for x in &p.parkinglots {
-                    let _ = writeln!(o, "{}", x);
+                    let _ = writeln!(o, "    {}", x);
                 }
             }
         }
