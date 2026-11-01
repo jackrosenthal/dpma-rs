@@ -447,8 +447,12 @@ pub fn process(trigger: &str) -> Result<(), ()> {
         let mut g = write();
         let Some(reg) = g.as_mut() else { return Err(()) };
 
-        // ---- [line] / [external_line] sections ----
+        // ---- [line] / [external_line] sections (`process_lines_dp`) ----
         for cat in phones_cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case("general")) {
+            if cat.get("type").is_none() {
+                dpma_log!("No type set for {}", cat.name);
+                continue;
+            }
             if !(is_type(cat, "line") || is_type(cat, "external_line")) {
                 continue;
             }
