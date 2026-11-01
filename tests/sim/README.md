@@ -10,7 +10,7 @@ Tools for testing res_digium_phone without Digium phones
 | `mkpki.py` | Generates the test PKI and installs the trust material into an instance. |
 | `install-conf.sh` | Installs the test configuration (`conf/`) into an instance. |
 | `conf/` | Test-only pjsip, dialplan, and phone configuration snippets. |
-| `scripts/` | Simulator scripts: `loopback.sim` (works without the module); for the session layer (package P7) `session.sim`, `session-chunks.sim`, `session-output.sim`, `session-prune.sim`, `session-restart.sh` (restarts Asterisk), and `session-all.sh`, which runs them all over UDP and TCP. |
+| `scripts/` | Simulator scripts: `loopback.sim` (works without the module); for the session layer (package P7) `session.sim`, `session-chunks.sim`, `session-output.sim`, `session-prune.sim`, `session-reassembly.py`, `session-restart.sh` (restarts Asterisk), and `session-all.sh`, which runs them all over UDP and TCP. |
 | `vectors.json` | Deterministic crypto and framing vectors for cross-checking `dpma-proto` (its `tests/sim_vectors.rs` checks them; `selftest` checks the simulator against dpma-proto's `tests/fixtures/proto_vectors.json`). |
 
 Everything is written from the decompile (the phone side of
@@ -323,6 +323,7 @@ DPMA_SLOT=<n> dev/sim/scripts/session-all.sh
 | `session-chunks.sim` | Multi-chunk requests (encrypted and plaintext) and replies (an encrypted 2000-byte event, `digium.assignment.update`, the HandshakeResponse); `EVENT_CHUNKS` is 5 over UDP, 3 over TCP |
 | `session-output.sim` | `digium_phones show sessions` and `DPMAShowPhones` field by field, with each flag |
 | `session-prune.sim` | Idle pruning: unauthenticated sessions after 119 s, authenticated but inactive ones after 59 s, never authenticated active ones |
+| `session-reassembly.py` | Incoming chunks out of order, transactions keyed by ID and MAC, incomplete transactions dropped after 40 s (takes about 50 s) |
 | `session-restart.sh` | AstDB persistence across two Asterisk restarts (restored authenticated and inactive, same common password, expiry at 59 s), an undecryptable entry dropped, `DPMAShowPhones` user details, and the `message_delay` pause |
 
 ## Self-test
