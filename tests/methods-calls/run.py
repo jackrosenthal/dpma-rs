@@ -2,7 +2,7 @@
 """Checks for the P10 call methods (queues, parking, recording, phonebook,
 echo) against a private Asterisk instance.
 
-    DPMA_SLOT=<n> python3 -I dev/tests/methods-calls/run.py [-v]
+    DPMA_SLOT=<n> python3 -I dev/tests/methods-calls/run.py [-v] [--via hook|phone|http]
 
 Prerequisites: a devtest build installed in the instance
 (cargo build -p res_digium_phone --features devtest), the test setup
@@ -12,6 +12,16 @@ and "dpmadev calls xml" (XML); the expected documents are the ones the
 original's phone_method_internal_api.c builds.  Recording INFOs and the
 parked call MESSAGE are checked with phone.py registered as 1001 (needs the
 PJSIP helper for dpma_info_send and dpma_pjsip_endpoint_is_dphone).
+
+With "--via phone" (package P12) the methods are called the way phones
+call them instead: encrypted AsteriskRequests from the phone simulator
+(dev/sim; run mkpki.py first), authenticated as the phone (the test
+phones have no pin); "--via http" sends HTTPRequests.  The reply body
+must be the HTTP wrapper around the same document; return codes are not
+visible that way.  The simulator is identified by the PJSIP helper (its
+X-Digium-User-Agent header), so leave the simulator's test identify out
+(dev/sim/install-conf.sh --remove): it would also catch phone.py's
+REGISTER.
 
 Exit status 0 when every check passes.
 """
@@ -34,6 +44,49 @@ INST = os.path.join(ROOT, "dev/run/slot" + SLOT)
 FILES = os.path.join(INST, "var/lib/asterisk/digium_phones")
 VERBOSE = "-v" in sys.argv
 failures = 0
+# How methods are called: "hook" (dpmadev), "phone" (AsteriskRequest), or
+# "http" (HTTPRequest).
+VIA = sys.argv[sys.argv.index("--via") + 1] if "--via" in sys.argv[:-1] else "hook"
+if VIA not in ("hook", "phone", "http"):
+    sys.exit("usage: run.py [-v] [--via hook|phone|http]")
+HTTP = b"HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\n\r\n"
+sim = None
+
+
+def start_phone():
+    """Handshake as p10phone and get a token (an authenticated session is
+    never pruned)."""
+    global sim
+    import io
+    sys.path.insert(0, os.path.join(ROOT, "dev/sim"))
+    from dpma_sim import Options, Phone
+    sim = Phone(Options(slot=SLOT, mac="000fd3000010"), out=io.StringIO())
+    sim.start()
+    ex = sim.handshake()
+    if not ex.ok:
+        sys.exit("handshake failed:\n" + ex.describe())
+    ex = sim.get_token(user="p10phone", config_password="344486")
+    if not ex.ok:
+        sys.exit("token failed:\n" + ex.describe())
+
+
+def call_phone(phone, doc):
+    """Send a request document as `phone` (no pin); (None, response)."""
+    rtype = "HTTPRequest" if VIA == "http" else "AsteriskRequest"
+    ex = sim.asterisk(doc, auth=phone + ":", rtype=rtype, timeout=10)
+    r = ex.reply
+    want = "HTTPResponse" if VIA == "http" else "AsteriskResponse"
+    if r is None or not r.ok or r.response_type != want:
+        return None, "(no reply or a bad one: %s)" % ex.describe()
+    body = r.payload
+    if not body.startswith(HTTP) or not body.endswith(b"\r\n\r\n"):
+        return None, "(not wrapped: %r)" % body
+    return None, body[len(HTTP):-4].decode("utf-8", "replace")
+
+
+def rc_ok(rc, want):
+    """Return codes are only visible through the hooks."""
+    return rc == want or VIA != "hook"
 
 
 def cli(cmd):
@@ -47,6 +100,8 @@ def quote(text):
 
 
 def call(phone, method, params):
+    if VIA != "hook":
+        return call_phone(phone, json.dumps({"request": {"method": method, "parameters": params}}))
     out = cli(f"dpmadev method call {phone} {method} {quote(json.dumps(params))}")
     m = re.match(r"Return code: (-?\d+)\n(?:\(empty response body.*\n)?(.*)", out, re.S)
     if not m:
@@ -56,6 +111,8 @@ def call(phone, method, params):
 
 
 def call_xml(phone, method, params):
+    if VIA != "hook":
+        return call_phone(phone, '<request method="%s">%s</request>' % (method, params))
     out = cli(f"dpmadev calls xml {phone} {method} {quote(params)}")
     m = re.match(r"Return code: (-?\d+)\n(.*)", out, re.S)
     if not m:
@@ -78,7 +135,7 @@ def expect(name, got, code, doc):
     """`doc` is the expected compact JSON (a Python object) or a string."""
     rc, body = got
     want = doc if isinstance(doc, str) else json.dumps(doc, separators=(",", ":"), ensure_ascii=False)
-    check(name, rc == code and body == want, f"return {rc} (want {code})\n     got  {body}\n     want {want}")
+    check(name, rc_ok(rc, code) and body == want, f"return {rc} (want {code})\n     got  {body}\n     want {want}")
 
 
 def ok(method, result):
@@ -155,7 +212,7 @@ def queues():
     check("pause: reason sent", "paused:Lunch" in cli("queue show p10sales"))
     m = Q + "getList"
     rc, body = call("p10phone", m, {"account_id": "1001"})
-    check("getList: paused member", rc == 0 and '{"name":"p10sales","account_id":"p10sales","paused_time":"1","loggedin_status":"logged_in","total_members":"1","members_logged_in":"0","callers_waiting":"0"}' in body, body)
+    check("getList: paused member", rc_ok(rc, 0) and '{"name":"p10sales","account_id":"p10sales","paused_time":"1","loggedin_status":"logged_in","total_members":"1","members_logged_in":"0","callers_waiting":"0"}' in body, body)
     m = Q + "resume"
     expect("resume: call_queue_account_id required", call("p10phone", m, {"account_id": "1001"}), -1, err(m, 10011, NOT_FOUND % "call_queue_account_id"))
     expect("resume p10sales", call("p10phone", m, {"account_id": "1001", "call_queue_account_id": "p10sales"}), 0, ok(m, SUCCESS))
@@ -172,7 +229,7 @@ def queues():
         cq = json.loads(body)["response"]["result"]["callQueue"]
         member = cq["detailed_view"]["queue_members"]["queue_member"][0]
         caller = cq["detailed_view"]["waiting_callers"]["waiting_caller"][0]
-        good = (rc == 0 and list(cq) == ["account_id", "name", "overview", "my_status", "detailed_view"]
+        good = (rc_ok(rc, 0) and list(cq) == ["account_id", "name", "overview", "my_status", "detailed_view"]
                 and cq["account_id"] == "P10SALES"
                 and cq["overview"] == {"total_members": "1", "logged_in_count": "1", "members_on_call": "1", "callers_waiting": "1",
                                        "total_calls": "0", "completed_calls_today": "0", "abandoned_calls": "0",
@@ -189,8 +246,11 @@ def queues():
         "account_id": "p10support", "name": "p10support", "overview": {"total_members": "1", "logged_in_count": "1", "members_on_call": "0",
         "callers_waiting": "0", "total_calls": "0", "completed_calls_today": "0", "abandoned_calls": "0", "redirected_calls": "0",
         "longest_queue_length": "0", "avg_entry_position": "0"}, "my_status": {"login_status": ""}}}))
-    expect("getTodaysStatus: no application, no answer", call("p10phone", m, {"account_id": "1001", "call_queue_account_id": "nosuch"}), 0, "")
-    expect("getTodaysStatus: no queue, no answer", call("p10phone", m, {"account_id": "1001", "call_queue_account_id": "p10ghost"}), 0, "")
+    # No answer at all; a phone gets the request handler's error for an
+    # empty answer instead.
+    none = "" if VIA == "hook" else err(m, 10002, "Error parsing request: empty response body ")
+    expect("getTodaysStatus: no application, no answer", call("p10phone", m, {"account_id": "1001", "call_queue_account_id": "nosuch"}), 0, none)
+    expect("getTodaysStatus: no queue, no answer", call("p10phone", m, {"account_id": "1001", "call_queue_account_id": "p10ghost"}), 0, none)
     expect("getTodaysStatus: call_queue_account_id required", call("p10phone", m, {"account_id": "1001"}), -1, err(m, 10011, NOT_FOUND % "call_queue_account_id"))
     rc, body = call("p10phone", Q + "getList", {"account_id": "1001"})
     check("getList: callers waiting", '"callers_waiting":"1"' in body, body)
@@ -231,7 +291,7 @@ def parking(phone_log):
     try:
         got = json.loads(body)["response"]["result"]["parking_lots"]["parking_lot"]
         call0 = got[1]["parked_calls"]["parked_call"][0]
-        good = (rc == 0 and got[0]["parked_calls"]["parked_call"] == []
+        good = (rc_ok(rc, 0) and got[0]["parked_calls"]["parked_call"] == []
                 and list(call0) == ["from_caller_id_name", "from_caller_id_number", "duration", "lotnum", "current_call_id"]
                 and call0["from_caller_id_name"] == "Lot Caller" and call0["from_caller_id_number"] == "5554000"
                 and call0["lotnum"] == "801" and call0["current_call_id"].startswith("Local/parklot@p10test-"))
@@ -240,7 +300,7 @@ def parking(phone_log):
     check("parkingLots.getList: only the lots of the phone's parking application", good, body)
     rc, body = call("p10phone2", m, {})
     check("parkingLots.getList: no parking application sees every lot",
-          rc == 0 and '"lotnum":"701"' in body and '"lotnum":"801"' in body, body)
+          rc_ok(rc, 0) and '"lotnum":"701"' in body and '"lotnum":"801"' in body, body)
     with open(phone_log) as f:
         log = f.read()
     check("parked call event sent to the parker's phone",
@@ -272,9 +332,10 @@ def recording(phone_log):
     expect("startRecording: no such call", call("p10phone", m, {"requested_account_id": "1001", "call_id": "nope"}), -1, err(m, 27168, "Your account is not permitted to run this action: channel "))
     expect("stopRecording: nothing recording", call("p10phone", s, p), -1, err(s, 27168, "Your account is not permitted to run this action: MixMonitor "))
     mark = log_mark()
-    # The original reads "Success" into an 8-byte buffer: always an error.
-    expect("startRecording: MixMonitor started, error reported", call("p10phone", m, p), -1, err(m, 27168, "Your account is not permitted to run this action: MixMonitor "))
-    check("startRecording: logged", "Failed to start MixMonitor. \n" in messages_since(mark))
+    # The original reads "Success" into an 8-byte buffer and always reports
+    # an error; dpma-rs reports the success (plan section 8, item 10).
+    expect("startRecording", call("p10phone", m, p), 0, ok(m, SUCCESS))
+    check("startRecording: no failure logged", "Failed to start MixMonitor" not in messages_since(mark))
     chan = [l.split("!")[0] for l in cli("core show channels concise").splitlines() if l.startswith("PJSIP/1001-")]
     check("startRecording: MixMonitor running", bool(chan) and "MIXMONITOR_FILENAME" in cli("core show channel " + chan[0]))
     expect("stopRecording", call("p10phone", s, p), 0, ok(s, SUCCESS))
@@ -282,9 +343,13 @@ def recording(phone_log):
     with open(phone_log) as f:
         log = f.read()
     check("stopRecording: INFO sent", "X-Event-Type: digium.stopRecording.success" in log, log)
-    check("startRecording: no INFO", "digium.startRecording.success" not in log, log)
+    check("startRecording: INFO sent", log.count("X-Event-Type: digium.startRecording.success") == 1, log)
     x = f"<parameters><requested_account_id>1001</requested_account_id><call_id>{cid}</call_id></parameters>"
-    expect("startRecording (XML)", call_xml("p10phone", m, x), -1, xml_err(m, 27168, "Your account is not permitted to run this action"))
+    expect("startRecording (XML)", call_xml("p10phone", m, x), 0, xml_ok(m))
+    time.sleep(1)
+    with open(phone_log) as f:
+        log = f.read()
+    check("startRecording (XML): INFO sent", log.count("X-Event-Type: digium.startRecording.success") == 2, log)
     expect("stopRecording (XML)", call_xml("p10phone", s, x), 0, xml_ok(s))
     expect("stopRecording (XML): nothing recording", call_xml("p10phone", s, x), -1, xml_err(s, 27168, "Your account is not permitted to run this action"))
     expect("stopRecording (XML): call_id required", call_xml("p10phone", s, "<parameters><requested_account_id>1001</requested_account_id></parameters>"), -1, xml_err(s, 10011, "Parameters not found"))
@@ -317,12 +382,14 @@ def echo():
     p = {"a": "b", "n": [1, 2.5, None, True], "o": {"x": "é\u0001/"}}
     rc, body = call("p10phone", m, p)
     want = '{"response":{"method":"test.dpma.api.echo","result":{"a":"b","n":[1,2.5,null,true],"o":{"x":"é\\u0001/"}}}}'
-    check("echo", rc == 0 and body == want, body)
+    check("echo", rc_ok(rc, 0) and body == want, body)
 
 
 def main():
     if "Return code" not in cli("dpmadev method call p10phone test.dpma.api.echo {}"):
         sys.exit("dpmadev hooks not available (devtest build installed and Asterisk running?)")
+    if VIA != "hook":
+        start_phone()
     reset()
     echo()
     queues()
@@ -344,6 +411,8 @@ def main():
         phone.wait()
         shutil.rmtree(tmp, ignore_errors=True)
     reset()
+    if sim is not None:
+        sim.close()
     print("%d failure(s)" % failures)
     sys.exit(1 if failures else 0)
 
