@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dpma-ast",
+    "crates/dpma-build",
+    "crates/dpma-proto",
+    "crates/res_digium_phone",
+    "crates/res_pjsip_endpoint_identifier_dpma",
+    "crates/res_pjsip_dialog_info_digium_body_supplement",
+]
+
+[workspace.package]
+version = "24.0.3613"
+edition = "2021"
+license = "GPL-2.0-or-later"
+repository = "https://example.invalid/dpma-rs"
+rust-version = "1.80"
+
+[workspace.dependencies]
+dpma-ast = { path = "crates/dpma-ast" }
+dpma-build = { path = "crates/dpma-build" }
+dpma-proto = { path = "crates/dpma-proto" }
+cc = "1.2"
+openssl = "0.10"
+serde_json = { version = "1.0", features = ["preserve_order"] }
+libc = "0.2"
+xmltree = "0.11"
+
+[profile.release]
+debug = 1
+panic = "unwind"

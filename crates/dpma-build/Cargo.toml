@@ -1,0 +1,9 @@
+[package]
+name = "dpma-build"
+description = "Shared build-script logic for the dpma-rs Asterisk modules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cc.workspace = true

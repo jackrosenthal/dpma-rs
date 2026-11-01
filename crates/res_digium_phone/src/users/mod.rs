@@ -1,0 +1,753 @@
+//! Phones, lines, and the other objects configured in res_digium_phone.conf
+//! (the original module's phone_users.c).
+//!
+//! All objects live in one `Registry` behind a global lock.  Objects refer
+//! to each other by name, exactly like the original, so a reload can replace
+//! any of them independently.
+
+pub mod build_config;
+pub mod cli;
+pub mod contacts;
+pub mod load;
+pub mod options;
+pub mod presence;
+pub mod runtime;
+pub mod status;
+pub mod userlist;
+
+use crate::util::NamedMap;
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+/// Registrar used for every dialplan object this module creates.
+pub const REGISTRAR: &str = "DIGIUM_PHONE_USERS";
+/// AstDB family holding per-phone runtime state.
+pub const DB_FAMILY: &str = "DigiumPhoneUsers";
+/// Maximum number of lines on one phone.
+pub const MAX_LINES: usize = 12;
+/// Number of buckets in the original's top-level containers.
+const BUCKETS: u32 = 257;
+
+/// Line/network transport.  Index into the `TRANSPORT_*` tables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Transport {
+    #[default]
+    Unset = 0,
+    Udp = 1,
+    Tcp = 2,
+    Tls = 3,
+}
+
+impl Transport {
+    /// `udp`, `tcp`, or `tls` (case insensitive); anything else is unset.
+    pub fn parse(s: &str) -> Transport {
+        if s.eq_ignore_ascii_case("udp") {
+            Transport::Udp
+        } else if s.eq_ignore_ascii_case("tcp") {
+            Transport::Tcp
+        } else if s.eq_ignore_ascii_case("tls") {
+            Transport::Tls
+        } else {
+            Transport::Unset
+        }
+    }
+
+    /// `phone_line_transport_type`: "" when unset.
+    pub fn type_str(self) -> &'static str {
+        ["", "udp", "tcp", "tls"][self as usize]
+    }
+
+    /// `phone_line_transport_string`: unset means udp.
+    pub fn string(self) -> &'static str {
+        ["udp", "udp", "tcp", "tls"][self as usize]
+    }
+
+    /// `phone_line_transport_option`: a SIP URI parameter.
+    pub fn uri_option(self) -> &'static str {
+        ["", ";transport=udp", ";transport=tcp", ";transport=tls"][self as usize]
+    }
+}
+
+/// One entry of a phone's `codecs` option.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Codec {
+    /// Index into `CODECS`.
+    pub index: usize,
+    /// 255 for the first codec, decreasing.
+    pub priority: i32,
+    pub enabled: bool,
+}
+
+/// Codecs the phones understand, with the attributes sent in the config.
+pub const CODECS: &[(&str, &str)] = &[
+    ("PCMU", "packetization=\"20\""),
+    ("PCMA", "packetization=\"20\""),
+    ("G722", "packetization=\"20\""),
+    ("G7221", "packetization=\"20\" samplerate=\"uwb\" bitrate=\"48000\""),
+    ("G726-32", "packetization=\"20\""),
+    ("opus", "packetization=\"20\" complexity=\"10\" samplerate=\"wb\" use_vbr=\"0\""),
+    ("G729", "packetization=\"20\""),
+    ("iLBC", "packetization=\"30\""),
+    ("L16", "packetization=\"20\""),
+    ("L16-256", "packetization=\"20\""),
+];
+
+/// Ringtones built into the phone firmware.  Naming one of these in a
+/// phone's `ringtone` option selects it as the active ringtone instead of
+/// loading a custom one.
+pub const BUILTIN_RINGTONES: &[&str] = &[
+    "Alarm", "Chimes", "Digium", "GuitarStrum", "Jingle", "Office", "Office2", "RotaryPhone",
+    "SteelDrum", "Techno", "Theme", "Tweedle", "Twinkle", "Vibe",
+];
+
+/// A line slot on a phone.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PhoneLine {
+    pub name: String,
+    /// Assigned with `external_line=` rather than `line=`.
+    pub external: bool,
+}
+
+/// How a phone parks a call from the parking softkey.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ParkingTransfer {
+    #[default]
+    Default = 0,
+    Attended = 1,
+    Blind = 2,
+}
+
+/// A `type=phone` section (the original's `phone_user`).
+#[derive(Debug, Clone)]
+pub struct Phone {
+    pub name: String,
+
+    pub config_file: String,
+    pub full_name: String,
+    pub timezone: String,
+    pub active_ringtone: String,
+    pub blf_contact_group: String,
+    pub contacts_display_rules: String,
+    pub group_pin: String,
+    pub pin: String,
+    pub mac: String,
+    pub parking_exten: String,
+    pub wallpaper_file: String,
+    pub active_locale: String,
+    pub lan_port_mode: String,
+    pub pc_port_mode: String,
+    pub blf_items: String,
+    pub login_password: String,
+    pub accept_local_calls: String,
+    pub name_format: String,
+    pub ehs: String,
+    pub dot1x_passthrough: String,
+    pub dot1x_method: String,
+    pub dot1x_eapol_on_disconnect: String,
+    pub dot1x_identity: String,
+    pub dot1x_anonymous_identity: String,
+    pub dot1x_password: String,
+    pub dot1x_client_cert_url: String,
+    pub dot1x_client_cert_value: String,
+    pub dot1x_root_cert_url: String,
+    pub dot1x_root_cert_value: String,
+    pub dot1x_debug: String,
+    /// "0" or "1".
+    pub openvpn_enable: String,
+    pub openvpn_config_file_url: String,
+    pub openvpn_config_file_value: String,
+    pub openvpn_root_cert_url: String,
+    pub openvpn_root_cert_value: String,
+    pub openvpn_client_cert_url: String,
+    pub openvpn_client_cert_value: String,
+    pub openvpn_client_key_url: String,
+    pub openvpn_client_key_value: String,
+    pub openvpn_logging: String,
+    pub idle_company_text: String,
+
+    pub lines: Vec<PhoneLine>,
+    pub contacts: Vec<String>,
+    pub applications: Vec<String>,
+    pub networks: Vec<String>,
+    pub ringtones: Vec<String>,
+    pub firmware: Vec<String>,
+    pub alerts: Vec<String>,
+    pub multicastpages: Vec<String>,
+    /// (model, file) from the `<model>_logo_file` options.
+    pub logos: Vec<(String, String)>,
+    pub codecs: Vec<Codec>,
+
+    pub ntp_resync: i32,
+    pub web_ui_enabled: bool,
+    pub record_own_calls: bool,
+    pub blf_unused_linekeys: bool,
+    pub blf_page_return_timeout: i32,
+    pub send_to_vm: bool,
+    pub use_local_storage: bool,
+    pub contacts_max_subscriptions: i32,
+    pub lock_preferences: bool,
+    pub brightness: i32,
+    pub contrast: i32,
+    pub dim_backlight: bool,
+    pub backlight_timeout: i32,
+    pub backlight_dim_level: i32,
+    pub default_fontsize: i32,
+    pub handshake_timeout: i32,
+    pub display_mc_notification: bool,
+    pub small_clock: bool,
+    pub ringer_volume: i32,
+    pub speaker_volume: i32,
+    pub handset_volume: i32,
+    pub headset_volume: i32,
+    pub handset_sidetone_db: i32,
+    pub headset_sidetone_db: i32,
+    pub reset_call_volume: bool,
+    pub headset_answer: bool,
+    pub ring_headset_only: bool,
+    pub call_waiting_tone: bool,
+    /// Set when a status application overrides which states send 486.
+    pub send486_custom: bool,
+    /// Bit mask (by presence state) of the states that make the phone
+    /// reject calls with 486.  Defaults to xa and dnd.
+    pub send486_mask: u32,
+    pub can_forward_calls: bool,
+    pub show_call_log: bool,
+    pub show_call_parking: bool,
+    pub parking_transfer_type: ParkingTransfer,
+    pub allow_insecure_ssl: bool,
+    /// The original never resets this, and it starts out off.
+    pub enable_check_sync: bool,
+    /// -1 when not configured.
+    pub transport_tls_allowed: i32,
+    pub logout_enabled: bool,
+    pub expansion_enabled: bool,
+    pub expansion_page_indicators_enabled: bool,
+
+    /// `pin=voicemail`: use the voicemail password of the primary line.
+    pub pin_is_voicemail: bool,
+
+    // ---- runtime state (survives reloads) ----
+    pub last_mac: String,
+    pub last_uri: String,
+    pub last_session_id: String,
+    /// The phone's pin as last applied (also tracks voicemail pins).
+    pub applied_pin: String,
+
+    // ---- reload bookkeeping ----
+    pub delme: bool,
+    pub needs_reconfigure: bool,
+}
+
+impl Phone {
+    pub fn new(name: &str) -> Phone {
+        Phone { name: name.to_string(), ..Phone::blank() }
+    }
+
+    /// Reset everything that comes from configuration (`set_user_defaults`).
+    pub fn set_defaults(&mut self) {
+        let fresh = Phone {
+            name: std::mem::take(&mut self.name),
+            enable_check_sync: self.enable_check_sync,
+            pin_is_voicemail: self.pin_is_voicemail,
+            last_mac: std::mem::take(&mut self.last_mac),
+            last_uri: std::mem::take(&mut self.last_uri),
+            last_session_id: std::mem::take(&mut self.last_session_id),
+            applied_pin: std::mem::take(&mut self.applied_pin),
+            delme: self.delme,
+            needs_reconfigure: self.needs_reconfigure,
+            openvpn_enable: "0".into(),
+            ..Phone::blank()
+        };
+        *self = fresh;
+    }
+
+    fn blank() -> Phone {
+        // A zeroed phone, as returned by ao2_alloc, with the defaults that
+        // set_user_defaults applies.
+        Phone {
+            name: String::new(),
+            config_file: String::new(),
+            full_name: String::new(),
+            timezone: String::new(),
+            active_ringtone: String::new(),
+            blf_contact_group: String::new(),
+            contacts_display_rules: String::new(),
+            group_pin: String::new(),
+            pin: String::new(),
+            mac: String::new(),
+            parking_exten: String::new(),
+            wallpaper_file: String::new(),
+            active_locale: String::new(),
+            lan_port_mode: String::new(),
+            pc_port_mode: String::new(),
+            blf_items: String::new(),
+            login_password: String::new(),
+            accept_local_calls: String::new(),
+            name_format: String::new(),
+            ehs: String::new(),
+            dot1x_passthrough: String::new(),
+            dot1x_method: String::new(),
+            dot1x_eapol_on_disconnect: String::new(),
+            dot1x_identity: String::new(),
+            dot1x_anonymous_identity: String::new(),
+            dot1x_password: String::new(),
+            dot1x_client_cert_url: String::new(),
+            dot1x_client_cert_value: String::new(),
+            dot1x_root_cert_url: String::new(),
+            dot1x_root_cert_value: String::new(),
+            dot1x_debug: String::new(),
+            openvpn_enable: "0".into(),
+            openvpn_config_file_url: String::new(),
+            openvpn_config_file_value: String::new(),
+            openvpn_root_cert_url: String::new(),
+            openvpn_root_cert_value: String::new(),
+            openvpn_client_cert_url: String::new(),
+            openvpn_client_cert_value: String::new(),
+            openvpn_client_key_url: String::new(),
+            openvpn_client_key_value: String::new(),
+            openvpn_logging: String::new(),
+            idle_company_text: String::new(),
+            lines: Vec::new(),
+            contacts: Vec::new(),
+            applications: Vec::new(),
+            networks: Vec::new(),
+            ringtones: Vec::new(),
+            firmware: Vec::new(),
+            alerts: Vec::new(),
+            multicastpages: Vec::new(),
+            logos: Vec::new(),
+            codecs: Vec::new(),
+            ntp_resync: 0,
+            web_ui_enabled: false,
+            record_own_calls: false,
+            blf_unused_linekeys: false,
+            blf_page_return_timeout: 0,
+            send_to_vm: true,
+            use_local_storage: false,
+            contacts_max_subscriptions: 0,
+            lock_preferences: false,
+            brightness: -1,
+            contrast: -1,
+            dim_backlight: true,
+            backlight_timeout: -1,
+            backlight_dim_level: -1,
+            default_fontsize: 0,
+            handshake_timeout: 946_080_000,
+            display_mc_notification: true,
+            small_clock: false,
+            ringer_volume: -1,
+            speaker_volume: 0,
+            handset_volume: 0,
+            headset_volume: 0,
+            handset_sidetone_db: -1,
+            headset_sidetone_db: -1,
+            reset_call_volume: false,
+            headset_answer: false,
+            ring_headset_only: false,
+            call_waiting_tone: true,
+            send486_custom: false,
+            send486_mask: 0x50,
+            can_forward_calls: true,
+            show_call_log: true,
+            show_call_parking: true,
+            parking_transfer_type: ParkingTransfer::Default,
+            allow_insecure_ssl: false,
+            enable_check_sync: false,
+            transport_tls_allowed: -1,
+            logout_enabled: false,
+            expansion_enabled: false,
+            expansion_page_indicators_enabled: false,
+            pin_is_voicemail: false,
+            last_mac: String::new(),
+            last_uri: String::new(),
+            last_session_id: String::new(),
+            applied_pin: String::new(),
+            delme: false,
+            needs_reconfigure: false,
+        }
+    }
+
+    /// The first line, if any.
+    pub fn primary_line(&self) -> Option<&PhoneLine> {
+        self.lines.first()
+    }
+}
+
+/// A line: either a SIP endpoint (`type=line`, or only referenced from a
+/// phone) or an `external_line`.
+#[derive(Debug, Clone, Default)]
+pub struct Line {
+    pub name: String,
+    pub external: bool,
+
+    pub tech: String,
+    pub secret: String,
+    pub callerid: String,
+    pub mailbox: String,
+    pub exten: String,
+    pub context: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub title: String,
+    pub line_label: String,
+    pub location: String,
+    pub digit_map: String,
+    pub outboundproxy_address: String,
+    pub outboundproxy_port: String,
+    pub voicemail_uri: String,
+    pub media_encryption: String,
+    pub server_address: String,
+    pub server_port: String,
+    pub secondary_server_address: String,
+    pub secondary_server_port: String,
+    pub authname: String,
+    pub userid: String,
+    pub secondary_media_encryption: String,
+    pub subscribecontext: String,
+    /// Context the line's auto hint currently lives in.
+    pub hint_context: String,
+    pub pjsip_auth: String,
+    pub plar_number: String,
+    pub reregistration_timeout: i32,
+    pub registration_retry_interval: i32,
+    pub registration_max_retries: i32,
+    pub transport: Transport,
+    pub secondary_server_transport: Transport,
+    /// `register=no`, or a static `host` from sip.conf.
+    pub no_register: bool,
+
+    pub delme: bool,
+}
+
+impl Line {
+    pub fn new(name: &str, external: bool) -> Line {
+        Line { name: name.to_string(), external, ..Default::default() }
+    }
+
+    /// `set_line_defaults`: applied whenever a phone (re)claims the line.
+    pub fn set_defaults(&mut self, sip_context: &str) {
+        self.exten.clear();
+        self.context = sip_context.to_string();
+        for f in [
+            &mut self.first_name,
+            &mut self.last_name,
+            &mut self.title,
+            &mut self.line_label,
+            &mut self.location,
+            &mut self.digit_map,
+            &mut self.mailbox,
+            &mut self.server_address,
+            &mut self.server_port,
+            &mut self.media_encryption,
+            &mut self.secondary_server_address,
+            &mut self.secondary_server_port,
+            &mut self.secondary_media_encryption,
+            &mut self.authname,
+            &mut self.userid,
+            &mut self.secret,
+            &mut self.callerid,
+            &mut self.voicemail_uri,
+            &mut self.outboundproxy_address,
+            &mut self.outboundproxy_port,
+            &mut self.plar_number,
+        ] {
+            f.clear();
+        }
+        self.no_register = false;
+        self.reregistration_timeout = 0;
+        self.registration_retry_interval = 0;
+        self.registration_max_retries = 0;
+        self.transport = Transport::Unset;
+        self.secondary_server_transport = Transport::Unset;
+    }
+
+    /// The extension used to dial this line.
+    pub fn dialable_exten(&self) -> &str {
+        if self.exten.is_empty() {
+            &self.name
+        } else {
+            &self.exten
+        }
+    }
+}
+
+/// A `type=network` section, or an implicit network named after a phone.
+#[derive(Debug, Clone)]
+pub struct Network {
+    pub name: String,
+    pub alias: String,
+    pub cidr: String,
+    pub registration_address: String,
+    pub registration_port: String,
+    pub alternate_registration_address: String,
+    pub alternate_registration_port: String,
+    pub file_url_prefix: String,
+    pub ntp_server: String,
+    pub syslog_server: String,
+    pub syslog_port: String,
+    pub syslog_level: String,
+    pub network_vlan_discovery_mode: String,
+    pub public_firmware_url_prefix: String,
+    pub network_vlan_id: i32,
+    pub sip_qos: i32,
+    pub rtp_qos: i32,
+    pub sip_dscp: i32,
+    pub rtp_dscp: i32,
+    pub pc_vlan_id: i32,
+    pub pc_qos: i32,
+    pub udp_ka_interval: i32,
+    pub transport: Transport,
+    pub alternate_transport: Transport,
+    pub delme: bool,
+}
+
+impl Network {
+    /// `phone_network_create`.
+    pub fn new(name: &str) -> Network {
+        Network {
+            name: name.to_string(),
+            alias: String::new(),
+            cidr: String::new(),
+            registration_address: String::new(),
+            registration_port: String::new(),
+            alternate_registration_address: String::new(),
+            alternate_registration_port: String::new(),
+            file_url_prefix: String::new(),
+            ntp_server: String::new(),
+            syslog_server: String::new(),
+            syslog_port: String::new(),
+            syslog_level: String::new(),
+            network_vlan_discovery_mode: String::new(),
+            public_firmware_url_prefix: String::new(),
+            network_vlan_id: 0,
+            sip_qos: 3,
+            rtp_qos: -1,
+            sip_dscp: -1,
+            rtp_dscp: -1,
+            pc_vlan_id: 0,
+            pc_qos: -1,
+            udp_ka_interval: -1,
+            transport: Transport::Unset,
+            alternate_transport: Transport::Unset,
+            delme: false,
+        }
+    }
+
+    /// The reset applied before a `type=network` section is (re)read.
+    pub fn reset_for_section(&mut self) {
+        let name = std::mem::take(&mut self.name);
+        *self = Network {
+            sip_qos: 0,
+            rtp_qos: 0,
+            sip_dscp: 0,
+            rtp_dscp: 0,
+            pc_qos: 0,
+            udp_ka_interval: 0,
+            ..Network::new(&name)
+        };
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Ringtone {
+    pub name: String,
+    pub alias: String,
+    pub filename: String,
+    pub delme: bool,
+}
+
+/// A `type=firmware` section.
+#[derive(Debug, Clone, Default)]
+pub struct FirmwareOpt {
+    pub name: String,
+    /// Upper-cased.
+    pub model: String,
+    pub version: String,
+    pub file: String,
+    pub public_firmware: bool,
+    pub delme: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Alert {
+    pub name: String,
+    pub alert_info: String,
+    pub ring_type: String,
+    pub ringtone: String,
+    pub delme: bool,
+}
+
+/// A `type=multicastpage` section.
+#[derive(Debug, Clone, Default)]
+pub struct Page {
+    pub name: String,
+    pub alias: String,
+    pub address: String,
+    pub port: String,
+    pub priority: String,
+    /// Defaults to "0".
+    pub interrupt: String,
+    pub delme: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueuePermission {
+    Status = 0,
+    Overview = 1,
+    Details = 2,
+}
+
+#[derive(Debug, Clone)]
+pub struct QueueApp {
+    pub queue: String,
+    pub membername: String,
+    pub location: String,
+    pub login_exten: String,
+    pub logout_exten: String,
+    pub member: bool,
+    pub permission: QueuePermission,
+}
+
+/// `send486` on a status application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Send486 {
+    #[default]
+    NotSet = 0,
+    No = 1,
+    Yes = 2,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StatusApp {
+    /// Presence state (`dpma_ast::presence`).
+    pub status: i32,
+    pub send486: Send486,
+    pub substatuses: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ParkingApp {
+    pub parkinglots: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct VoicemailApp {
+    /// Name of the translation table.
+    pub translation: Option<String>,
+    pub require_password: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CustomApp {
+    pub name: String,
+    pub filename: String,
+    pub md5: String,
+    pub autostart: bool,
+    pub idlescreen_softkey: bool,
+    /// Any other option, in order.
+    pub settings: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AppKind {
+    Queue(QueueApp),
+    Status(StatusApp),
+    Parking(ParkingApp),
+    Voicemail(VoicemailApp),
+    Custom(CustomApp),
+}
+
+impl AppKind {
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            AppKind::Queue(_) => "Queue",
+            AppKind::Status(_) => "Status",
+            AppKind::Parking(_) => "Parking",
+            AppKind::Voicemail(_) => "Voicemail",
+            AppKind::Custom(_) => "Custom",
+        }
+    }
+}
+
+/// A `type=application` section.
+#[derive(Debug, Clone)]
+pub struct Application {
+    pub name: String,
+    pub kind: Option<AppKind>,
+    pub delme: bool,
+}
+
+/// Every configured object.
+pub struct Registry {
+    pub phones: NamedMap<Phone>,
+    pub lines: NamedMap<Line>,
+    pub applications: NamedMap<Application>,
+    pub networks: NamedMap<Network>,
+    pub ringtones: NamedMap<Ringtone>,
+    pub firmware: NamedMap<FirmwareOpt>,
+    pub alerts: NamedMap<Alert>,
+    pub pages: NamedMap<Page>,
+}
+
+impl Registry {
+    fn new() -> Registry {
+        Registry {
+            phones: NamedMap::new(BUCKETS),
+            lines: NamedMap::new(BUCKETS),
+            applications: NamedMap::new(BUCKETS),
+            networks: NamedMap::new(BUCKETS),
+            ringtones: NamedMap::new(BUCKETS),
+            firmware: NamedMap::new(BUCKETS),
+            alerts: NamedMap::new(BUCKETS),
+            pages: NamedMap::new(BUCKETS),
+        }
+    }
+
+    /// Is `line` assigned to any phone?
+    pub fn line_is_mapped(&self, line: &str) -> bool {
+        self.phones
+            .values()
+            .any(|p| p.lines.iter().any(|l| l.name.eq_ignore_ascii_case(line)))
+    }
+
+    /// The phone whose primary line is `line`.
+    pub fn phone_for_line(&self, line: &str) -> Option<&Phone> {
+        self.phones
+            .values()
+            .find(|p| p.primary_line().is_some_and(|l| l.name.eq_ignore_ascii_case(line)))
+    }
+}
+
+static REGISTRY: RwLock<Option<Registry>> = RwLock::new(None);
+
+/// Read access to the registry (None when not loaded).
+pub fn read() -> RwLockReadGuard<'static, Option<Registry>> {
+    REGISTRY.read().unwrap()
+}
+
+/// Write access to the registry.
+pub fn write() -> RwLockWriteGuard<'static, Option<Registry>> {
+    REGISTRY.write().unwrap()
+}
+
+/// Ask a phone to fetch its configuration again (`phone_user_reconfigure`).
+/// With `delete_token` the phone also discards its configuration token.
+pub fn reconfigure(name: &str, delete_token: bool) -> Result<(), ()> {
+    let (name, uri, session) = {
+        let g = read();
+        let Some(p) = g.as_ref().and_then(|r| r.phones.get(name)) else { return Err(()) };
+        (p.name.clone(), p.last_uri.clone(), p.last_session_id.clone())
+    };
+    send_reconfigure(&name, &uri, &session, delete_token)
+}
+
+/// Send the reconfigure message to the phone's last known location.
+pub fn send_reconfigure(name: &str, uri: &str, session: &str, delete_token: bool) -> Result<(), ()> {
+    if uri.is_empty() {
+        return Err(());
+    }
+    if session.is_empty() {
+        dpma_ast::dpma_log!("Unable to reconfigure '{}': Session is unknown", name);
+        return Err(());
+    }
+    runtime::send_reconfigure(session, uri, delete_token)
+}
