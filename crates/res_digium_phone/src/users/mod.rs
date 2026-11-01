@@ -396,6 +396,12 @@ impl Phone {
     pub fn primary_line(&self) -> Option<&PhoneLine> {
         self.lines.first()
     }
+
+    /// `phone_user_has_line` (FUN_0016aab0): is `line` one of the phone's
+    /// line slots (`line=` or `external_line=`, case insensitive)?
+    pub fn has_line(&self, line: &str) -> bool {
+        self.lines.iter().any(|l| l.name.eq_ignore_ascii_case(line))
+    }
 }
 
 /// A line: either a SIP endpoint (`type=line`, or only referenced from a

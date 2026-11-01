@@ -97,7 +97,7 @@ fn run(effects: Vec<Fx>) {
                     session::mark_authenticated(&s, Some(&uri).filter(|u| !u.is_empty()).map(|u| u.as_str()));
                 }
             }
-            Fx::VmTrackerRemove(phone) => crate::method_api::voicemail::tracker_remove_phone(&phone),
+            Fx::VmTrackerRemove(phone) => crate::method_api::voicemail::remove_user_tracker(&phone),
             Fx::DbPut(phone, value) => {
                 dpma_ast::db::put(DB_FAMILY, &phone, &value);
             }

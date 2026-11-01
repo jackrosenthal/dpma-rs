@@ -484,6 +484,8 @@ pub fn process(trigger: &str) -> Result<(), ()> {
             PhoneFx::Delete { name, uri, session } => {
                 let _ = super::send_reconfigure(name, uri, session, false);
                 dpma_ast::db::del(DB_FAMILY, name);
+                // phone_user_destroy_cb: the phone's voicemail message trackers go.
+                crate::method_api::voicemail::remove_user_tracker(name);
                 super::runtime::mark_session_inactive(session);
             }
             PhoneFx::Reconfigure { name, uri, session } => {
