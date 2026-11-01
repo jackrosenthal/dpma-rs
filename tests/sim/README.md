@@ -72,9 +72,13 @@ and `res_digium_phone.conf` (`--remove` takes them out):
   endpoint `dpma-sim` with `message_context=dpma_pjsip_message_context`,
   identified by `match=127.0.0.1` (the test-only stand-in for the endpoint
   identifier helper, section 6.3); and `dpma-sim-loopback`, identified by
-  `match=127.0.0.2`, whose messages go to a static test context.  Remove the
-  include when testing the endpoint identifier helper: the `dpma-sim`
-  identify matches every request from 127.0.0.1, REGISTERs included.
+  `match=127.0.0.2`, whose messages go to a static test context.  With the
+  endpoint identifier helper loaded, the simulator's MESSAGEs (which carry
+  `X-Digium-User-Agent`) are identified by the helper instead, and the
+  `dpma-sim` identify is not needed; remove the include when testing other
+  PJSIP clients: it matches every request from 127.0.0.1, REGISTERs
+  included.  The loopback path needs `--no-digium-ua-header` while the
+  helper is loaded.
 - `extensions_dpma_sim.conf`: `[dpma-sim-loopback]` logs every MESSAGE
   from 127.0.0.2 with its AppServer headers and answers Echo the way the
   module's `handle_request_echo` does (no module needed); `[dpma-sim-send]`
@@ -116,7 +120,8 @@ Global options (before the command):
 | `--local-host`, `--local-port` | 127.0.0.1, any | The simulator's socket.  `--local-host 127.0.0.2` selects the loopback test path. |
 | `--transport udp\|tcp` | udp | |
 | `--mac` | `000fd3000001` | `X-Digium-AppServer-MACAddress` (colons removed) |
-| `--user-agent` | `Digium D65 2_9_17` | |
+| `--user-agent` | `Digium D65 2_9_17` | Sent as `User-Agent` and `X-Digium-User-Agent` |
+| `--no-digium-ua-header` | off | Do not send `X-Digium-User-Agent`.  The PJSIP helper (res_pjsip_endpoint_identifier_dpma) gives every request with that header its own endpoint, whose context is `pjsip_message_context`; use this option for the loopback path while the helper is loaded. |
 | `--contact` | `sip:<mac>@<host>:<port>` | The Contact URI (the session is bound to it) |
 | `--origination-network` | none | Sends `X-Origination-Network` |
 | `--form legacy\|chain`, `--bundle` | chain | Handshake certificates |
@@ -164,7 +169,7 @@ dpma_sim.py --state /tmp/s.json token --user simphone --config-pass 344486
 dpma_sim.py --state /tmp/s.json config      # reuses session, token, and port
 dpma_sim.py asterisk --auth simphone:1234 --method test.dpma.api.echo --params '{"x": 1}'
 dpma_sim.py --local-port 15599 listen       # events (e.g., reconfigure)
-dpma_sim.py --local-host 127.0.0.2 echo hi  # loopback: no module needed
+dpma_sim.py --local-host 127.0.0.2 --no-digium-ua-header echo hi  # loopback: no module needed
 ```
 
 Output: `>>` describes what was sent (type, transaction id, chunks,

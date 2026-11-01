@@ -9,6 +9,9 @@
 //! * `dpmadev exports config`: the `dpma_config_*` getters.
 //! * `dpmadev exports info <channel> [<body>]`: `info_send` with an
 //!   `X-Event-Name: digium.test` header (and a JSON body if given).
+//! * `dpmadev exports lastinfo [clear]`: the calls of
+//!   `phone_user_token_set_last_info` so far (made by the PJSIP helper when
+//!   a phone registers), oldest first.
 
 use super::config_api::*;
 use super::handlers::dpma_pjsip_endpoint_is_dphone;
@@ -165,8 +168,45 @@ fn cmd_info(a: &CliArgs) -> CliResult {
     CliResult::Success
 }
 
+static LAST_INFO: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Record a call of `phone_user_token_set_last_info`.
+pub fn record_last_info(phone: &str, uri: &str, session: Option<&str>, mac: Option<&str>, linked: bool) {
+    let mut v = LAST_INFO.lock().unwrap_or_else(|e| e.into_inner());
+    v.push(format!(
+        "phone '{}' uri '{}' session {} mac {}{}",
+        phone,
+        uri,
+        session.map_or("NULL".to_string(), |s| format!("'{}'", s)),
+        mac.map_or("NULL".to_string(), |s| format!("'{}'", s)),
+        if linked { "" } else { " (unlinked)" }
+    ));
+}
+
+fn cmd_lastinfo(a: &CliArgs) -> CliResult {
+    let mut v = LAST_INFO.lock().unwrap_or_else(|e| e.into_inner());
+    match a.argc() {
+        3 => {
+            for (i, l) in v.iter().enumerate() {
+                a.out(&format!("{}: {}\n", i + 1, l));
+            }
+            a.out(&format!("{} calls\n", v.len()));
+        }
+        4 if a.argv[3] == "clear" => v.clear(),
+        _ => return CliResult::ShowUsage,
+    }
+    CliResult::Success
+}
+
 pub fn devtest_commands() -> Vec<CliCommand> {
     vec![
+        CliCommand {
+            command: "dpmadev exports lastinfo",
+            summary: "List the phone_user_token_set_last_info calls",
+            usage: "Usage: dpmadev exports lastinfo [clear]\n",
+            exec: cmd_lastinfo,
+            complete: None,
+        },
         CliCommand {
             command: "dpmadev exports info",
             summary: "Send a SIP INFO through dpma_info_send",

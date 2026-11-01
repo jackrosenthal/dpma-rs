@@ -1,10 +1,22 @@
 //! Loading and reloading res_digium_phone.conf, plus the related settings
-//! read from sip.conf, users.conf, and voicemail.conf
-//! (`phone_users_process_phone_config`).
+//! read from voicemail.conf and users.conf (app_voicemail's `hasvoicemail`
+//! users) (`phone_users_process_phone_config`).
 //!
 //! A reload marks every object for deletion, re-reads every section
 //! (clearing the mark on what is still configured), then removes whatever is
 //! still marked.
+//!
+//! chan_sip is not supported (port plan, section 8, item 6): unlike the
+//! original, no lines are read from sip.conf or from users.conf `hassip`
+//! users, and there are no `digium_phones_sip` or `digium_phones_users_sip`
+//! config hooks.  PJSIP lines get their settings from the PJSIP helper
+//! module (res_pjsip_endpoint_identifier_dpma), a C config handler run in
+//! the middle of each pass.
+//!
+//! Line locks: where the original locks a line object while it reads or
+//! writes it, the pass holds every line object's ao2 lock (see
+//! `exports::objects`), so it never works on a line that the PJSIP helper
+//! is halfway through updating from a sorcery observer thread.
 
 use super::options::{self, UserCtx};
 use super::*;
@@ -24,10 +36,6 @@ type Cfg = Option<Arc<Vec<Category>>>;
 struct Sources {
     /// res_digium_phone.conf
     phones: Cfg,
-    /// sip.conf
-    sip: Cfg,
-    /// users.conf, as seen by chan_sip
-    users_sip: Cfg,
     /// voicemail.conf
     voicemail: Cfg,
     /// users.conf, as seen by app_voicemail
@@ -39,8 +47,6 @@ static SOURCES: Mutex<Option<Sources>> = Mutex::new(None);
 static PROCESS: Mutex<()> = Mutex::new(());
 
 const HOOKS: &[(&str, &str, &str)] = &[
-    ("digium_phones_sip", "sip.conf", "chan_sip"),
-    ("digium_phones_users_sip", "users.conf", "chan_sip"),
     ("digium_phones_voicemail", "voicemail.conf", "app_voicemail"),
     ("digium_phones_users_voicemail", "users.conf", "app_voicemail"),
 ];
@@ -66,8 +72,6 @@ fn set_and_process(which: &str, cats: Option<Vec<Category>>) {
         }
         let cats = cats.map(Arc::new);
         match which {
-            "SIP" => src.sip = cats,
-            "User SIP" => src.users_sip = cats,
             "Voicemail" => src.voicemail = cats,
             "User voicemail" => src.users_voicemail = cats,
             _ => return,
@@ -76,12 +80,6 @@ fn set_and_process(which: &str, cats: Option<Vec<Category>>) {
     let _ = process(which);
 }
 
-fn hook_sip(c: Option<Vec<Category>>) {
-    set_and_process("SIP", c);
-}
-fn hook_users_sip(c: Option<Vec<Category>>) {
-    set_and_process("User SIP", c);
-}
 fn hook_voicemail(c: Option<Vec<Category>>) {
     set_and_process("Voicemail", c);
 }
@@ -96,11 +94,9 @@ pub fn load(filename: &str) -> Result<(), ()> {
     // The containers of line and phone objects for the exported C API.
     crate::exports::objects::create_containers();
 
-    set_and_process("SIP", load_file("sip.conf"));
-    set_and_process("User SIP", load_file("users.conf"));
     set_and_process("Voicemail", load_file("voicemail.conf"));
 
-    let hooks: [dpma_ast::hooks::HookFn; 4] = [hook_sip, hook_users_sip, hook_voicemail, hook_users_voicemail];
+    let hooks: [dpma_ast::hooks::HookFn; 2] = [hook_voicemail, hook_users_voicemail];
     for ((name, file, module), f) in HOOKS.iter().zip(hooks) {
         dpma_ast::hooks::register(name, file, module, f);
     }
@@ -161,7 +157,8 @@ fn restore_from_db() {
     }
 }
 
-fn sip_general<'a>(cats: &'a Cfg, var: &str) -> Option<&'a str> {
+/// A setting of a file's `[general]` section.
+fn general_var<'a>(cats: &'a Cfg, var: &str) -> Option<&'a str> {
     cats.as_ref()?
         .iter()
         .find(|c| c.name.eq_ignore_ascii_case("general"))?
@@ -188,16 +185,8 @@ enum PhoneFx {
     Reconfigure { name: String, uri: String, session: String },
 }
 
-/// A sip.conf (chan_sip) section for `line` (`process_lines_sip`).
-fn apply_sip_section(cat: &Category, line: &mut Line) {
-    line.delme = false;
-    let _ = options::set_line_option(line, "tech", "SIP");
-    for v in &cat.vars {
-        let _ = options::set_line_option(line, &v.name, &v.value);
-    }
-}
-
-/// A users.conf or res_digium_phone.conf section for `line`.
+/// A res_digium_phone.conf `[line]` or `[external_line]` section for
+/// `line`.
 fn apply_section(cat: &Category, line: &mut Line) {
     line.delme = false;
     for v in &cat.vars {
@@ -205,17 +194,10 @@ fn apply_section(cat: &Category, line: &mut Line) {
     }
 }
 
-/// Does a users.conf section have SIP (chan_sip's `hassip`)?
-fn users_sip_enabled(users_sip: &Cfg, cat: &Category) -> bool {
-    let all = ast_true(sip_general(users_sip, "hassip").unwrap_or(""));
-    let v = cat.get("hassip").unwrap_or("");
-    (all && !ast_false(v)) || ast_true(v)
-}
-
 /// Does a users.conf section have voicemail (app_voicemail's
 /// `hasvoicemail`)?
 fn users_voicemail_enabled(users_voicemail: &Cfg, cat: &Category) -> bool {
-    let all = ast_true(sip_general(users_voicemail, "hasvoicemail").unwrap_or(""));
+    let all = ast_true(general_var(users_voicemail, "hasvoicemail").unwrap_or(""));
     let v = cat.get("hasvoicemail").unwrap_or("");
     if all {
         !ast_false(v) || ast_true(v)
@@ -226,36 +208,27 @@ fn users_voicemail_enabled(users_voicemail: &Cfg, cat: &Category) -> bool {
 
 /// voicemail.conf's `userscontext`, "default" when unset.
 fn users_context(voicemail: &Cfg) -> String {
-    match sip_general(voicemail, "userscontext") {
+    match general_var(voicemail, "userscontext") {
         Some(c) if !c.is_empty() => c.to_string(),
         _ => "default".into(),
     }
 }
 
 /// `phone_users_process_line` (`process_line_dp`, used by the PJSIP
-/// helper through the exported API): apply again the settings of the
-/// sections named after `line` in voicemail.conf (each mailbox of a
-/// context named after the line sets that mailbox's line, as in the
-/// original), users.conf (app_voicemail), sip.conf, users.conf
-/// (chan_sip), and res_digium_phone.conf.  Settings for other lines go to
-/// `reg`.  Unlike a full pass, nothing is reset first.
-pub fn process_line(line: &mut Line, mut reg: Option<&mut Registry>) {
-    let Some(src) = sources() else { return };
-    let name = line.name.clone();
-    let named = |c: &&Category| c.name.eq_ignore_ascii_case(&name);
-
-    // set_mailbox: the line named `target` gets `mailbox`.
-    let mut set_mailbox = |target: &str, mailbox: &str, line: &mut Line| {
-        if target.eq_ignore_ascii_case(&line.name) {
-            let _ = options::set_line_option(line, "mailbox", mailbox);
-        } else if let Some(l) = reg.as_deref_mut().and_then(|r| r.lines.get_mut(target)) {
-            let _ = options::set_line_option(l, "mailbox", mailbox);
-        }
-    };
+/// helper through the exported API), first part: the mailboxes to set
+/// (`set_mailbox`), in order, as (line, mailbox).  Each variable of a
+/// voicemail.conf context named after `line` sets the mailbox of the line
+/// named after the variable (as in the original), and a users.conf
+/// (app_voicemail) section named after `line` with voicemail sets that
+/// line's mailbox.
+pub fn line_mailboxes(line: &str) -> Vec<(String, String)> {
+    let Some(src) = sources() else { return Vec::new() };
+    let named = |c: &&Category| c.name.eq_ignore_ascii_case(line);
+    let mut out = Vec::new();
     if let Some(vm) = &src.voicemail {
         for cat in vm.iter().filter(named) {
             for v in &cat.vars {
-                set_mailbox(&v.name, &format!("{}@{}", v.name, cat.name), line);
+                out.push((v.name.clone(), format!("{}@{}", v.name, cat.name)));
             }
         }
     }
@@ -263,31 +236,26 @@ pub fn process_line(line: &mut Line, mut reg: Option<&mut Registry>) {
         let context = users_context(&src.voicemail);
         for cat in users.iter().filter(named) {
             if users_voicemail_enabled(&src.users_voicemail, cat) {
-                set_mailbox(&cat.name, &format!("{}@{}", cat.name, context), line);
+                out.push((cat.name.clone(), format!("{}@{}", cat.name, context)));
             }
         }
     }
-    if let Some(sip) = &src.sip {
-        for cat in sip.iter().filter(named) {
-            apply_sip_section(cat, line);
-        }
-    }
-    if let Some(users) = &src.users_sip {
-        for cat in users.iter().filter(named) {
-            if users_sip_enabled(&src.users_sip, cat) {
+    out
+}
+
+/// `phone_users_process_line`, second part: apply the res_digium_phone.conf
+/// `[line]` and `[external_line]` sections named after `line` again.
+/// Unlike a full pass, nothing is reset first.
+pub fn apply_line_sections(line: &mut Line) {
+    let Some(phones) = sources().and_then(|s| s.phones) else { return };
+    let name = line.name.clone();
+    for cat in phones.iter().filter(|c| c.name.eq_ignore_ascii_case(&name)) {
+        match cat.get("type") {
+            None => dpma_log!("No type set for {}", cat.name),
+            Some(t) if t.eq_ignore_ascii_case("line") || t.eq_ignore_ascii_case("external_line") => {
                 apply_section(cat, line);
             }
-        }
-    }
-    if let Some(phones) = &src.phones {
-        for cat in phones.iter().filter(named) {
-            match cat.get("type") {
-                None => dpma_log!("No type set for {}", cat.name),
-                Some(t) if t.eq_ignore_ascii_case("line") || t.eq_ignore_ascii_case("external_line") => {
-                    apply_section(cat, line);
-                }
-                Some(_) => {}
-            }
+            Some(_) => {}
         }
     }
 }
@@ -305,22 +273,24 @@ const KNOWN_TYPES: &[&str] = &[
 pub fn process(trigger: &str) -> Result<(), ()> {
     dpma_log!("Reconfiguring triggered by {}", trigger);
 
-    let (phones_cfg, sip, users_sip, voicemail, users_voicemail) = {
+    let (phones_cfg, voicemail, users_voicemail) = {
         let g = SOURCES.lock().unwrap();
         let Some(src) = g.as_ref() else { return Err(()) };
         let Some(p) = src.phones.clone() else { return Err(()) };
-        (p, src.sip.clone(), src.users_sip.clone(), src.voicemail.clone(), src.users_voicemail.clone())
+        (p, src.voicemail.clone(), src.users_voicemail.clone())
     };
 
     let _pass = PROCESS.lock().unwrap();
 
-    let nonempty = |v: Option<&str>| v.filter(|s| !s.is_empty()).map(str::to_string);
-    let sip_context = nonempty(sip_general(&sip, "context")).unwrap_or_else(|| "default".into());
     let users_context = users_context(&voicemail);
     let general = crate::config::get();
 
     let mut fx = Effects::default();
     {
+        // Every line object stays locked while lines are marked and phones
+        // claim theirs (the original locks each line in
+        // phone_line_mark_delme_cb and set_user_option).
+        let _lines = crate::exports::objects::lock_all_lines();
         let mut g = write();
         let Some(reg) = g.as_mut() else { return Err(()) };
 
@@ -357,28 +327,10 @@ pub fn process(trigger: &str) -> Result<(), ()> {
             match cat.get("type") {
                 None => dpma_log!("No type set for {}", cat.name),
                 Some(t) if t.eq_ignore_ascii_case("phone") => {
-                    build_phone(reg, cat, &sip_context, &general, &mut fx);
+                    build_phone(reg, cat, &general, &mut fx);
                 }
                 Some(t) if KNOWN_TYPES.iter().any(|k| k.eq_ignore_ascii_case(t)) => {}
                 Some(t) => dpma_log!("Unknown type \"{}\" for entry \"{}\"", t, cat.name),
-            }
-        }
-
-        // ---- lines from sip.conf / users.conf (chan_sip) ----
-        if let Some(sip) = &sip {
-            for cat in sip.iter().filter(|c| !c.name.eq_ignore_ascii_case("general")) {
-                if let Some(line) = reg.lines.get_mut(&cat.name) {
-                    apply_sip_section(cat, line);
-                }
-            }
-        }
-        if let Some(users) = &users_sip {
-            for cat in users.iter().filter(|c| !c.name.eq_ignore_ascii_case("general")) {
-                if users_sip_enabled(&users_sip, cat) {
-                    if let Some(line) = reg.lines.get_mut(&cat.name) {
-                        apply_section(cat, line);
-                    }
-                }
             }
         }
     }
@@ -386,11 +338,15 @@ pub fn process(trigger: &str) -> Result<(), ()> {
     // ---- other modules: the C config handlers (the PJSIP helper) ----
     // They call back into the exported API, which takes the registry lock
     // itself, so it is released meanwhile (the original holds no global
-    // lock here either; this pass is still serialized by PROCESS).
+    // lock here either; this pass is still serialized by PROCESS).  The
+    // helper locks each line itself while it updates it.
     crate::exports::process_config_handlers();
 
     let hints;
     {
+        // As above: process_lines_dp, set_mailbox, and phone_line_hint_cb
+        // lock each line in the original.
+        let _lines = crate::exports::objects::lock_all_lines();
         let mut g = write();
         let Some(reg) = g.as_mut() else { return Err(()) };
 
@@ -499,7 +455,7 @@ pub fn process(trigger: &str) -> Result<(), ()> {
 }
 
 /// `build_user`.
-fn build_phone(reg: &mut Registry, cat: &Category, sip_context: &str, general: &crate::config::General, fx: &mut Effects) {
+fn build_phone(reg: &mut Registry, cat: &Category, general: &crate::config::General, fx: &mut Effects) {
     let name = cat.name.as_str();
     let mut phone = match reg.phones.get_mut(name) {
         Some(p) => std::mem::replace(p, Phone::new(name)),
@@ -515,7 +471,7 @@ fn build_phone(reg: &mut Registry, cat: &Category, sip_context: &str, general: &
 
     let lines_before: Vec<String> = reg.lines.values().map(|l| l.name.clone()).collect();
     {
-        let mut ctx = UserCtx { lines: &mut reg.lines, networks: &mut reg.networks, sip_context };
+        let mut ctx = UserCtx { lines: &mut reg.lines, networks: &mut reg.networks };
         for v in &cat.vars {
             if options::set_user_option(&mut ctx, &mut phone, &v.name, &v.value).is_err() {
                 dpma_log!(

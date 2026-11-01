@@ -64,6 +64,8 @@ fn user_entry(reg: &Registry, p: &Phone) -> (String, String, &'static str) {
 /// sets; its only caller passes 0, so that variant is not ported.)
 pub fn build_userlist_json(out: &mut String, filter_group_pin: bool, config_password: &str) -> Result<usize, ()> {
     let entries: Vec<(String, String, &'static str)> = {
+        // The original locks each primary line while it reads it.
+        let _lines = crate::exports::objects::lock_all_lines();
         let g = read();
         let Some(reg) = g.as_ref() else { return Err(()) };
         reg.phones

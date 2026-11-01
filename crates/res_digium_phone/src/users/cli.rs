@@ -321,6 +321,8 @@ fn show_line(a: &CliArgs) -> CliResult {
     if a.argc() != 4 {
         return CliResult::ShowUsage;
     }
+    // Locked while shown, as in the original (see exports::objects).
+    let _line = crate::exports::objects::lock_lines([a.argv[3].as_str()]);
     let g = read();
     let Some(reg) = g.as_ref() else { return CliResult::Success };
     let Some(l) = reg.lines.values().find(|l| l.name == a.argv[3]) else { return CliResult::Success };

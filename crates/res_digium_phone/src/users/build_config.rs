@@ -1158,6 +1158,11 @@ pub fn read_config(out: &mut String, dir: &str, file: &str) -> Result<(), ()> {
 pub fn get_config(phone: &str, out: &mut String, file_dir: &str, model: &str) -> Result<(), ()> {
     super::presence::user_application_sync(phone);
     let presence_lines = {
+        // The phone's lines are locked while they are read (the original
+        // locks each line in add_internal_line_account and
+        // add_external_line_account): the PJSIP helper updates lines with
+        // their lock held.
+        let _lines = crate::exports::objects::lock_phone_lines(phone);
         let g = read();
         let reg = g.as_ref().ok_or(())?;
         let p = reg.phones.get(phone).ok_or(())?;
