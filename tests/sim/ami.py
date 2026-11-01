@@ -39,6 +39,13 @@ import threading
 import time
 from collections import deque
 
+# Text from Asterisk and from phones can hold bytes that are not UTF-8,
+# kept as lone surrogates ("surrogateescape"); print them as those bytes
+# instead of failing.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(errors="surrogateescape")
+
 DEFAULT_HOST = "127.0.0.1"
 
 

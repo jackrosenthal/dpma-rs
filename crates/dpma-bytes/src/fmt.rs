@@ -9,12 +9,13 @@
 //!
 //! The macros take `format!`'s format strings.  Each argument that is a
 //! byte string (`Vec<u8>`, `[u8]`, `[u8; N]`, `Cow<[u8]>`, or one
-//! reference to one of these) is written as its exact bytes; any other
-//! argument as its `Display` (or `Debug`, `{:x}`, ...), as `format!` would.
-//! Width and precision count bytes for byte strings, as `printf`'s `%s`
-//! does (`{:<20.20}` is `%-20.20s`), so a precision can cut a multi-byte
-//! character as it does in C.  A byte string's `{:?}` is `bstr`'s escaped
-//! form.  Arguments captured in the format string (`{name}`) are not
+//! reference to one of these) is written as its exact bytes, and text
+//! (`str`, `String`, `Cow<str>`, or one reference to one of these) as its
+//! UTF-8 bytes; any other argument as its `Display` (or `Debug`, `{:x}`,
+//! ...), as `format!` would.  Width and precision count bytes for byte
+//! strings and text, as `printf`'s `%s` does (`{:<20.20}` is
+//! `%-20.20s`), so a precision can cut a multi-byte character as it does
+//! in C.  Their `{:?}` is `bstr`'s escaped form.  Arguments captured in the format string (`{name}`) are not
 //! byte-string aware; byte strings have no `Display`, so the compiler
 //! refuses them.
 //!
@@ -23,10 +24,12 @@
 //! (and each byte of the rare valid characters U+10FF00 to U+10FFFF) is
 //! replaced by the character U+10FF00 plus that byte, and the output sink
 //! maps those characters back.  Nothing else writes characters in that
-//! range: the escaping only happens while one of these macros is
-//! formatting, and a byte string formatted anywhere else (for example, by
-//! `format!` on a [`Raw`]) is written lossily, with U+FFFD for invalid
-//! bytes.
+//! range: text arguments are escaped the same way, the escaping only
+//! happens while one of these macros is formatting, and a byte string
+//! formatted anywhere else (for example, by `format!` on a [`Raw`]) is
+//! written lossily, with U+FFFD for invalid bytes.  (Only the format
+//! string itself is not escaped; it would have to contain such a
+//! character literally.)
 
 use std::borrow::Cow;
 use std::cell::Cell;
@@ -209,6 +212,14 @@ bytes_arg! {
     &'b Cow<'b, [u8]> => |v| v.as_ref();
     bstr::BStr => |v| v.as_ref();
     &'b bstr::BStr => |v| v.as_ref();
+    // Text is its UTF-8 bytes (so text can never be mistaken for the
+    // escapes below, whatever it holds).
+    str => |v| v.as_bytes();
+    &'b str => |v| v.as_bytes();
+    String => |v| v.as_bytes();
+    &'b String => |v| v.as_bytes();
+    Cow<'b, str> => |v| v.as_bytes();
+    &'b Cow<'b, str> => |v| v.as_bytes();
 }
 
 impl<'a, const N: usize> BytesArg<'a> for &Arg<'a, [u8; N]> {
@@ -302,6 +313,8 @@ mod tests {
         let c: Cow<[u8]> = Cow::Borrowed(b"\xe9");
         assert_eq!(bformat!("<{}>", c), b"<\xe9>");
         assert_eq!(bformat!("{} {} {}", "str", String::from("s"), 42), b"str s 42");
+        let t = "\u{10FF41}é";
+        assert_eq!(bformat!("{}|{}|{:<4}|", t, t.to_string(), "é"), "\u{10FF41}é|\u{10FF41}é|é  |".as_bytes());
         assert_eq!(bformat!("plain"), b"plain");
         let n = 5;
         assert_eq!(bformat!("{n}:{:02x}:{:>3}", 10, 7), b"5:0a:  7");

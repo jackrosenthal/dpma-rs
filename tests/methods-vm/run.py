@@ -191,6 +191,8 @@ def log_mark():
 
 
 def log_since(mark):
+    # Asterisk's logger writes from its own thread: give it a moment.
+    time.sleep(0.3)
     with open(MSGLOG, errors="replace") as f:
         f.seek(mark)
         return f.read()

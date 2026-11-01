@@ -52,6 +52,7 @@ HTTP = b"HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\n\r\n"
 
 checks = 0
 failures = []
+sessions = []       # session ids to forget at the end
 
 
 def s(b):
@@ -188,6 +189,7 @@ def phone(mac, **kw):
     ex = p.handshake()
     if not ex.ok:
         sys.exit("handshake failed:\n" + ex.describe())
+    sessions.append(b(p.session))
     return p
 
 
@@ -461,12 +463,24 @@ def check_utf8_phone():
         p.close()
 
 
+def cleanup():
+    """Forget the test phones' sessions and locations in AstDB, so that
+    later suites do not restore them."""
+    for sid in sessions:
+        cli(b"database del DigiumPhoneSessions " + sid)
+    for name in (fx.PHONE, fx.U_PHONE):
+        cli(b"database del DigiumPhoneUsers " + name)
+
+
 def main():
     ami = Ami()
-    check_cli()
-    check_phone(ami)
-    check_incident(ami)
-    check_utf8_phone()
+    try:
+        check_cli()
+        check_phone(ami)
+        check_incident(ami)
+        check_utf8_phone()
+    finally:
+        cleanup()
     print("\n%d checks, %d failed" % (checks, len(failures)))
     for f in failures:
         print("  " + f)

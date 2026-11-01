@@ -14,8 +14,8 @@
 //! - [`bformat!`], [`bwrite!`], and [`bwriteln!`]: `format!`, `write!`,
 //!   and `writeln!` for bytes, with the same format strings, where an
 //!   argument that is a byte string (`Vec<u8>`, `&[u8]`, `[u8; N]`, ...)
-//!   is written as its exact bytes, and anything else as its `Display`
-//!   (see [`mod@fmt`]).
+//!   is written as its exact bytes, text as its UTF-8 bytes, and anything
+//!   else as its `Display` (see [`mod@fmt`]).
 //! - the C library's string functions with the semantics the original
 //!   gets from them in the C locale ([`mod@c`]): strings end at their first
 //!   NUL, and case-insensitive comparisons and hashes fold only ASCII
