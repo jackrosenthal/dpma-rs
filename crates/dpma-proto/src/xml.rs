@@ -1,6 +1,4 @@
 //! XML text helpers.
-//!
-//! Owner: P1 "proto" (wave 1).
 
 use crate::cbuf::c_bytes;
 

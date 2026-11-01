@@ -17,8 +17,6 @@
 //!
 //! The functions log what the original logs (through the crate's log
 //! hook) and return the same text in [`ProtoError::Crypto`].
-//!
-//! Owner: P1 "proto" (wave 1).
 
 use crate::cbuf::c_bytes;
 use crate::{LogLevel, ProtoError, Result};

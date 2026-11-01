@@ -13,8 +13,6 @@
 //! and again at reload).  Unlike the original, which fails to load when its
 //! CA store cannot be built, a missing or unreadable file is logged and the
 //! module loads; handshakes then fail.
-//!
-//! Owner: P7 "session" (wave 2).
 
 use super::{now, Session, DB_FAMILY};
 use crate::util::NamedMap;

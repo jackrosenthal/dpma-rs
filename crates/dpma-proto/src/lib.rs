@@ -9,8 +9,6 @@
 //! messages are passed, with the original's file, line, and function
 //! names, to a hook that the module installs with [`set_log_hook`]; without
 //! a hook (for example, in unit tests) they are dropped.
-//!
-//! Owner: package P1 "proto" (wave 1).  See dev/notes/port-plan.md.
 
 pub mod cert;
 pub mod crypto;
@@ -29,8 +27,6 @@ use std::sync::RwLock;
 /// Errors from this crate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProtoError {
-    /// Not implemented yet (skeleton).
-    NotImplemented,
     /// Invalid input (bad hex, bad base64, wrong length, ...).
     Invalid(String),
     /// An OpenSSL operation failed; the text is what the original logs
@@ -42,7 +38,6 @@ impl ProtoError {
     /// The bare message, without the variant prefix of `Display`.
     pub fn message(&self) -> &str {
         match self {
-            ProtoError::NotImplemented => "not implemented",
             ProtoError::Invalid(s) | ProtoError::Crypto(s) => s,
         }
     }
@@ -51,7 +46,6 @@ impl ProtoError {
 impl std::fmt::Display for ProtoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProtoError::NotImplemented => write!(f, "not implemented"),
             ProtoError::Invalid(s) => write!(f, "invalid: {}", s),
             ProtoError::Crypto(s) => write!(f, "crypto: {}", s),
         }

@@ -62,16 +62,6 @@ impl Request {
         let l = cstr(listflag);
         unsafe { ffi::astman_send_listack(self.s, self.m, c.as_ptr(), l.as_ptr()) };
     }
-
-    /// The "ActionID: xxx\r\n" line for this request, or "" when absent.
-    pub fn action_id_line(&self) -> String {
-        let id = self.header("ActionID");
-        if id.is_empty() {
-            String::new()
-        } else {
-            format!("ActionID: {}\r\n", id)
-        }
-    }
 }
 
 pub type ActionFn = fn(&Request) -> i32;
@@ -141,48 +131,10 @@ pub fn event_at(category: i32, event: &str, file: &str, line: u32, func: &str, b
     unsafe { ffi::dpma_glue_manager_event_at(category, e.as_ptr(), f.as_ptr(), line as c_int, fu.as_ptr(), b.as_ptr()) };
 }
 
-pub fn eventflag_system() -> i32 {
-    unsafe { ffi::dpma_glue_eventflag_system() }
-}
-
-pub fn eventflag_config() -> i32 {
-    unsafe { ffi::dpma_glue_eventflag_config() }
-}
-
 /// Run a manager action in-process (through a custom hook) and return the
 /// raw response text.  `action` is the full action text, e.g.
 /// "Action: QueueStatus\r\nQueue: sales\r\n".
 pub fn hook_action(action: &str) -> Option<String> {
     let c = cstr(action);
     unsafe { take_ast_string(ffi::dpma_glue_manager_hook_action(c.as_ptr())) }
-}
-
-/// Parse manager response text into blocks of `Key: Value` pairs.
-pub fn parse_blocks(text: &str) -> Vec<Vec<(String, String)>> {
-    let mut blocks = Vec::new();
-    let mut cur = Vec::new();
-    for line in text.split('\n') {
-        let line = line.trim_end_matches('\r');
-        if line.is_empty() {
-            if !cur.is_empty() {
-                blocks.push(std::mem::take(&mut cur));
-            }
-            continue;
-        }
-        if let Some((k, v)) = line.split_once(':') {
-            cur.push((k.trim().to_string(), v.trim().to_string()));
-        }
-    }
-    if !cur.is_empty() {
-        blocks.push(cur);
-    }
-    blocks
-}
-
-/// Look up a key in a parsed block.
-pub fn block_get<'a>(block: &'a [(String, String)], key: &str) -> Option<&'a str> {
-    block
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case(key))
-        .map(|(_, v)| v.as_str())
 }

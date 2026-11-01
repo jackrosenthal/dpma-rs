@@ -21,6 +21,7 @@
 //! process, which links it), as the original does.  The `struct ast_str`
 //! results are freed by the caller with `ast_free`.
 
+use dpma_ast::xml::{self, xmlAddChild, xmlCopyNode, xmlDocGetRootElement, xmlFreeDoc, xmlReadFile};
 use dpma_ast::{ast_log, dpma_log, log::LOG_ERROR};
 use std::ffi::{CStr, VaList};
 use std::os::raw::{c_char, c_int, c_uint, c_ulong, c_void};
@@ -71,49 +72,11 @@ pub unsafe extern "C" fn phone_utils_xml_escape(input: *const c_char, out: *mut 
 
 // ---- libxml2 ----
 
-#[repr(C)]
-struct XmlNodeSet {
-    node_nr: c_int,
-    node_max: c_int,
-    node_tab: *mut *mut c_void,
-}
-
-#[repr(C)]
-struct XmlXPathObject {
-    kind: c_int,
-    nodesetval: *mut XmlNodeSet,
-}
-
-extern "C" {
-    fn xmlXPathNewContext(doc: *mut c_void) -> *mut c_void;
-    fn xmlXPathEvalExpression(expr: *const c_char, ctx: *mut c_void) -> *mut XmlXPathObject;
-    fn xmlXPathFreeObject(obj: *mut XmlXPathObject);
-    fn xmlXPathFreeContext(ctx: *mut c_void);
-    fn xmlCopyNode(node: *mut c_void, extended: c_int) -> *mut c_void;
-    fn xmlAddChild(parent: *mut c_void, cur: *mut c_void) -> *mut c_void;
-    fn xmlDocGetRootElement(doc: *mut c_void) -> *mut c_void;
-    fn xmlReadFile(filename: *const c_char, encoding: *const c_char, options: c_int) -> *mut c_void;
-    fn xmlFreeDoc(doc: *mut c_void);
-}
-
 /// `xmlNodePtr phone_utils_xml_find(xmlDocPtr doc, const xmlChar *xpath)`:
 /// the first node matching `xpath`, or NULL.
 #[no_mangle]
 pub unsafe extern "C" fn phone_utils_xml_find(doc: *mut c_void, xpath: *const c_char) -> *mut c_void {
-    let ctx = xmlXPathNewContext(doc);
-    if ctx.is_null() {
-        return std::ptr::null_mut();
-    }
-    let obj = xmlXPathEvalExpression(xpath, ctx);
-    if obj.is_null() {
-        xmlXPathFreeContext(ctx);
-        return std::ptr::null_mut();
-    }
-    let set = (*obj).nodesetval;
-    let node = if !set.is_null() && (*set).node_nr != 0 { *(*set).node_tab } else { std::ptr::null_mut() };
-    xmlXPathFreeObject(obj);
-    xmlXPathFreeContext(ctx);
-    node
+    xml::xpath_first_cstr(doc, xpath).unwrap_or(std::ptr::null_mut())
 }
 
 /// `xmlNodePtr phone_utils_xml_add(xmlNodePtr parent, xmlNodePtr node)`:
@@ -140,16 +103,18 @@ pub unsafe extern "C" fn phone_utils_xml_add_doc(parent: *mut c_void, doc: *mut 
 /// from `file`.
 #[no_mangle]
 pub unsafe extern "C" fn phone_utils_xml_add_file(parent: *mut c_void, file: *const c_char, xpath: *const c_char) {
-    let name = || CStr::from_ptr(file).to_string_lossy().into_owned();
-    let doc = xmlReadFile(file, std::ptr::null(), 0);
-    if doc.is_null() {
-        dpma_log!("Unable to read XML file {}", name());
-        return;
-    }
-    if phone_utils_xml_add_doc(parent, doc, xpath).is_null() {
-        dpma_log!("Unable to add file {} to parent", name());
-    }
-    xmlFreeDoc(doc);
+    dpma_ast::guard((), || {
+        let name = || CStr::from_ptr(file).to_string_lossy().into_owned();
+        let doc = xmlReadFile(file, std::ptr::null(), 0);
+        if doc.is_null() {
+            dpma_log!("Unable to read XML file {}", name());
+            return;
+        }
+        if phone_utils_xml_add_doc(parent, doc, xpath).is_null() {
+            dpma_log!("Unable to add file {} to parent", name());
+        }
+        xmlFreeDoc(doc);
+    })
 }
 
 // ---- struct ast_str results ----
@@ -164,25 +129,29 @@ extern "C" {
 /// name the (empty) string is returned after a log.
 #[no_mangle]
 pub unsafe extern "C" fn phone_utils_filename_to_fullpath(name: *const c_char, dir: *const c_char) -> *mut c_void {
-    let buf = dpma_glue_exports_str_new(0x80, std::ptr::null());
-    if buf.is_null() {
-        return buf;
-    }
-    if name.is_null() || *name == 0 {
-        dpma_log!("No file name was provided for a file save option.");
-        return buf;
-    }
-    let name = CStr::from_ptr(name).to_string_lossy();
-    let path = if name.starts_with('/') {
-        name.into_owned()
-    } else {
-        let dir = if dir.is_null() { "(null)".into() } else { CStr::from_ptr(dir).to_string_lossy() };
-        format!("{}/{}", dir, name)
-    };
-    // ast_str_set on the buffer just made: free it and set a new one.
-    dpma_ast::ffi::dpma_glue_free(buf);
-    let v = dpma_ast::cstr(&path);
-    dpma_glue_exports_str_new(0x80, v.as_ptr())
+    dpma_ast::guard(std::ptr::null_mut(), || {
+        let buf = dpma_glue_exports_str_new(0x80, std::ptr::null());
+        if buf.is_null() {
+            return buf;
+        }
+        if name.is_null() || *name == 0 {
+            dpma_log!("No file name was provided for a file save option.");
+            return buf;
+        }
+        // Built as bytes, so names and directories that are not UTF-8 pass
+        // through unchanged.
+        let name = CStr::from_ptr(name).to_bytes();
+        let mut path = Vec::new();
+        if name.first() != Some(&b'/') {
+            path.extend_from_slice(if dir.is_null() { b"(null)" } else { CStr::from_ptr(dir).to_bytes() });
+            path.push(b'/');
+        }
+        path.extend_from_slice(name);
+        // ast_str_set on the buffer just made: free it and set a new one.
+        dpma_ast::ffi::dpma_glue_free(buf);
+        let v = std::ffi::CString::new(path).unwrap_or_default();
+        dpma_glue_exports_str_new(0x80, v.as_ptr())
+    })
 }
 
 /// `struct ast_str *phone_utils_shell_quoted(const char *in)`: `in` in
@@ -190,19 +159,21 @@ pub unsafe extern "C" fn phone_utils_filename_to_fullpath(name: *const c_char, d
 /// (The original crashes on NULL; here NULL is treated as "".)
 #[no_mangle]
 pub unsafe extern "C" fn phone_utils_shell_quoted(input: *const c_char) -> *mut c_void {
-    let bytes: &[u8] = if input.is_null() { b"" } else { CStr::from_ptr(input).to_bytes() };
-    let mut q = Vec::with_capacity(bytes.len() * 4 + 3);
-    q.push(b'\'');
-    for &b in bytes {
-        if b == b'\'' {
-            q.extend_from_slice(b"'\\''");
-        } else {
-            q.push(b);
+    dpma_ast::guard(std::ptr::null_mut(), || {
+        let bytes: &[u8] = if input.is_null() { b"" } else { CStr::from_ptr(input).to_bytes() };
+        let mut q = Vec::with_capacity(bytes.len() * 4 + 3);
+        q.push(b'\'');
+        for &b in bytes {
+            if b == b'\'' {
+                q.extend_from_slice(b"'\\''");
+            } else {
+                q.push(b);
+            }
         }
-    }
-    q.push(b'\'');
-    let v = std::ffi::CString::new(q).unwrap_or_default();
-    dpma_glue_exports_str_new(0x10, v.as_ptr())
+        q.push(b'\'');
+        let v = std::ffi::CString::new(q).unwrap_or_default();
+        dpma_glue_exports_str_new(0x10, v.as_ptr())
+    })
 }
 
 /// `void phone_utils_parse_uri(char *uri, char **addr, char **transport)`
@@ -267,8 +238,10 @@ pub unsafe extern "C" fn phone_utils_str_to_uint(s: *const c_char, out: *mut c_u
 #[no_mangle]
 pub unsafe extern "C" fn dpma_asprintf(ret: *mut *mut c_char, fmt: *const c_char, args: ...) -> c_int {
     if dpma_glue_exports_vasprintf(ret, fmt, args) < 0 {
-        let f = if fmt.is_null() { String::from("(null)") } else { CStr::from_ptr(fmt).to_string_lossy().into_owned() };
-        ast_log!(LOG_ERROR, "Unable to encode format '{}'", f);
+        dpma_ast::guard((), || {
+            let f = if fmt.is_null() { String::from("(null)") } else { CStr::from_ptr(fmt).to_string_lossy().into_owned() };
+            ast_log!(LOG_ERROR, "Unable to encode format '{}'", f);
+        });
         return -1;
     }
     0

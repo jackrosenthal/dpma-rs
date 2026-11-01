@@ -21,14 +21,6 @@ pub unsafe fn from_ptr(p: *const c_char) -> Option<String> {
     }
 }
 
-/// Copy a (possibly NULL) C string, mapping NULL and "" to None.
-///
-/// # Safety
-/// `p` must be NULL or point to a NUL terminated string.
-pub unsafe fn from_ptr_nonempty(p: *const c_char) -> Option<String> {
-    from_ptr(p).filter(|s| !s.is_empty())
-}
-
 /// Take ownership of an ast_malloc'ed string, copy it, and free it.
 ///
 /// # Safety

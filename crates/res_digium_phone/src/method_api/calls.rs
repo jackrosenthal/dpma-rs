@@ -25,8 +25,6 @@
 //! looks for recording channels named "SIP/<account>" and handles parker
 //! dial strings "SIP/<peer>" (reading `SIPPEER(<peer>,useragent)`); both
 //! only ever matched chan_sip channels and are left out.
-//!
-//! Owner: P10 "methods-calls" (wave 2).
 
 use crate::method::MethodCall;
 use crate::request::{error_response_json, error_response_xml};
@@ -418,7 +416,7 @@ fn handle_parked_call_message(parker_dial_string: &str, event_type: i32, parking
     if !is_dphone || !show {
         return;
     }
-    let Some(msg) = dpma_ast::msg::Msg::alloc() else {
+    let Some(mut msg) = dpma_ast::msg::Msg::alloc() else {
         return;
     };
     // "%d" of the unsigned parking space.

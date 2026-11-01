@@ -15,8 +15,6 @@
 //! | `handshake.rs` | `handle_request_handshake`, `prune_session_by_mac`, `phone_msg_set_common_password`, `set_auth_requirements` |
 //! | `persist.rs` | `phone_session_update_db_info`, `phone_session_db_restore_entry` |
 //! | `cli.rs`, `ami.rs` | `digium_phones show sessions`, `DPMAShowPhones` |
-//!
-//! Owner: P7 "session" (wave 2).
 
 pub mod ami;
 pub mod cli;

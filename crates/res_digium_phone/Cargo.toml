@@ -11,8 +11,8 @@ name = "res_digium_phone"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# Test-only CLI commands (`dpmadev ...`) for exercising packages in the
-# scratch Asterisk; never enabled in release builds.
+# Test-only CLI commands (`dpmadev ...`) used by the test suites in
+# dev/tests; never enabled in release builds.
 devtest = []
 
 [dependencies]

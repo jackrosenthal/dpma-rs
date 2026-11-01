@@ -11,8 +11,6 @@
 //! `pthread_testcancel` after every transaction) plus a signal to break the
 //! wait.  Here a stop flag is checked instead, and `transport::wake_reader`
 //! interrupts a blocked `next_transaction`.
-//!
-//! Owner: P3 "request" (wave 1).
 
 use crate::session::Transaction;
 use dpma_ast::dpma_log;
@@ -139,8 +137,4 @@ pub fn stop() {
     r.control.cond.notify_all();
     crate::transport::wake_reader();
     let _ = r.handle.join();
-}
-
-pub fn is_running() -> bool {
-    THREAD.lock().unwrap().as_ref().is_some_and(|r| !r.handle.is_finished())
 }

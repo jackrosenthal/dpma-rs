@@ -41,7 +41,7 @@
 //!   responder uses one only if multicast is enabled on it (never the case
 //!   by default), which lets the tests run on `lo` in a network namespace.
 
-use crate::exports::config_api::{self as c, DpmaConfig};
+use crate::exports::config_api::{self as c, text};
 use dpma_ast::dpma_log;
 use mdns_sd::{IfKind, IfPredicate, ServiceDaemon, ServiceInfo, TxtProperty};
 use std::ffi::CStr;
@@ -74,20 +74,6 @@ struct Responder {
 }
 
 static STATE: Mutex<Option<Responder>> = Mutex::new(None);
-
-/// A string getter's value; "" for a NULL configuration (the original
-/// would read through a NULL pointer there).
-unsafe fn text(cfg: *mut DpmaConfig, get: unsafe fn(*mut DpmaConfig) -> *const c_char) -> String {
-    if cfg.is_null() {
-        return String::new();
-    }
-    let p = get(cfg);
-    if p.is_null() {
-        String::new()
-    } else {
-        CStr::from_ptr(p).to_string_lossy().into_owned()
-    }
-}
 
 /// `strtol(s, NULL, 10)`.
 fn strtol(s: &str) -> libc::c_long {

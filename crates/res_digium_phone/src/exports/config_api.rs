@@ -67,10 +67,13 @@ extern "C" {
 
 /// The original's static `"<astvarlibdir>/digium_phones"` buffer
 /// (`DAT_005eef40`), returned by `dpma_config_file_dir` without a usable
-/// config.  It is rewritten on every load, as in the original.
+/// config.  The original rewrites it on every load; here it is only
+/// written when its text changes (in practice once, at the first load,
+/// before any C caller can read it), so readers never race a write.
 struct DefaultFileDir(UnsafeCell<[c_char; 0x1000]>);
 // SAFETY: written only by the configuration loader (one thread at a
-// time); C callers read it as a plain string, as with the original.
+// time), and only when the text changes; C callers read it as a plain
+// string.
 unsafe impl Sync for DefaultFileDir {}
 static DEFAULT_FILE_DIR: DefaultFileDir = DefaultFileDir(UnsafeCell::new([0; 0x1000]));
 
@@ -95,9 +98,13 @@ fn copy(dst: &mut [c_char], src: &str) {
 /// Build the C configuration object for `g` and make it current
 /// (`config_replace` in `load_phone_config`).
 pub fn publish(g: &General) {
+    let mut dir = [0 as c_char; 0x1000];
+    copy(&mut dir, &format!("{}/digium_phones", dpma_ast::var_dir()));
     unsafe {
-        let buf = &mut *DEFAULT_FILE_DIR.0.get();
-        copy(buf, &format!("{}/digium_phones", dpma_ast::var_dir()));
+        let buf = DEFAULT_FILE_DIR.0.get();
+        if *buf != dir {
+            *buf = dir;
+        }
     }
     let obj = ao2::alloc(size_of::<DpmaConfig>(), None) as *mut DpmaConfig;
     if obj.is_null() {
@@ -135,6 +142,23 @@ pub fn unpublish() {
     unsafe { dpma_glue_exports_config_replace(std::ptr::null_mut()) };
 }
 
+/// The value of string getter `get` for `cfg`; "" when the configuration
+/// is gone (the original would read through a NULL pointer there).
+///
+/// # Safety
+/// `cfg` must be NULL or a live configuration object.
+pub unsafe fn text(cfg: *mut DpmaConfig, get: unsafe fn(*mut DpmaConfig) -> *const c_char) -> String {
+    if cfg.is_null() {
+        return String::new();
+    }
+    let p = get(cfg);
+    if p.is_null() {
+        String::new()
+    } else {
+        std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned()
+    }
+}
+
 /// `struct dpma_config *dpma_config_get(void)`: the current configuration
 /// with a reference, or NULL.
 #[no_mangle]
@@ -151,21 +175,21 @@ pub unsafe extern "C" fn dpma_config_unref(cfg: *mut DpmaConfig) {
 }
 
 /// The original's pattern for the integer getters: with a NULL config,
-/// use the current one (its reference is dropped at once; the holder
-/// keeps it alive), or `default` without one.
+/// use the current one, or `default` without one.  (The original drops
+/// the current configuration's reference before reading the field, which
+/// races a reload that replaces it; here the reference is held for the
+/// read.)
 unsafe fn int_field(cfg: *mut DpmaConfig, default: c_int, f: impl FnOnce(&DpmaConfig) -> c_int) -> c_int {
-    let mut held = std::ptr::null_mut();
-    let mut cfg = cfg;
-    if cfg.is_null() {
-        cfg = dpma_config_get();
-        held = cfg;
-        if cfg.is_null() {
-            dpma_config_unref(std::ptr::null_mut());
-            return default;
-        }
+    if !cfg.is_null() {
+        return f(&*cfg);
     }
-    dpma_config_unref(held);
-    f(&*cfg)
+    let current = dpma_config_get();
+    if current.is_null() {
+        return default;
+    }
+    let v = f(&*current);
+    dpma_config_unref(current);
+    v
 }
 
 /// `int dpma_config_auth_flags(struct dpma_config *)` (1 without config).
@@ -323,34 +347,31 @@ pub unsafe extern "C" fn dpma_append_config_file_dir(
     file: *const c_char,
     cfg: *mut DpmaConfig,
 ) {
-    let mut held = std::ptr::null_mut();
-    let mut cfg = cfg;
+    // As in the integer getters, the current configuration's reference is
+    // held while it is read (the original drops it first).
+    let held = if cfg.is_null() { dpma_config_get() } else { std::ptr::null_mut() };
+    let cfg = if cfg.is_null() { held } else { cfg };
     if cfg.is_null() {
-        cfg = dpma_config_get();
-        held = cfg;
-        if cfg.is_null() {
-            dpma_config_unref(std::ptr::null_mut());
-            return;
-        }
+        return;
     }
-    dpma_config_unref(held);
     let dir = (*cfg).file_dir.as_ptr();
     if !file.is_null() && *file != 0 {
         libc::snprintf(buf, len as usize, c"%s/%s".as_ptr(), dir, file);
-        return;
+    } else {
+        // ast_copy_string(buf, dir, len), including its behavior for len 0.
+        let mut size = len as usize;
+        let mut d = buf;
+        let mut s = dir;
+        while *s != 0 && size != 0 {
+            *d = *s;
+            d = d.add(1);
+            s = s.add(1);
+            size -= 1;
+        }
+        if size == 0 {
+            d = d.sub(1);
+        }
+        *d = 0;
     }
-    // ast_copy_string(buf, dir, len), including its behavior for len 0.
-    let mut size = len as usize;
-    let mut d = buf;
-    let mut s = dir;
-    while *s != 0 && size != 0 {
-        *d = *s;
-        d = d.add(1);
-        s = s.add(1);
-        size -= 1;
-    }
-    if size == 0 {
-        d = d.sub(1);
-    }
-    *d = 0;
+    dpma_config_unref(held);
 }

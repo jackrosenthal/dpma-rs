@@ -20,7 +20,10 @@
 //!
 //! The `unsafe extern "C"` functions here are C entry points: their safety
 //! contract is the C prototype documented with each (valid pointers to the
-//! objects named, NUL-terminated strings).
+//! objects named, NUL-terminated strings).  Those that run Rust code that
+//! could panic (anything that logs, formats, allocates, or takes a lock)
+//! run it inside `dpma_ast::guard`; the others only do pointer arithmetic,
+//! atomic loads and stores, and libc or ao2 calls.
 
 #![allow(clippy::missing_safety_doc)]
 

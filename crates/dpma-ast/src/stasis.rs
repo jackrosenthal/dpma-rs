@@ -1,7 +1,5 @@
 //! Stasis topics and message routers: the parking topic subscription of
 //! res_digium_phone (glue in `glue/stasis.c`).
-//!
-//! Filled in by P10 "methods-calls" (wave 2).
 
 use crate::util::{cstr, from_ptr};
 use std::os::raw::{c_char, c_int, c_uint};

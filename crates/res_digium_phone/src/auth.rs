@@ -8,8 +8,6 @@
 //! after the latest failure.  From the fifth failure on, the log line says
 //! "ALERT" and `DPMAShowIncidents` reports it as blocking; nothing is
 //! actually blocked, and the "alert sent" flag is never set in 3.6.13.
-//!
-//! Owner: P3 "request" (wave 1).
 
 use crate::ami::AmiAction;
 use crate::session::Transaction;
@@ -301,7 +299,7 @@ mod devtest {
         if a.argc() < 7 {
             return CliResult::ShowUsage;
         }
-        let Some(msg) = Msg::alloc() else {
+        let Some(mut msg) = Msg::alloc() else {
             a.out("Unable to allocate a message\n");
             return CliResult::Failure;
         };

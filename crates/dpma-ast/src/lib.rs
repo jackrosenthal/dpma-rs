@@ -22,6 +22,7 @@ pub mod db;
 pub mod dial;
 pub mod ffi;
 pub mod hooks;
+pub mod json;
 pub mod log;
 pub mod manager;
 pub mod msg;

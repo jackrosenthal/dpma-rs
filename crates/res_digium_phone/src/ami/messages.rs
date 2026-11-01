@@ -18,8 +18,6 @@
 //! (`ast_sched_start_thread`) or run (`ast_sched_runq`), so the expiry never
 //! fires and a request that is never answered stays queued until unload.
 //! (`dpmadev ami runq` runs the due entries by hand.)
-//!
-//! Owner: P13 "ami" (wave 3).
 
 use super::AmiAction;
 use crate::session::{self, Outgoing, Transaction};

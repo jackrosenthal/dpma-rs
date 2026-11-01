@@ -25,8 +25,6 @@
 //! lock and then perform the side effects that leave the users layer
 //! (sessions, AstDB, messages, and their log lines) in the original's
 //! order, after releasing it.
-//!
-//! Owner: P8 "users-runtime" (wave 2).
 
 use super::*;
 use crate::session::{self, Outgoing};

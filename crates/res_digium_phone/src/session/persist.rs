@@ -26,8 +26,6 @@
 //! as authenticated but inactive (so it is pruned after 59 idle seconds
 //! unless a phone user's `last_session_id` re-activates it), and deletes
 //! its AstDB entry until the session is saved again.
-//!
-//! Owner: P7 "session" (wave 2).
 
 use super::store::{alloc, NewSession};
 use super::{Session, DB_FAMILY};

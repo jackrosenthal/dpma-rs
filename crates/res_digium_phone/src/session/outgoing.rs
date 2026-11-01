@@ -9,8 +9,6 @@
 //! `dpma_proto::framing`), each sent as its own `ast_msg` through the
 //! `digium_phone_module` extension, `message_delay` ms apart.  The
 //! session's lock is held for the whole send.
-//!
-//! Owner: P7 "session" (wave 2).
 
 use super::{now, Outgoing, Session, Transaction};
 use crate::transport;
@@ -134,7 +132,7 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
     let n = chunks.len();
     for (i, chunk) in chunks.iter().enumerate() {
         let last = i + 1 == n;
-        let Some(m) = transport::new_outgoing(&out.response_uri) else {
+        let Some(mut m) = transport::new_outgoing(&out.response_uri) else {
             dpma_log!("error sending phone msg, session id {}", session.id);
             return Err(());
         };
@@ -328,7 +326,7 @@ pub fn send_handshake_required(
     body: &str,
     origination_network: &str,
 ) {
-    let Some(m) = transport::new_outgoing(response_uri) else { return };
+    let Some(mut m) = transport::new_outgoing(response_uri) else { return };
     m.set_exten(transport::SEND_EXTEN);
     m.set_var(h::RESPONSE_TYPE, "HandshakeResponse");
     m.set_var(h::ERROR_ID, "-398");

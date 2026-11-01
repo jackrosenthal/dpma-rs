@@ -12,8 +12,6 @@
 //! pointers into it; they are ported on a byte buffer so that every result is exactly
 //! the C string the original's pointer would show.  Unlike chan_sip's
 //! versions, this copy logs its warnings at the `DPMA` level.
-//!
-//! Owner: P1 "proto" (wave 1).
 
 use crate::cbuf::{c_bytes, contains_ignore_case, eq_ignore_case, CBuf, EMPTY};
 use crate::LogLevel;

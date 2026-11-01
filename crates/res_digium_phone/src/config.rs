@@ -114,15 +114,6 @@ impl General {
             &self.registration_port
         }
     }
-
-    /// Path of `name` inside the file directory.
-    pub fn file_path(&self, name: &str) -> String {
-        if self.file_directory.ends_with('/') {
-            format!("{}{}", self.file_directory, name)
-        } else {
-            format!("{}/{}", self.file_directory, name)
-        }
-    }
 }
 
 static CURRENT: RwLock<Option<Arc<General>>> = RwLock::new(None);

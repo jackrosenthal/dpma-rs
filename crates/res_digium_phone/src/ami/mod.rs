@@ -6,21 +6,19 @@
 //! authority `call` (EVENT_FLAG_CALL).  `DPMALicenseStatus` is not
 //! implemented (no license handling in this rewrite); the other six are:
 //!
-//! | Action              | Implemented in            |
-//! |---------------------|---------------------------|
-//! | DPMAShowPhones      | `session::ami` (P7)       |
-//! | DPMAMessageRegister | `ami::messages` (P13)     |
-//! | DPMAMessageResponse | `ami::messages` (P13)     |
-//! | DPMAMessageSend     | `ami::messages` (P13)     |
-//! | DPMAShowIncidents   | `auth` (P3)               |
-//! | DPMARemoveIncident  | `auth` (P3)               |
+//! | Action              | Implemented in  |
+//! |---------------------|-----------------|
+//! | DPMAShowPhones      | `session::ami`  |
+//! | DPMAMessageRegister | `ami::messages` |
+//! | DPMAMessageResponse | `ami::messages` |
+//! | DPMAMessageSend     | `ami::messages` |
+//! | DPMAShowIncidents   | `auth`          |
+//! | DPMARemoveIncident  | `auth`          |
 //!
-//! Each package returns its actions from an `actions()` function; this
-//! module registers them in the original's order.  Unlike the original,
-//! which unregisters only some of them at unload (leaving dangling
-//! handlers), every registered action is unregistered.
-//!
-//! Packages contribute through their `actions()`.
+//! Each of those modules returns its actions from an `actions()`
+//! function; this module registers them in the original's order.  Unlike
+//! the original, which unregisters only some of them at unload (leaving
+//! dangling handlers), every registered action is unregistered.
 
 pub mod messages;
 

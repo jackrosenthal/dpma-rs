@@ -24,13 +24,12 @@
 //!
 //! The original works on fixed-size C buffers; the same truncations are
 //! applied here (message ids 127 bytes, mailboxes 1023, caller ids 255).
-//!
-//! Owner: P9 "methods-vm" (wave 2).
 
 use crate::method::MethodCall;
 use crate::request::error_response_json;
 use crate::translation::Table;
 use crate::users;
+use dpma_ast::channel;
 use dpma_ast::dial::{self, AstDial};
 use dpma_ast::log::LOG_WARNING;
 use dpma_ast::vm::{self, SortBy};
@@ -915,9 +914,9 @@ fn dial_phone_event_app(phone: &str, out: &mut String, method: &str, app: &[u8])
         }
         if tech == b"SIP" {
             let header = copy_trunc(format!("X-Event-Name:{}", PLAYBACK_EVENT).as_bytes(), HEADER_BUF);
-            dial::setvar(chan, "__SIPADDHEADER1", &header);
+            channel::setvar(chan, "__SIPADDHEADER1", &header);
         } else {
-            dial::setvar(chan, "PJSIP_HEADER(add,X-Event-Name)", PLAYBACK_EVENT.as_bytes());
+            channel::setvar(chan, "PJSIP_HEADER(add,X-Event-Name)", PLAYBACK_EVENT.as_bytes());
         }
         let data = Box::into_raw(Box::new(DialData { app_and_args: app.to_vec() }));
         dial::set_user_data(d, data as *mut c_void);
@@ -934,7 +933,7 @@ fn dial_phone_event_app(phone: &str, out: &mut String, method: &str, app: &[u8])
             fail(out, method, PHONE_EVENT_APP_FAILED, "dial thread did not start");
             drop(Box::from_raw(data));
             // The original reads the name after destroying the dial.
-            let name = dial::channel_name(chan);
+            let name = channel::name(chan);
             dial::destroy(d);
             dpma_log!("Failed to start thread for call to {}", name);
         }
@@ -950,7 +949,7 @@ unsafe extern "C" fn dial_phone_event_app_thread(data: *mut c_void) -> *mut c_vo
         let chan = dial::get_channel(d, 0);
         // Read before the run: the original reads it afterwards, when an
         // unanswered channel may already be gone.
-        let name = dial::channel_name(chan);
+        let name = channel::name(chan);
         if ud.is_null() {
             dpma_log!("Unable to get userdata during dial thread to {}", name);
         } else {
