@@ -498,6 +498,8 @@ pub fn process(trigger: &str) -> Result<(), ()> {
     }
     for name in &fx.db_del {
         dpma_ast::db::del(DB_FAMILY, name);
+        // phone_user_destroy_cb: the phone's voicemail message trackers go.
+        crate::method_api::voicemail::remove_user_tracker(name);
     }
     apply_hints(hints);
     Ok(())

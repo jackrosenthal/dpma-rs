@@ -40,9 +40,16 @@ pub fn phone_for_line(_line: &str) -> Option<String> {
     None
 }
 
-/// `phone_mailbox_by_line`.
-pub fn mailbox_by_line(_line: &str) -> Option<String> {
-    None
+/// `phone_mailbox_by_line` (FUN_00161710): the mailbox (`box@context`) of
+/// line `line`, or None when the line does not exist or has no mailbox.
+pub fn mailbox_by_line(line: &str) -> Option<String> {
+    let g = super::read();
+    let l = g.as_ref()?.lines.get(line)?;
+    if l.mailbox.is_empty() {
+        None
+    } else {
+        Some(l.mailbox.clone())
+    }
 }
 
 /// Restore `last_session_id`s from AstDB once sessions are loaded

@@ -18,6 +18,7 @@ pub mod channel;
 pub mod cli;
 pub mod config;
 pub mod db;
+pub mod dial;
 pub mod ffi;
 pub mod hooks;
 pub mod log;
