@@ -106,6 +106,7 @@ extern "C" {
     pub fn ast_msg_get_var(msg: *mut AstMsg, name: *const c_char) -> *const c_char;
     pub fn ast_msg_get_body(msg: *const AstMsg) -> *const c_char;
     pub fn ast_msg_queue(msg: *mut AstMsg) -> c_int;
+    pub fn ast_msg_send(msg: *mut AstMsg, to: *const c_char, from: *const c_char) -> c_int;
 
     pub fn ast_db_put(family: *const c_char, key: *const c_char, value: *const c_char) -> c_int;
     pub fn ast_db_del(family: *const c_char, key: *const c_char) -> c_int;

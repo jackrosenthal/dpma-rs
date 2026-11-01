@@ -205,6 +205,17 @@ impl Msg {
         std::mem::forget(self);
         unsafe { ffi::ast_msg_queue(p) == 0 }
     }
+
+    /// Send the message straight to a message technology (`ast_msg_send`),
+    /// e.g., to "pjsip:<endpoint>".  The message core takes over this
+    /// reference.  Returns `ast_msg_send`'s result (0 on success).
+    pub fn send(self, to: &str, from: Option<&str>) -> i32 {
+        let p = self.ptr;
+        std::mem::forget(self);
+        let t = cstr(to);
+        let f = from.map(cstr);
+        unsafe { ffi::ast_msg_send(p, t.as_ptr(), f.as_ref().map_or(std::ptr::null(), |f| f.as_ptr())) }
+    }
 }
 
 impl Drop for Msg {
