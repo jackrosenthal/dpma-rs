@@ -63,7 +63,7 @@ def uri_of(p):
 
 def flags(sid):
     ln = session_line(sid)
-    m = re.search(r"Auth:(\w+) Inactive:(\w+)", ln)
+    m = re.search(r"Auth:(\w+)\s+Inactive:(\w+)", ln)
     return m.groups() if m else None
 
 
