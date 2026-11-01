@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<contacts group_name="Second file" id="second">
+  <contact first_name="Carol" last_name="" contact_type="sip" subscribe_to="1003">
+    <numbers>
+      <number dial="1003" label="Extension" primary="1"/>
+    </numbers>
+  </contact>
+</contacts>

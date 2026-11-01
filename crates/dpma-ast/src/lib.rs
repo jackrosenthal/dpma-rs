@@ -14,6 +14,7 @@
 
 pub mod ao2;
 pub mod app;
+pub mod astxml;
 pub mod channel;
 pub mod cli;
 pub mod config;

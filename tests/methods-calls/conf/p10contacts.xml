@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phonebooks>
+  <contacts group_name="Coworkers" id="coworkers">
+    <contact first_name="Bob" last_name="Example" contact_type="sip" subscribe_to="1002">
+      <numbers>
+        <number dial="1002" label="Extension" primary="1"/>
+      </numbers>
+    </contact>
+  </contacts>
+  <contacts group_name="Empty" id="empty"/>
+</phonebooks>
