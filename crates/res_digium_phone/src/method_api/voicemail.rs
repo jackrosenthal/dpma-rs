@@ -14,6 +14,11 @@ pub fn load() -> Result<(), ()> {
 
 pub fn unload() {}
 
+/// `vm_phone_user_tracker_remove` (FUN_0017b390): forget the voicemail
+/// message trackers of phone `phone` (called when the phone's session
+/// changes).  Stub until P9.
+pub fn tracker_remove_phone(_phone: &str) {}
+
 /// `handle_request_json_vm_getlist` (FUN_001859c0).
 pub fn get_list(_c: &MethodCall, _p: &Value, _out: &mut String) -> i32 {
     dpma_proto::errors::request::METHOD_NOT_FOUND

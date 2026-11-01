@@ -58,7 +58,7 @@ impl TimeVal {
 struct Problem {
     /// Reason of the first failure (+0x00).
     reason: String,
-    /// Source address, without port (+0x08); the container key.
+    /// Source host, without brackets or port (+0x08); the container key.
     ip: String,
     /// MAC address of the first failure (+0x10).
     mac: String,
@@ -102,25 +102,17 @@ pub fn unload() {
     PROBLEMS.lock().unwrap().take();
 }
 
-/// The address part of a URI as `phone_utils_parse_uri` returns it:
-/// after the scheme, after any `user@`, up to the first `;`.  Empty when
-/// there is no `:`.
-fn uri_address(uri: &str) -> &str {
-    let Some((_, rest)) = uri.split_once(':') else {
-        return "";
-    };
-    let rest = rest.split_once('@').map_or(rest, |(_, host)| host);
-    rest.split(';').next().unwrap_or("")
-}
-
 /// `phone_auth_issue_alert` (FUN_00177920): record a failure for the
 /// transaction's source address.  `reason` is, e.g., "invalid credentials"
 /// or "invalid config pass".
 ///
 /// The address is the host of the first message's
-/// `X-Digium-AppServer-Response-URI` (set by the dialplan from the
-/// receiving address), cut at its first `:` (so an IPv6 address keeps
-/// only its first group, as in the original).
+/// `X-Digium-AppServer-Response-URI` (`pjsip:${PJSIP_RECVADDR}`, set by
+/// the dialplan from the receiving address): the URI's address part as
+/// `phone_utils_parse_uri` returns it, with the brackets and the port
+/// stripped as `ast_sockaddr_split_hostport` does.  (Deviation: the
+/// original cuts the address at its first `:`, which keys every IPv6
+/// address as, e.g., `[2001`; IPv4 addresses come out the same.)
 pub fn issue_alert(tx: &Transaction, reason: &str) {
     let _ = record(tx, reason);
 }
@@ -136,12 +128,13 @@ fn record(tx: &Transaction, reason: &str) -> Result<(), ()> {
     // it: X-Digium-User-Agent if not empty, else User-Agent (possibly
     // absent).
     let user_agent = msg.and_then(|m| m.var("X-Digium-User-Agent").or_else(|| m.get_var("User-Agent")));
-    let addr = uri_address(&uri);
+    let (addr, _) = dpma_proto::uri::phone_utils_parse_uri(&uri);
     if addr.is_empty() {
         dpma_log!("Failed to parse uri from authorization problem");
         return Err(());
     }
-    let ip = addr.split(':').next().unwrap_or("");
+    let (ip, _) = dpma_proto::uri::split_hostport(&addr);
+    let ip = ip.as_str();
 
     let mut g = PROBLEMS.lock().unwrap();
     let Some(buckets) = g.as_mut() else {

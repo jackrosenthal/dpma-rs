@@ -61,7 +61,7 @@ fn firmware_names(r: &Registry) -> Vec<String> {
     r.firmware.values().map(|p| p.name.clone()).collect()
 }
 
-fn complete_phone(a: &CompleteArgs) -> Option<String> {
+pub(crate) fn complete_phone(a: &CompleteArgs) -> Option<String> {
     complete_names(a, phone_names)
 }
 fn complete_line(a: &CompleteArgs) -> Option<String> {

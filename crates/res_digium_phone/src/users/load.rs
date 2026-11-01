@@ -139,9 +139,8 @@ pub fn unload() {
 }
 
 /// Bring back the runtime state saved in AstDB for each phone
-/// (`phone_user_db_restore`).  Values look like
-/// "last_mac=...;last_uri=...;last_session_id=...", where the URI may itself
-/// contain ";transport=...".
+/// (`phone_user_db_restore`, first half; `runtime::restore_sessions` does
+/// `last_session_id` once sessions are restored).
 fn restore_from_db() {
     let entries = dpma_ast::db::tree(DB_FAMILY);
     let mut g = write();
@@ -151,30 +150,14 @@ fn restore_from_db() {
         if value.is_empty() || name.is_empty() {
             continue;
         }
-        let field = |tag: &str| -> String {
-            let Some(i) = value.find(tag) else { return String::new() };
-            let rest = &value[i + tag.len()..];
-            let mut end = 0;
-            let b = rest.as_bytes();
-            while end < b.len() {
-                if b[end] == b';' && !rest[end + 1..].starts_with("trans") {
-                    break;
-                }
-                end += 1;
-            }
-            rest[..end].to_string()
-        };
+        let (mac, uri, _) = super::runtime::parse_db_value(&value);
         let (phone, _) = reg.phones.get_or_insert_with(name, || Phone::new(name));
-        let mac = field("last_mac=");
         if !mac.is_empty() {
             phone.last_mac = mac;
         }
-        let uri = field("last_uri=");
         if !uri.is_empty() {
             phone.last_uri = uri;
         }
-        // last_session_id is restored by the session layer once sessions
-        // are persisted; until then a stale id is useless.
     }
 }
 
@@ -190,11 +173,19 @@ fn sip_general<'a>(cats: &'a Cfg, var: &str) -> Option<&'a str> {
 struct Effects {
     new_internal_lines: Vec<String>,
     remove_hints: Vec<(String, String)>,
-    db_del: Vec<String>,
-    /// (phone, last_uri, last_session_id)
-    reconfigure: Vec<(String, String, String)>,
+    /// `phone_user_delme_cb` for each phone, in container order.
+    phones: Vec<PhoneFx>,
     /// Lines removed by this pass (for their exported objects).
     swept_lines: Vec<Line>,
+}
+
+/// What `phone_user_delme_cb` (0x159720) does to a phone after a pass.
+enum PhoneFx {
+    /// A phone that is no longer configured: reconfigure it, forget its
+    /// AstDB entry, and mark its session inactive.
+    Delete { name: String, uri: String, session: String },
+    /// A phone whose lines changed (or whose voicemail pin did).
+    Reconfigure { name: String, uri: String, session: String },
 }
 
 /// A sip.conf (chan_sip) section for `line` (`process_lines_sip`).
@@ -462,20 +453,15 @@ pub fn process(trigger: &str) -> Result<(), ()> {
                 true
             }
         });
-        reg.phones.retain(|p| {
-            let target = (p.name.clone(), p.last_uri.clone(), p.last_session_id.clone());
+        for p in reg.phones.values() {
+            let (name, uri, session) = (p.name.clone(), p.last_uri.clone(), p.last_session_id.clone());
             if p.delme {
-                fx.reconfigure.push(target);
-                fx.db_del.push(p.name.clone());
-                false
-            } else {
-                if p.needs_reconfigure {
-                    dpma_log!("Sending reconfigure to user {}", p.name);
-                    fx.reconfigure.push(target);
-                }
-                true
+                fx.phones.push(PhoneFx::Delete { name, uri, session });
+            } else if p.needs_reconfigure {
+                fx.phones.push(PhoneFx::Reconfigure { name, uri, session });
             }
-        });
+        }
+        reg.phones.retain(|p| !p.delme);
         for p in reg.phones.values_mut() {
             p.needs_reconfigure = false;
         }
@@ -493,11 +479,18 @@ pub fn process(trigger: &str) -> Result<(), ()> {
     for (context, exten) in &fx.remove_hints {
         dpma_ast::pbx::remove_extension(context, exten, dpma_ast::pbx::PRIORITY_HINT, REGISTRAR);
     }
-    for (name, uri, session) in &fx.reconfigure {
-        let _ = super::send_reconfigure(name, uri, session, false);
-    }
-    for name in &fx.db_del {
-        dpma_ast::db::del(DB_FAMILY, name);
+    for f in &fx.phones {
+        match f {
+            PhoneFx::Delete { name, uri, session } => {
+                let _ = super::send_reconfigure(name, uri, session, false);
+                dpma_ast::db::del(DB_FAMILY, name);
+                super::runtime::mark_session_inactive(session);
+            }
+            PhoneFx::Reconfigure { name, uri, session } => {
+                dpma_log!("Sending reconfigure to user {}", name);
+                let _ = super::send_reconfigure(name, uri, session, false);
+            }
+        }
     }
     apply_hints(hints);
     Ok(())
@@ -512,7 +505,11 @@ fn build_phone(reg: &mut Registry, cat: &Category, sip_context: &str, general: &
     };
     phone.delme = false;
     let old_lines = phone.lines.clone();
+    let old_apps = std::mem::take(&mut phone.applications);
     phone.set_defaults();
+    // set_user_defaults synchronizes the presence options before it drops
+    // the old lists (every application is marked for deletion by now).
+    super::presence::sync_applications(&reg.applications, &mut phone, &old_apps);
 
     let lines_before: Vec<String> = reg.lines.values().map(|l| l.name.clone()).collect();
     {
