@@ -193,15 +193,7 @@ pub unsafe extern "C" fn phone_line_get_user(line: *mut LineObj) -> *mut UserObj
         return std::ptr::null_mut();
     }
     let name = opt_str(line as *const c_char).into_owned();
-    let phone = dpma_ast::guard(None, || {
-        let g = users::read();
-        g.as_ref().and_then(|reg| {
-            reg.phones
-                .values()
-                .find(|p| p.lines.iter().any(|l| l.name.eq_ignore_ascii_case(&name)))
-                .map(|p| p.name.clone())
-        })
-    });
+    let phone = dpma_ast::guard(None, || users::runtime::phone_for_line(&name));
     match phone {
         Some(p) => {
             let c = dpma_ast::cstr(&p);

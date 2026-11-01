@@ -204,11 +204,17 @@ pub struct Phone {
     pub headset_answer: bool,
     pub ring_headset_only: bool,
     pub call_waiting_tone: bool,
-    /// Set when a status application overrides which states send 486.
+    /// Set (+0x960) once `presence::user_application_sync` found one of
+    /// the phone's status applications: the presence options and
+    /// `send486_mask` then come from the status applications.  Cleared by
+    /// `set_user_defaults`.
     pub send486_custom: bool,
     /// Bit mask (by presence state) of the states that make the phone
     /// reject calls with 486.  Defaults to xa and dnd.
     pub send486_mask: u32,
+    /// The presence options (+0x8e8), in insertion order; see
+    /// `presence::ordered` for the container order.
+    pub presence_options: Vec<presence::PresenceOption>,
     pub can_forward_calls: bool,
     pub show_call_log: bool,
     pub show_call_parking: bool,
@@ -231,6 +237,15 @@ pub struct Phone {
     pub last_session_id: String,
     /// The phone's pin as last applied (also tracks voicemail pins).
     pub applied_pin: String,
+    /// Configuration token state (+0x984): 0 until the first token is
+    /// issued, then 1.  (The user list's unported variant also knows 2
+    /// and 3.)
+    pub token_state: i32,
+    /// Sum of the characters (as signed chars) of the latest token
+    /// issued (+0x988).
+    pub token_sum: i32,
+    /// The same for the token issued before it (+0x98c).
+    pub prev_token_sum: i32,
 
     // ---- reload bookkeeping ----
     pub delme: bool,
@@ -242,7 +257,10 @@ impl Phone {
         Phone { name: name.to_string(), ..Phone::blank() }
     }
 
-    /// Reset everything that comes from configuration (`set_user_defaults`).
+    /// Reset everything that comes from configuration (`set_user_defaults`),
+    /// including the presence options (back to the six defaults; the
+    /// caller runs `presence::sync_applications` with the previous
+    /// application list, as the original does).
     pub fn set_defaults(&mut self) {
         let fresh = Phone {
             name: std::mem::take(&mut self.name),
@@ -252,9 +270,13 @@ impl Phone {
             last_uri: std::mem::take(&mut self.last_uri),
             last_session_id: std::mem::take(&mut self.last_session_id),
             applied_pin: std::mem::take(&mut self.applied_pin),
+            token_state: self.token_state,
+            token_sum: self.token_sum,
+            prev_token_sum: self.prev_token_sum,
             delme: self.delme,
             needs_reconfigure: self.needs_reconfigure,
             openvpn_enable: "0".into(),
+            presence_options: presence::default_options(),
             ..Phone::blank()
         };
         *self = fresh;
@@ -346,6 +368,7 @@ impl Phone {
             call_waiting_tone: true,
             send486_custom: false,
             send486_mask: 0x50,
+            presence_options: Vec::new(),
             can_forward_calls: true,
             show_call_log: true,
             show_call_parking: true,
@@ -361,6 +384,9 @@ impl Phone {
             last_uri: String::new(),
             last_session_id: String::new(),
             applied_pin: String::new(),
+            token_state: 0,
+            token_sum: 0,
+            prev_token_sum: 0,
             delme: false,
             needs_reconfigure: false,
         }
