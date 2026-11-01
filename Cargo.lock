@@ -32,21 +32,21 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "dpma-ast"
-version = "24.0.3613"
+version = "0.1.0"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "dpma-build"
-version = "24.0.3613"
+version = "0.1.0"
 dependencies = [
  "cc",
 ]
 
 [[package]]
 name = "dpma-proto"
-version = "24.0.3613"
+version = "0.1.0"
 dependencies = [
  "base64",
  "foreign-types",
@@ -193,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "res_digium_phone"
-version = "24.0.3613"
+version = "0.1.0"
 dependencies = [
  "dpma-ast",
  "dpma-build",
@@ -205,7 +205,7 @@ dependencies = [
 
 [[package]]
 name = "res_pjsip_dialog_info_digium_body_supplement"
-version = "24.0.3613"
+version = "0.1.0"
 dependencies = [
  "dpma-ast",
  "dpma-build",
@@ -214,7 +214,7 @@ dependencies = [
 
 [[package]]
 name = "res_pjsip_endpoint_identifier_dpma"
-version = "24.0.3613"
+version = "0.1.0"
 dependencies = [
  "dpma-ast",
  "dpma-build",

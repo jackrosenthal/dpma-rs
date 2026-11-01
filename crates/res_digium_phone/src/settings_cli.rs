@@ -12,7 +12,7 @@ fn cli_show_version(a: &CliArgs) -> CliResult {
     if a.argc() != 3 {
         return CliResult::ShowUsage;
     }
-    a.out(&format!("Digium Phone Module for Asterisk Version {} (dpma-rs)\n", crate::VERSION));
+    a.out(&format!("dpma-rs version {}\n", crate::VERSION));
     CliResult::Success
 }
 

@@ -35,7 +35,7 @@ use dpma_ast::manager::{self, Request};
 use dpma_ast::{ast_log, dpma_log};
 use std::sync::Mutex;
 
-pub const VERSION: &str = "24.0_3.6.13";
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const CONFIG_FILE: &str = "res_digium_phone.conf";
 pub const LOG_LEVEL_NAME: &str = "DPMA";
 
