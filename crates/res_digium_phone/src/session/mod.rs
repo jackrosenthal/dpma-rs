@@ -132,6 +132,7 @@ impl Outgoing {
 
 /// One complete incoming request (`struct transaction`, 0x168 bytes).
 /// Immutable once built, except for `outgoing` and `configured`.
+#[derive(Default)]
 pub struct Transaction {
     /// Container key: `"<X-Digium-AppServer-ID>-<MAC or unknown>"`.
     pub key: String,

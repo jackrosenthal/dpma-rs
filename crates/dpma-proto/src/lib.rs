@@ -11,6 +11,7 @@ pub mod crypto;
 pub mod errors;
 pub mod framing;
 pub mod headers;
+pub mod json;
 pub mod types;
 pub mod uri;
 pub mod xml;
