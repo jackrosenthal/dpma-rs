@@ -20,9 +20,12 @@ pub fn reload(_config_file: &str) -> Result<(), ()> {
     Ok(())
 }
 
-/// `phone_msg_unload` (FUN_001510f0).
+/// `phone_msg_unload` (FUN_001510f0): unregister `digium_phones show
+/// sessions`, stop the transport (`network_handler_destroy`), drop the
+/// containers, then destroy the dialplan routing.
 pub fn unload() {
     crate::transport::unload();
+    crate::transport::destroy_routing();
 }
 
 pub fn find(_id: &str) -> Option<Arc<Session>> {
