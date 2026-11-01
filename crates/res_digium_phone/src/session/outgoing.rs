@@ -288,7 +288,7 @@ pub fn send_timeout(msg: &Msg, session: &Arc<Session>) -> Result<(), ()> {
 
 /// `phone_msg_send_event` (FUN_0014e030): send an event with `body` to the
 /// session's phone.  `digium.assignment.update` goes out as the original
-/// sends it: no event name, ID `bootReset`, and Error-ID -398.  The error
+/// sends it: no event name, ID `bootcReset`, and Error-ID -398.  The error
 /// text matches the original's error buffer.
 pub fn send_event(session: &Arc<Session>, event: &str, body: &str) -> Result<(), String> {
     let mut out = Outgoing::new();
@@ -301,7 +301,7 @@ pub fn send_event(session: &Arc<Session>, event: &str, body: &str) -> Result<(),
         out.response_uri = st.response_uri.clone();
     }
     if event == dpma_proto::types::events::ASSIGNMENT_UPDATE {
-        out.id = "bootReset".into();
+        out.id = "bootcReset".into();
         out.error = dpma_proto::errors::msg::SESSION_TIMEOUT;
     } else {
         out.event_name = event.to_string();

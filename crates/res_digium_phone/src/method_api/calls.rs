@@ -9,11 +9,12 @@
 //! for example).  Those helpers reproduce the original's parsing exactly,
 //! including its quirks:
 //!
-//! * The recording start methods read the MixMonitor response into an
-//!   8-byte buffer (the original passes `sizeof` of a pointer), which
-//!   cannot hold "Success", so they report error 27168 even though
+//! * Deviation: the original's recording start methods read the
+//!   MixMonitor response into an 8-byte buffer (`sizeof` of a pointer),
+//!   which cannot hold "Success", so they report error 27168 even though
 //!   MixMonitor was started, and never send the
-//!   `digium.startRecording.success` INFO.
+//!   `digium.startRecording.success` INFO.  dpma-rs reads the whole
+//!   response, so starting a recording succeeds (port plan, section 8).
 //! * `getTodaysStatus` answers nothing at all (return 0, empty response)
 //!   when the phone has no application for the queue or Asterisk does
 //!   not know the queue.
@@ -490,17 +491,18 @@ fn find_call_channel(account: &str, call_id: &str) -> Option<Channel> {
     Channel::find_by_callid(&truncate(format!("PJSIP/{}", account), 0x80), call_id)
 }
 
-/// The MixMonitor action of the recording start methods.  The response is
-/// read into an 8-byte buffer (the original's `sizeof` of its action
-/// pointer), so "Success" never fits: Some("") then, Some(value) for a
-/// shorter response, None when the action produced no response.
+/// The MixMonitor action of the recording start methods.  The original
+/// reads the response into an 8-byte buffer (`sizeof` of its action
+/// pointer), so "Success" never fits and starting a recording always
+/// fails; dpma-rs uses the 0x80-byte buffer of the stop action instead.
+/// None when the action produced no response.
 fn start_mixmonitor(chan: &Channel, mailbox: &str) -> Option<String> {
     let (name, uniqueid) = chan.name_and_uniqueid();
     let action = format!(
         "Action: MixMonitor\nFile: {}.wav\nOptions: m({}/Cust5)\nChannel: {}\n",
         uniqueid, mailbox, name
     );
-    action_response(&action, 8)
+    action_response(&action, 0x80)
 }
 
 /// The StopMixMonitor action (a 0x80-byte action buffer and response
