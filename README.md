@@ -198,8 +198,9 @@ deliberate exceptions:
     (...), expired."  The original never expires them.
 14. File requests from phones cannot leave `file_directory`: paths with
     `..` components and absolute paths are answered as if the file did
-    not exist.  The original serves any file the Asterisk process can
-    read.
+    not exist (files in subdirectories are still served).  With `..`, the
+    original serves any file the Asterisk process can read; it looks up
+    absolute paths inside `file_directory`.
 
 Beyond these, a number of inputs that crash the original modules (for
 example, some NULL arguments to the C API, and PJSIP AOR changes while a
