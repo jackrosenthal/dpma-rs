@@ -46,8 +46,6 @@
 //! base64 string across its chunks rather than encode each chunk
 //! separately.  The first part (lowest sequence) supplies all the message
 //! variables.
-//!
-//! Owner: P1 "proto" (wave 1).
 
 use crate::crypto::{self, Encryptor, SALT_LEN};
 use crate::Result;

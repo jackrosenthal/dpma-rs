@@ -48,10 +48,6 @@ pub fn debug_atleast(level: i32) -> bool {
     unsafe { ffi::dpma_glue_debug_atleast(level) != 0 }
 }
 
-pub fn verbose_atleast(level: i32) -> bool {
-    unsafe { ffi::dpma_glue_verbose_atleast(level) != 0 }
-}
-
 extern "C" {
     static ast_verb_sys_level: std::os::raw::c_int;
 }

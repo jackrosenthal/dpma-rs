@@ -6,11 +6,11 @@
 //! `ast_xml_find_element`, `ast_xml_doc_dump_file`, and friends, which
 //! differ from plain libxml2 (parser options, XInclude processing, attribute
 //! matching).  This wraps those functions so the behavior is the same.
-//!
-//! Added by P10 "methods-calls" (wave 2); attributes and node markup added
-//! by P12 "request-handlers" (wave 3) for phone requests.
+//! The phone request handlers (phone_request.c) use it too, for the XML
+//! requests' attributes and node markup.
 
 use crate::util::{cstr, from_ptr};
+use crate::xml::{ast_xml_free_text, xmlParseMemory};
 use std::marker::PhantomData;
 use std::os::raw::{c_char, c_int};
 
@@ -26,9 +26,6 @@ struct AstXmlNode {
 
 extern "C" {
     fn ast_xml_open(filename: *mut c_char) -> *mut AstXmlDoc;
-    /// libxml2; `ast_xml_read_memory` is this call when parsing succeeds
-    /// (its XInclude processing only runs, on NULL, when parsing fails).
-    fn xmlParseMemory(buffer: *const c_char, size: c_int) -> *mut std::os::raw::c_void;
     fn ast_xml_close(doc: *mut AstXmlDoc);
     fn ast_xml_get_root(doc: *mut AstXmlDoc) -> *mut AstXmlNode;
     fn ast_xml_node_get_name(node: *mut AstXmlNode) -> *const c_char;
@@ -43,7 +40,6 @@ extern "C" {
     fn ast_xml_new_child(parent: *mut AstXmlNode, name: *const c_char) -> *mut AstXmlNode;
     fn ast_xml_set_attribute(node: *mut AstXmlNode, name: *const c_char, value: *const c_char) -> c_int;
     fn ast_xml_get_text(node: *mut AstXmlNode) -> *const c_char;
-    fn ast_xml_free_text(text: *const c_char);
     fn ast_xml_get_attribute(node: *mut AstXmlNode, attrname: *const c_char) -> *const c_char;
     fn ast_xml_free_attr(attribute: *const c_char);
     /// libxml2, for serializing a node (`xmlNodeDump` into an `xmlBuffer`).
@@ -88,7 +84,9 @@ impl Doc {
         (!p.is_null()).then_some(Doc(p))
     }
 
-    /// `ast_xml_read_memory(buffer, size)` (libxml2's `xmlParseMemory`).
+    /// `ast_xml_read_memory(buffer, size)`: libxml2's `xmlParseMemory`,
+    /// which is what `ast_xml_read_memory` amounts to when parsing succeeds
+    /// (its XInclude processing only runs, on NULL, when parsing fails).
     pub fn read_memory(buf: impl AsRef<[u8]>) -> Option<Doc> {
         let buf = buf.as_ref();
         let len = c_int::try_from(buf.len()).ok()?;

@@ -20,7 +20,7 @@
 
 use dpma_ast::app::{self, AppOptions, WAITSTREAM_CB_FASTFORWARD, WAITSTREAM_CB_REWIND};
 use dpma_ast::types::AstChannel;
-use dpma_ast::{channel, dial, dpma_debug, dpma_log, vm};
+use dpma_ast::{channel, dpma_debug, dpma_log, vm};
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_long};
 
@@ -186,25 +186,25 @@ unsafe fn controlplayback(chan: *mut AstChannel, data: &[u8]) -> c_int {
     let mut ret = res;
     if res < 0 {
         ret = 0;
-        dial::setvar(chan, "CPLAYBACKSTATUS", b"ERROR");
+        channel::setvar(chan, "CPLAYBACKSTATUS", b"ERROR");
     } else {
         // strchr(stop, res): the key as a char; NUL matches the terminator.
         let key = res as u8;
         let stopped = res > 0 && stop.as_ref().is_some_and(|s| !s.is_empty() && (key == 0 || s.contains(&key)));
         if stopped {
-            dial::setvar(chan, "CPLAYBACKSTATUS", b"USERSTOPPED");
+            channel::setvar(chan, "CPLAYBACKSTATUS", b"USERSTOPPED");
             // snprintf(buf, 2, "%c", res)
             let stopkey: &[u8] = if key == 0 { b"" } else { std::slice::from_ref(&key) };
-            dial::setvar(chan, "CPLAYBACKSTOPKEY", stopkey);
+            channel::setvar(chan, "CPLAYBACKSTOPKEY", stopkey);
             ret = 0;
         } else {
-            dial::setvar(chan, "CPLAYBACKSTATUS", b"SUCCESS");
+            channel::setvar(chan, "CPLAYBACKSTATUS", b"SUCCESS");
         }
     }
     // snprintf(buf, 20, "%ld", offsetms)
     let mut offset = offsetms.to_string();
     offset.truncate(19);
-    dial::setvar(chan, "CPLAYBACKOFFSET", offset.as_bytes());
+    channel::setvar(chan, "CPLAYBACKOFFSET", offset.as_bytes());
     ret
 }
 
@@ -261,6 +261,6 @@ unsafe fn vm_play(chan: *mut AstChannel, data: &[u8]) -> c_int {
     };
     let res = vm::msg_play(chan, mailbox, context, &folder, &msg_id, vm_play_cb);
     let status: &[u8] = if res == 0 { b"SUCCESS" } else { b"FAILED" };
-    dial::setvar(chan, "VOICEMAIL_PLAYBACKSTATUS", status);
+    channel::setvar(chan, "VOICEMAIL_PLAYBACKSTATUS", status);
     0
 }

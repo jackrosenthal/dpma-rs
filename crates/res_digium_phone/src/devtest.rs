@@ -1,11 +1,10 @@
 //! Test-only CLI commands, compiled with `--features devtest` and never
-//! part of a release build.  They exist so packages can be exercised in
-//! the scratch Asterisk before the code that would normally drive them
-//! (sessions, phone requests) is in place.
+//! part of a release build.  They let the test suites under `dev/tests`
+//! exercise each subsystem directly in a test Asterisk (e.g., `dpmadev
+//! config <phone>` prints a phone's configuration document).
 //!
-//! Each package contributes commands from its own `devtest_commands()`;
-//! use the command prefix `dpmadev` (e.g., `dpmadev config <phone>`).
-//! This file only aggregates them.
+//! Each subsystem contributes commands from its own `devtest_commands()`,
+//! all under the prefix `dpmadev`; this file only aggregates them.
 
 use dpma_ast::cli::{CliArgs, CliCommand, CliResult};
 

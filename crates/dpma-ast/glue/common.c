@@ -43,11 +43,6 @@ int dpma_glue_debug_atleast(int level)
 	return DEBUG_ATLEAST(level);
 }
 
-int dpma_glue_verbose_atleast(int level)
-{
-	return option_verbose >= level && ast_verb_sys_level >= level;
-}
-
 int dpma_glue_fully_booted(void)
 {
 	return ast_test_flag(&ast_options, AST_OPT_FLAG_FULLY_BOOTED) ? 1 : 0;
@@ -351,21 +346,6 @@ void dpma_glue_manager_event_at(int category, const char *event, const char *fil
 	__ast_manager_event_multichan(category, event, 0, NULL, file, line, func, "%s", body);
 }
 
-int dpma_glue_eventflag_system(void)
-{
-	return EVENT_FLAG_SYSTEM;
-}
-
-int dpma_glue_eventflag_config(void)
-{
-	return EVENT_FLAG_CONFIG;
-}
-
-int dpma_glue_eventflag_reporting(void)
-{
-	return EVENT_FLAG_REPORTING;
-}
-
 /*!
  * Send an action through the in-process manager hook.  The response text is
  * collected and returned as an ast_malloc'ed string (caller frees with
@@ -449,16 +429,6 @@ int dpma_glue_msg_set_exten(struct ast_msg *msg, const char *value)
 int dpma_glue_msg_set_body(struct ast_msg *msg, const char *value)
 {
 	return ast_msg_set_body(msg, "%s", value);
-}
-
-int dpma_glue_msg_set_from(struct ast_msg *msg, const char *value)
-{
-	return ast_msg_set_from(msg, "%s", value);
-}
-
-int dpma_glue_msg_set_to(struct ast_msg *msg, const char *value)
-{
-	return ast_msg_set_to(msg, "%s", value);
 }
 
 struct ast_msg *dpma_glue_msg_ref(const struct ast_msg *msg)
@@ -592,11 +562,6 @@ int dpma_glue_config_hook_register(int slot, const char *name, const char *filen
 /* ------------------------------------------------------------------ */
 /* Misc                                                               */
 /* ------------------------------------------------------------------ */
-
-struct ast_module *dpma_glue_self(void)
-{
-	return AST_MODULE_SELF;
-}
 
 void dpma_glue_module_ref(void)
 {

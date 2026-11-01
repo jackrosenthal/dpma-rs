@@ -5,8 +5,6 @@
 //!
 //! Strings are passed as bytes (dialplan data need not be UTF-8) and cut
 //! at their first NUL byte, as C would see them.
-//!
-//! Filled in by P14 "apps-discovery" (wave 3).
 
 use crate::types::AstChannel;
 use crate::vm::c_bytes;

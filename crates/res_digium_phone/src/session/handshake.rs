@@ -9,8 +9,6 @@
 //! key in `X-Digium-AppServer-Password`, the AppServer certificate in the
 //! body, and the authentication requirement headers.  A failed
 //! verification gets no answer, only an auth incident.
-//!
-//! Owner: P7 "session" (wave 2).
 
 use super::store::{self, alloc, NewSession};
 use super::{user_agent_of, Outgoing, Session, Transaction};

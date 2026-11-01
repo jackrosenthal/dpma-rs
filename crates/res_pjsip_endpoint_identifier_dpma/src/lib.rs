@@ -69,7 +69,7 @@ macro_rules! debug {
 }
 
 // ---------------------------------------------------------------------
-// The exported API of res_digium_phone (section 5 of the port plan)
+// The exported API of res_digium_phone (its src/exports)
 // ---------------------------------------------------------------------
 
 /// `struct dpma_config_handler`.

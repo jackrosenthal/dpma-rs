@@ -1,6 +1,4 @@
 //! `digium_phones show sessions` (`handle_cli_show_sessions` FUN_00148e40).
-//!
-//! Owner: P7 "session" (wave 2).
 
 use super::now;
 use dpma_ast::cli::{CliArgs, CliCommand, CliResult};

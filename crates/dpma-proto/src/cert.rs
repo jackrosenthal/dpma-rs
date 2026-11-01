@@ -4,8 +4,6 @@
 //! The CA store is built from the user-supplied `phone_ca_file` PEM bundle
 //! (the original embeds three CA certificates; they must never be copied
 //! into this project).
-//!
-//! Owner: P1 "proto" (wave 1).
 
 use crate::{LogLevel, ProtoError, Result};
 use foreign_types::{ForeignType, ForeignTypeRef};

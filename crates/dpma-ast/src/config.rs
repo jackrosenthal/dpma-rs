@@ -27,14 +27,6 @@ impl Category {
             .find(|v| v.name.eq_ignore_ascii_case(name))
             .map(|v| v.value.as_str())
     }
-
-    /// All values for `name` (case insensitive), in order.
-    pub fn get_all<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a str> + 'a {
-        self.vars
-            .iter()
-            .filter(move |v| v.name.eq_ignore_ascii_case(name))
-            .map(|v| v.value.as_str())
-    }
 }
 
 /// Outcome of loading a configuration file.
@@ -46,7 +38,6 @@ pub enum LoadResult {
     Loaded(Vec<Category>),
 }
 
-pub const CONFIG_FLAG_FILEUNCHANGED: u32 = 1 << 1;
 pub const CONFIG_FLAG_NOCACHE: u32 = 1 << 2;
 
 /// Load `filename` and copy its contents into Rust structures.

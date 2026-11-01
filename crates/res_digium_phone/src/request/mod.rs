@@ -1,9 +1,6 @@
 //! Request dispatch (dpma_request.c): the request-type handler table, the
 //! `DPMA_request` and `DPMA_extended` thread pools, and the XML/JSON error
-//! responses.
-//!
-//! Owner: P3 "request" (wave 1).  `handlers.rs` is owned by P12
-//! "request-handlers" (wave 3).
+//! responses.  The handlers themselves are in `handlers.rs`.
 
 pub mod handlers;
 
@@ -159,7 +156,7 @@ pub fn handle_incoming(tx: Arc<Transaction>) -> Result<(), ()> {
     let task: dpma_ast::threadpool::Task = Box::new(move || {
         handler(tx);
     });
-    let origin = Origin { file: "dpma_request.c", line: 0x19, function: "request_task_push" };
+    let origin = Origin { file: c"dpma_request.c", line: 0x19, function: c"request_task_push" };
     let pushed = match REQUEST_POOL.read().unwrap().as_ref() {
         Some(pool) => pool.push(task, origin).is_ok(),
         None => false,
@@ -175,7 +172,7 @@ pub fn handle_incoming(tx: Arc<Transaction>) -> Result<(), ()> {
 /// `DPMA_extended` pool (long-running work such as dialing a phone).  On
 /// failure the task is dropped unrun.
 pub fn push_extended(task: Box<dyn FnOnce() + Send + 'static>) -> Result<(), ()> {
-    let origin = Origin { file: "dpma_request.c", line: 0x29, function: "request_extended_task_push" };
+    let origin = Origin { file: c"dpma_request.c", line: 0x29, function: c"request_extended_task_push" };
     let pushed = match EXTENDED_POOL.read().unwrap().as_ref() {
         Some(pool) => pool.push(task, origin).is_ok(),
         None => false,
@@ -386,13 +383,8 @@ mod devtest {
     }
 
     fn jansson_error_doc(method: &str, code: i32, message: &str) -> Option<String> {
-        use std::os::raw::{c_char, c_int, c_void};
-        extern "C" {
-            fn ast_json_pack(format: *const c_char, ...) -> *mut c_void;
-            fn ast_json_dump_string_format(root: *mut c_void, format: c_int) -> *mut c_char;
-            fn ast_json_free(p: *mut c_void);
-            fn ast_json_unref(p: *mut c_void);
-        }
+        use dpma_ast::json::{ast_json_pack, ast_json_unref, dump_string};
+        use std::os::raw::c_int;
         let c = dpma_ast::cstr;
         let (fmt, response, m, errors, error, code_k, message_k) =
             (c("{s: {s: s, s: {s: {s: i, s: s}}}}"), c("response"), c("method"), c("errors"), c("error"), c("code"), c("message"));
@@ -413,13 +405,8 @@ mod devtest {
             if j.is_null() {
                 return None;
             }
-            let s = ast_json_dump_string_format(j, 0);
+            let r = dump_string(j);
             ast_json_unref(j);
-            if s.is_null() {
-                return None;
-            }
-            let r = dpma_ast::from_ptr(s);
-            ast_json_free(s as *mut c_void);
             r
         }
     }

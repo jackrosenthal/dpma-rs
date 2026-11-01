@@ -14,8 +14,6 @@
 //! append per `ast_str_append` of the original, in the same order and
 //! under the same conditions.  The only libxml2 round trip is the one the
 //! original makes to merge a `contacts_display_rules` file.
-//!
-//! Owner: P4 "config-xml" (wave 1).
 
 use super::*;
 use crate::xmlutil;
@@ -1182,34 +1180,12 @@ pub fn get_config(phone: &str, out: &mut String, file_dir: &str, model: &str) ->
     Ok(())
 }
 
-/// `phone_user_get_primary_line_tech`: the technology ("SIP", "PJSIP") of
-/// the phone's primary line; empty when unknown.
-pub fn primary_line_tech(phone: &str) -> String {
-    let g = read();
-    let Some(reg) = g.as_ref() else { return String::new() };
-    let Some(p) = reg.phones.get(phone) else { return String::new() };
-    primary_line(reg, p).map(|l| l.tech.clone()).unwrap_or_default()
-}
-
 /// `phone_user_get_primary_line_name`: the name in the phone's first line
 /// slot (empty when it has none).  None when the phone does not exist.
 pub fn primary_line_name(phone: &str) -> Option<String> {
     let g = read();
     let p = g.as_ref()?.phones.get(phone)?;
     Some(p.lines.first().map(|l| l.name.clone()).unwrap_or_default())
-}
-
-/// `phone_user_set_primary_line_name`: put `line` in the phone's first
-/// line slot.
-pub fn set_primary_line_name(phone: &str, line: &str) -> Result<(), ()> {
-    let mut g = write();
-    let p = g.as_mut().and_then(|r| r.phones.get_mut(phone)).ok_or(())?;
-    let name = crate::util::truncate(line, 0x80);
-    match p.lines.first_mut() {
-        Some(slot) => slot.name = name,
-        None => p.lines.push(PhoneLine { name, external: false }),
-    }
-    Ok(())
 }
 
 /// `phone_user_get_show_call_parking`: `show_call_parking` of the first

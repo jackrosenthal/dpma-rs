@@ -1,8 +1,8 @@
 /*
  * dpma-rs - Open source Digium Phone Module for Asterisk
  *
- * astobj2 glue: objects, containers of named objects, iterators, and the
- * global object holder used for objects handed to C callers.
+ * astobj2 glue: objects, containers of named objects, and iterators, for
+ * objects handed to C callers.
  *
  * Core Asterisk headers only (compiled into every module).
  *

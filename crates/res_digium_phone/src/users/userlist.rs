@@ -4,26 +4,14 @@
 //! The JSON is built and serialized with Asterisk's `ast_json` (jansson),
 //! as the original does, so key order, escaping, and the compact format
 //! are the same.
-//!
-//! Owner: P4 "config-xml" (wave 1).
 
 use super::*;
+use dpma_ast::json::{
+    ast_json_array_append, ast_json_array_create, ast_json_object_create, ast_json_object_set, ast_json_string_create,
+    ast_json_unref, dump_string,
+};
 use dpma_ast::util::cstr;
-use std::os::raw::{c_char, c_int, c_void};
-
-extern "C" {
-    fn ast_json_object_create() -> *mut c_void;
-    fn ast_json_array_create() -> *mut c_void;
-    fn ast_json_string_create(s: *const c_char) -> *mut c_void;
-    fn ast_json_object_set(obj: *mut c_void, key: *const c_char, value: *mut c_void) -> c_int;
-    fn ast_json_array_append(array: *mut c_void, value: *mut c_void) -> c_int;
-    fn ast_json_dump_string_format(root: *mut c_void, format: c_int) -> *mut c_char;
-    fn ast_json_free(p: *mut c_void);
-    fn ast_json_unref(json: *mut c_void);
-}
-
-/// `AST_JSON_COMPACT`.
-const AST_JSON_COMPACT: c_int = 0;
+use std::os::raw::c_void;
 
 /// Set `key` to the string `value` in `obj` (which takes the value).
 unsafe fn set_str(obj: *mut c_void, key: &str, value: &str) -> Result<(), ()> {
@@ -107,13 +95,9 @@ pub fn build_userlist_json(out: &mut String, filter_group_pin: bool, config_pass
             }
             count += 1;
         }
-        let s = ast_json_dump_string_format(root, AST_JSON_COMPACT);
+        let s = dump_string(root);
         ast_json_unref(root);
-        if s.is_null() {
-            return Err(());
-        }
-        out.push_str(&std::ffi::CStr::from_ptr(s).to_string_lossy());
-        ast_json_free(s as *mut c_void);
+        out.push_str(&s.ok_or(())?);
         Ok(count)
     }
 }

@@ -15,8 +15,6 @@
 //! The original also builds the same routing for chan_sip (sip.conf's
 //! `outofcall_message_context`, `SIP_RECVADDR`); chan_sip is not
 //! supported here, so only the PJSIP routing exists.
-//!
-//! Owner: P2 "transport" (wave 1).
 
 use crate::config::General;
 use dpma_ast::msg::{self, Msg};
@@ -154,7 +152,7 @@ pub fn new_outgoing(response_uri: &str) -> Option<Msg> {
     if !response_uri.starts_with("pjsip") {
         return None;
     }
-    let m = Msg::alloc()?;
+    let mut m = Msg::alloc()?;
     m.set_context(crate::config::get().message_context());
     Some(m)
 }
@@ -281,7 +279,7 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         let uri = &a.argv[3];
         let ty = &a.argv[4];
         let body = a.argv[5..].join(" ");
-        let Some(m) = new_outgoing(uri) else {
+        let Some(mut m) = new_outgoing(uri) else {
             a.out(&format!("Cannot create a message for '{}'\n", uri));
             return CliResult::Failure;
         };

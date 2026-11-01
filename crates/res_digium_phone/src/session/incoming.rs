@@ -11,8 +11,6 @@
 //! and, when the first part carries a salt, base64 decoded once and
 //! decrypted with the session's common password, together with the
 //! Password, ConfigPassword, and Config-Token headers.
-//!
-//! Owner: P7 "session" (wave 2).
 
 use super::{now, or_null, user_agent_of, Session, Transaction};
 use dpma_ast::log::LOG_ERROR;

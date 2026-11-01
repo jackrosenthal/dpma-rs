@@ -16,8 +16,6 @@
 //! AMI registration of the same name; it shadows it, because
 //! `handle_request_xml` / `handle_request_json` look in their own
 //! registry before the AMI one.
-//!
-//! Owner: P3 "request" (wave 1).
 
 use crate::session::Transaction;
 use std::collections::BTreeMap;

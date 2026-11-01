@@ -1,13 +1,11 @@
-//! Outbound dialing (`ast_dial_*`), plus the channel and thread helpers
-//! that go with it: `ast_channel_name`, `pbx_builtin_setvar_helper`, and
-//! `ast_pthread_create_detached_stack`.
+//! Outbound dialing (`ast_dial_*`), plus the thread helper that goes with
+//! it (`ast_pthread_create_detached_stack`).
 //!
 //! A dial is a raw pointer whose ownership the caller manages, because the
 //! original hands it to a detached thread that runs and destroys it.
 
 use crate::types::AstChannel;
 use crate::vm::c_bytes;
-use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr;
 
@@ -36,8 +34,6 @@ extern "C" {
     fn ast_dial_get_user_data(dial: *mut AstDial) -> *mut c_void;
     fn ast_dial_option_global_enable(dial: *mut AstDial, option: c_int, data: *mut c_void) -> c_int;
     fn ast_dial_destroy(dial: *mut AstDial) -> c_int;
-    fn ast_channel_name(chan: *const AstChannel) -> *const c_char;
-    fn pbx_builtin_setvar_helper(chan: *mut AstChannel, name: *const c_char, value: *const c_char) -> c_int;
     fn ast_pthread_create_detached_stack(
         thread: *mut libc_pthread_t,
         attr: *mut c_void,
@@ -121,32 +117,6 @@ pub unsafe fn option_global_enable(dial: *mut AstDial, option: c_int, data: &[u8
 /// `dial` must be NULL or a live dial, not used afterwards.
 pub unsafe fn destroy(dial: *mut AstDial) -> c_int {
     ast_dial_destroy(dial)
-}
-
-/// `ast_channel_name` (copied; "" for NULL).
-///
-/// # Safety
-/// `chan` must be NULL or a live channel.
-pub unsafe fn channel_name(chan: *const AstChannel) -> String {
-    if chan.is_null() {
-        return String::new();
-    }
-    let p = ast_channel_name(chan);
-    if p.is_null() {
-        String::new()
-    } else {
-        CStr::from_ptr(p).to_string_lossy().into_owned()
-    }
-}
-
-/// `pbx_builtin_setvar_helper(chan, name, value)`: set a variable, or
-/// write a dialplan function when `name` is one (e.g., `PJSIP_HEADER(...)`).
-///
-/// # Safety
-/// `chan` must be NULL or a live channel.
-pub unsafe fn setvar(chan: *mut AstChannel, name: &str, value: &[u8]) -> c_int {
-    let (name, value) = (crate::cstr(name), c_bytes(value));
-    pbx_builtin_setvar_helper(chan, name.as_ptr(), value.as_ptr())
 }
 
 /// `ast_pthread_create_detached_stack` with the default stack size: start

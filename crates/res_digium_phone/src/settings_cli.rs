@@ -9,24 +9,10 @@
 //! `ast_cli_entry` table (DAT_005e9100).
 
 use crate::config::auth;
-use crate::exports::config_api::{self as c, DpmaConfig};
+use crate::exports::config_api::{self as c, text, DpmaConfig};
 use dpma_ast::cli::{CliArgs, CliCommand, CliResult};
 use std::ffi::CStr;
 use std::os::raw::c_char;
-
-/// A string from the C configuration object; "" when the configuration
-/// is gone (the original would read through a NULL pointer there).
-unsafe fn text(cfg: *mut DpmaConfig, get: unsafe fn(*mut DpmaConfig) -> *const c_char) -> String {
-    if cfg.is_null() {
-        return String::new();
-    }
-    let p = get(cfg);
-    if p.is_null() {
-        String::new()
-    } else {
-        CStr::from_ptr(p).to_string_lossy().into_owned()
-    }
-}
 
 /// `value`, or `<Not Set>` when empty.
 fn or_not_set(value: String) -> String {

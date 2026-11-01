@@ -84,7 +84,6 @@ extern "C" {
     fn ast_sip_sanitize_xml(input: *const c_char, output: *mut c_char, len: usize);
     fn ast_strip_quoted(s: *mut c_char, beg_quotes: *const c_char, end_quotes: *const c_char) -> *mut c_char;
     fn ast_xml_escape(string: *const c_char, outbuf: *mut c_char, buflen: usize) -> c_int;
-    fn ast_channel_name(chan: *const c_void) -> *const c_char;
 
     fn dpma_dlg_glue_register() -> c_int;
     fn dpma_dlg_glue_unregister();
@@ -256,7 +255,7 @@ unsafe fn supplement_body(body: *mut c_void, data: *mut c_void) -> c_int {
         state_str,
         local,
         remote,
-        lossy(ast_channel_name(callee))
+        dpma_ast::channel::name(callee as *const dpma_ast::types::AstChannel)
     );
 
     let mut dialog = dpma_dlg_glue_find_node(body, c"dialog".as_ptr());

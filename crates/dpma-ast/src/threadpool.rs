@@ -1,8 +1,6 @@
 //! Asterisk thread pools (`ast_threadpool_*`) and thread registration
 //! (`ast_register_thread`).
 //!
-//! Filled in by P3 "request" (wave 1).
-//!
 //! A task pushed onto a pool is a boxed Rust closure.  The closure is kept
 //! in a table here and only its id travels through Asterisk, so tasks still
 //! queued when a pool is shut down (Asterisk frees those without running
@@ -10,6 +8,7 @@
 
 use crate::util::{ast_strdup, cstr};
 use std::collections::HashMap;
+use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_void};
 use std::sync::{Mutex, OnceLock};
 
@@ -65,12 +64,14 @@ pub struct Options {
 pub type Task = Box<dyn FnOnce() + Send + 'static>;
 
 /// Where a push came from, for Asterisk's taskprocessor bookkeeping (the
-/// `__FILE__`, `__LINE__`, and `__PRETTY_FUNCTION__` of the C macro).
+/// `__FILE__`, `__LINE__`, and `__PRETTY_FUNCTION__` of the C macro).  The
+/// strings must be static: the taskprocessor keeps the pointers with the
+/// queued task and in its statistics (`core show taskprocessor`).
 #[derive(Debug, Clone, Copy)]
 pub struct Origin {
-    pub file: &'static str,
+    pub file: &'static CStr,
     pub line: i32,
-    pub function: &'static str,
+    pub function: &'static CStr,
 }
 
 struct Pending {
@@ -89,11 +90,13 @@ fn tasks() -> &'static Mutex<Tasks> {
 }
 
 extern "C" fn run_task(data: *mut c_void) -> c_int {
-    let id = data as usize;
-    let task = tasks().lock().unwrap().pending.remove(&id);
-    if let Some(p) = task {
-        crate::guard((), p.task);
-    }
+    crate::guard((), || {
+        let id = data as usize;
+        let task = tasks().lock().unwrap_or_else(|e| e.into_inner()).pending.remove(&id);
+        if let Some(p) = task {
+            (p.task)();
+        }
+    });
     0
 }
 
@@ -143,16 +146,14 @@ impl ThreadPool {
             t.pending.insert(id, Pending { pool: self.ptr as usize, task });
             id
         };
-        let file = cstr(origin.file);
-        let function = cstr(origin.function);
         let res = unsafe {
             __ast_threadpool_push(
                 self.ptr,
                 run_task,
                 id as *mut c_void,
-                file.as_ptr(),
+                origin.file.as_ptr(),
                 origin.line,
-                function.as_ptr(),
+                origin.function.as_ptr(),
             )
         };
         if res == 0 {

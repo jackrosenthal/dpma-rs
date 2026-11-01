@@ -42,11 +42,6 @@ pub fn alloc(size: usize, destructor: Option<Destructor>) -> *mut c_void {
     unsafe { dpma_glue_ao2_alloc(size, destructor, 0) }
 }
 
-/// Allocate an object without a lock.
-pub fn alloc_nolock(size: usize, destructor: Option<Destructor>) -> *mut c_void {
-    unsafe { dpma_glue_ao2_alloc(size, destructor, 1) }
-}
-
 /// `ao2_ref(obj, delta)`; returns the previous count.  NULL is ignored.
 ///
 /// # Safety

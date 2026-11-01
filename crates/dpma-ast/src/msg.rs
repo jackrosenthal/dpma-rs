@@ -1,6 +1,4 @@
 //! Out of call message (`ast_msg`) wrapper and the message technology.
-//!
-//! Owner: P2 "transport" (wave 1), P7 "session" (wave 2).
 
 use crate::ffi;
 use crate::types::AstMsg;
@@ -52,8 +50,13 @@ pub struct Msg {
     ptr: *mut AstMsg,
 }
 
+// SAFETY: an ast_msg is a reference-counted ao2 object.  Through a shared
+// reference only the getters run, which read the string fields and look up
+// the (locked) variable container; everything that changes the message
+// takes `&mut self`.
 unsafe impl Send for Msg {}
 unsafe impl Sync for Msg {}
+
 
 impl Msg {
     /// Allocate a new, empty message.
@@ -118,7 +121,7 @@ impl Msg {
 
     /// Set the body from bytes (`ast_msg_set_body(msg, "%s", body)`): the
     /// body ends at the first NUL, as it would in C.
-    pub fn set_body_bytes(&self, v: &[u8]) -> bool {
+    pub fn set_body_bytes(&mut self, v: &[u8]) -> bool {
         let end = v.iter().position(|&b| b == 0).unwrap_or(v.len());
         let c = std::ffi::CString::new(&v[..end]).unwrap_or_default();
         unsafe { ffi::dpma_glue_msg_set_body(self.ptr, c.as_ptr()) == 0 }
@@ -180,41 +183,31 @@ impl Msg {
         out
     }
 
-    pub fn set_var(&self, name: &str, value: &str) -> bool {
+    pub fn set_var(&mut self, name: &str, value: &str) -> bool {
         let n = cstr(name);
         let v = cstr(value);
         unsafe { ffi::ast_msg_set_var(self.ptr, n.as_ptr(), v.as_ptr()) == 0 }
     }
 
-    pub fn set_var_outbound(&self, name: &str, value: &str) -> bool {
+    pub fn set_var_outbound(&mut self, name: &str, value: &str) -> bool {
         let n = cstr(name);
         let v = cstr(value);
         unsafe { ffi::ast_msg_set_var_outbound(self.ptr, n.as_ptr(), v.as_ptr()) == 0 }
     }
 
-    pub fn set_context(&self, v: &str) -> bool {
+    pub fn set_context(&mut self, v: &str) -> bool {
         let c = cstr(v);
         unsafe { ffi::dpma_glue_msg_set_context(self.ptr, c.as_ptr()) == 0 }
     }
 
-    pub fn set_exten(&self, v: &str) -> bool {
+    pub fn set_exten(&mut self, v: &str) -> bool {
         let c = cstr(v);
         unsafe { ffi::dpma_glue_msg_set_exten(self.ptr, c.as_ptr()) == 0 }
     }
 
-    pub fn set_body(&self, v: &str) -> bool {
+    pub fn set_body(&mut self, v: &str) -> bool {
         let c = cstr(v);
         unsafe { ffi::dpma_glue_msg_set_body(self.ptr, c.as_ptr()) == 0 }
-    }
-
-    pub fn set_from(&self, v: &str) -> bool {
-        let c = cstr(v);
-        unsafe { ffi::dpma_glue_msg_set_from(self.ptr, c.as_ptr()) == 0 }
-    }
-
-    pub fn set_to(&self, v: &str) -> bool {
-        let c = cstr(v);
-        unsafe { ffi::dpma_glue_msg_set_to(self.ptr, c.as_ptr()) == 0 }
     }
 
     /// Queue the message for dialplan processing (`ast_msg_queue`).  The

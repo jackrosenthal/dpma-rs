@@ -11,8 +11,6 @@
 //! applications and updates the send-486 mask (see `Phone::send486_custom`).
 //! The phone's current presence is the `CustomPresence:<first line>`
 //! state.
-//!
-//! Owner: P8 "users-runtime" (wave 2).
 
 use super::*;
 use dpma_ast::presence as ast_presence;
@@ -75,32 +73,6 @@ pub fn option_add(options: &mut Vec<PresenceOption>, state: i32, owner: i32, sub
     }
     options.push(PresenceOption { state, owner, subtype: subtype.map(str::to_string), id });
     id
-}
-
-/// `phone_presence_option_update` (0x160770): replace option `id`, which
-/// must belong to `owner`.  Unused in 3.6.13.
-pub fn option_update(
-    options: &mut Vec<PresenceOption>,
-    id: i32,
-    state: i32,
-    owner: i32,
-    subtype: Option<&str>,
-) -> Result<(), ()> {
-    let pos = options.iter().position(|o| o.id == id).ok_or(())?;
-    if options[pos].owner != owner {
-        return Err(());
-    }
-    // Unlinked and linked again: the new option goes to the end.
-    options.remove(pos);
-    options.push(PresenceOption { state, owner, subtype: subtype.map(str::to_string), id });
-    Ok(())
-}
-
-/// `phone_presence_option_remove` (0x160c00).  Unused in 3.6.13.
-pub fn option_remove(options: &mut Vec<PresenceOption>, id: i32) -> Result<(), ()> {
-    let pos = options.iter().position(|o| o.id == id).ok_or(())?;
-    options.remove(pos);
-    Ok(())
 }
 
 /// The options `set_user_defaults` installs (after

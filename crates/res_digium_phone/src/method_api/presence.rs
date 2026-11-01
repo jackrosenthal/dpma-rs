@@ -6,8 +6,6 @@
 //! Each answers `{"response":{"method":M,"result":...}}` (replacing
 //! `out`) and returns 0, or puts the JSON error document in `out` and
 //! returns -1, as the original does.
-//!
-//! Owner: P8 "users-runtime" (wave 2).
 
 use crate::method::MethodCall;
 use crate::request::error_response_json;

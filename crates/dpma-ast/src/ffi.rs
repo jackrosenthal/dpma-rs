@@ -8,13 +8,11 @@ extern "C" {
     // ---- glue: logging / misc ----
     pub fn dpma_glue_log(level: c_int, file: *const c_char, line: c_int, func: *const c_char, msg: *const c_char);
     pub fn dpma_glue_debug_atleast(level: c_int) -> c_int;
-    pub fn dpma_glue_verbose_atleast(level: c_int) -> c_int;
     pub fn dpma_glue_fully_booted() -> c_int;
     pub fn dpma_glue_var_dir() -> *const c_char;
     pub fn dpma_glue_config_dir() -> *const c_char;
     pub fn dpma_glue_free(ptr: *mut c_void);
     pub fn dpma_glue_strdup(s: *const c_char) -> *mut c_char;
-    pub fn dpma_glue_self() -> *mut AstModule;
     pub fn dpma_glue_module_ref();
     pub fn dpma_glue_module_unref();
 
@@ -50,9 +48,6 @@ extern "C" {
         func: *const c_char,
         body: *const c_char,
     );
-    pub fn dpma_glue_eventflag_system() -> c_int;
-    pub fn dpma_glue_eventflag_config() -> c_int;
-    pub fn dpma_glue_eventflag_reporting() -> c_int;
     pub fn dpma_glue_manager_hook_action(action_text: *const c_char) -> *mut c_char;
 
     // ---- glue: messaging ----
@@ -61,8 +56,6 @@ extern "C" {
     pub fn dpma_glue_msg_set_context(msg: *mut AstMsg, value: *const c_char) -> c_int;
     pub fn dpma_glue_msg_set_exten(msg: *mut AstMsg, value: *const c_char) -> c_int;
     pub fn dpma_glue_msg_set_body(msg: *mut AstMsg, value: *const c_char) -> c_int;
-    pub fn dpma_glue_msg_set_from(msg: *mut AstMsg, value: *const c_char) -> c_int;
-    pub fn dpma_glue_msg_set_to(msg: *mut AstMsg, value: *const c_char) -> c_int;
     pub fn dpma_glue_msg_ref(msg: *const AstMsg) -> *mut AstMsg;
 
     // ---- glue: astdb ----

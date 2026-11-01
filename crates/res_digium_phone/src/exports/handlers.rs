@@ -106,20 +106,24 @@ unsafe fn info_set_next(h: usize, next: usize) {
 /// append to the list and take a reference on this module.  Always 0.
 #[no_mangle]
 pub unsafe extern "C" fn dpma_register_config_handler(h: *mut DpmaConfigHandler) -> c_int {
-    let mut l = CONFIG_HANDLERS.write().unwrap_or_else(|e| e.into_inner());
-    insert_tail(&mut l, h as usize, config_set_next);
-    dpma_ast::module_ref();
-    0
+    dpma_ast::guard(-1, || {
+        let mut l = CONFIG_HANDLERS.write().unwrap_or_else(|e| e.into_inner());
+        insert_tail(&mut l, h as usize, config_set_next);
+        dpma_ast::module_ref();
+        0
+    })
 }
 
 /// `void dpma_unregister_config_handler(struct dpma_config_handler *)` (H):
 /// remove it and drop the module reference (nothing when not registered).
 #[no_mangle]
 pub unsafe extern "C" fn dpma_unregister_config_handler(h: *mut DpmaConfigHandler) {
-    let mut l = CONFIG_HANDLERS.write().unwrap_or_else(|e| e.into_inner());
-    if remove(&mut l, h as usize, config_next, config_set_next) {
-        dpma_ast::module_unref();
-    }
+    dpma_ast::guard((), || {
+        let mut l = CONFIG_HANDLERS.write().unwrap_or_else(|e| e.into_inner());
+        if remove(&mut l, h as usize, config_next, config_set_next) {
+            dpma_ast::module_unref();
+        }
+    })
 }
 
 /// `void dpma_process_config_handlers(struct ao2_container *lines)`: call
@@ -127,35 +131,41 @@ pub unsafe extern "C" fn dpma_unregister_config_handler(h: *mut DpmaConfigHandle
 /// as the original does.
 #[no_mangle]
 pub unsafe extern "C" fn dpma_process_config_handlers(lines: *mut c_void) {
-    let l = CONFIG_HANDLERS.write().unwrap_or_else(|e| e.into_inner());
-    let mut cur = l.head;
-    while cur != 0 {
-        let h = cur as *mut DpmaConfigHandler;
-        if let Some(f) = (*h).handler {
-            f(lines);
+    dpma_ast::guard((), || {
+        let l = CONFIG_HANDLERS.write().unwrap_or_else(|e| e.into_inner());
+        let mut cur = l.head;
+        while cur != 0 {
+            let h = cur as *mut DpmaConfigHandler;
+            if let Some(f) = (*h).handler {
+                f(lines);
+            }
+            cur = (*h).next as usize;
         }
-        cur = (*h).next as usize;
-    }
-    drop(l);
+        drop(l);
+    })
 }
 
 /// `int dpma_register_info_handler(struct dpma_info_handler *)` (H): append
 /// and take a module reference.  Always 0.
 #[no_mangle]
 pub unsafe extern "C" fn dpma_register_info_handler(h: *mut DpmaInfoHandler) -> c_int {
-    let mut l = INFO_HANDLERS.write().unwrap_or_else(|e| e.into_inner());
-    insert_tail(&mut l, h as usize, info_set_next);
-    dpma_ast::module_ref();
-    0
+    dpma_ast::guard(-1, || {
+        let mut l = INFO_HANDLERS.write().unwrap_or_else(|e| e.into_inner());
+        insert_tail(&mut l, h as usize, info_set_next);
+        dpma_ast::module_ref();
+        0
+    })
 }
 
 /// `void dpma_unregister_info_handler(struct dpma_info_handler *)` (H).
 #[no_mangle]
 pub unsafe extern "C" fn dpma_unregister_info_handler(h: *mut DpmaInfoHandler) {
-    let mut l = INFO_HANDLERS.write().unwrap_or_else(|e| e.into_inner());
-    if remove(&mut l, h as usize, info_next, info_set_next) {
-        dpma_ast::module_unref();
-    }
+    dpma_ast::guard((), || {
+        let mut l = INFO_HANDLERS.write().unwrap_or_else(|e| e.into_inner());
+        if remove(&mut l, h as usize, info_next, info_set_next) {
+            dpma_ast::module_unref();
+        }
+    })
 }
 
 extern "C" {
@@ -175,20 +185,22 @@ pub unsafe extern "C" fn dpma_info_send(
     body: *const c_char,
     useragent_filter: *const c_char,
 ) -> c_int {
-    let l = INFO_HANDLERS.read().unwrap_or_else(|e| e.into_inner());
-    let mut cur = l.head;
-    while cur != 0 {
-        let h = cur as *mut DpmaInfoHandler;
-        let tech = dpma_glue_exports_channel_tech_type(chan);
-        if libc::strcasecmp((*h).tech, tech) == 0 {
-            return match (*h).send {
-                Some(f) => f(chan, headers, content_type, body, useragent_filter),
-                None => -1,
-            };
+    dpma_ast::guard(-1, || {
+        let l = INFO_HANDLERS.read().unwrap_or_else(|e| e.into_inner());
+        let mut cur = l.head;
+        while cur != 0 {
+            let h = cur as *mut DpmaInfoHandler;
+            let tech = dpma_glue_exports_channel_tech_type(chan);
+            if libc::strcasecmp((*h).tech, tech) == 0 {
+                return match (*h).send {
+                    Some(f) => f(chan, headers, content_type, body, useragent_filter),
+                    None => -1,
+                };
+            }
+            cur = (*h).next as usize;
         }
-        cur = (*h).next as usize;
-    }
-    -1
+        -1
+    })
 }
 
 type IsDphoneFn = unsafe extern "C" fn(endpoint: *const c_char) -> c_int;
@@ -200,12 +212,14 @@ static IS_DPHONE: AtomicUsize = AtomicUsize::new(0);
 /// -1 (and a log) when one is registered already.
 #[no_mangle]
 pub extern "C" fn dpma_register_pjsip_endpoint_is_dphone(f: Option<IsDphoneFn>) -> c_int {
-    if IS_DPHONE.load(Ordering::SeqCst) == 0 {
-        IS_DPHONE.store(f.map_or(0, |f| f as usize), Ordering::SeqCst);
-        return 0;
-    }
-    dpma_log!("Attempted to register dpma_pjsip_endpoint_is_dphone, but the function is already registerd.");
-    -1
+    dpma_ast::guard(-1, || {
+        if IS_DPHONE.load(Ordering::SeqCst) == 0 {
+            IS_DPHONE.store(f.map_or(0, |f| f as usize), Ordering::SeqCst);
+            return 0;
+        }
+        dpma_log!("Attempted to register dpma_pjsip_endpoint_is_dphone, but the function is already registerd.");
+        -1
+    })
 }
 
 /// `void dpma_unregister_pjsip_endpoint_is_dphone(void)` (H).
@@ -218,14 +232,16 @@ pub extern "C" fn dpma_unregister_pjsip_endpoint_is_dphone() {
 /// when no function is registered.
 #[no_mangle]
 pub unsafe extern "C" fn dpma_pjsip_endpoint_is_dphone(endpoint: *const c_char) -> c_int {
-    let f = IS_DPHONE.load(Ordering::SeqCst);
-    if f != 0 {
-        // SAFETY: only ever set from an `IsDphoneFn`.
-        let f: IsDphoneFn = std::mem::transmute::<usize, IsDphoneFn>(f);
-        return f(endpoint);
-    }
-    dpma_log!("dpma_pjsip_endpoint_is_dphone was invoked but the function is unregistered.");
-    0
+    dpma_ast::guard(0, || {
+        let f = IS_DPHONE.load(Ordering::SeqCst);
+        if f != 0 {
+            // SAFETY: only ever set from an `IsDphoneFn`.
+            let f: IsDphoneFn = std::mem::transmute::<usize, IsDphoneFn>(f);
+            return f(endpoint);
+        }
+        dpma_log!("dpma_pjsip_endpoint_is_dphone was invoked but the function is unregistered.");
+        0
+    })
 }
 
 /// Rust-side `dpma_info_send`: `headers` become an `ast_variable` list
@@ -235,19 +251,17 @@ pub unsafe extern "C" fn dpma_pjsip_endpoint_is_dphone(endpoint: *const c_char) 
 /// # Safety
 /// `chan` must be a live channel the caller holds a reference on.
 pub unsafe fn info_send(chan: *mut AstChannel, headers: &[(&str, &str)], content_type: &str, body: &str) -> i32 {
-    {
-        let mut list: *mut AstVariable = std::ptr::null_mut();
-        for (name, value) in headers.iter().rev() {
-            let (n, v) = (cstr(name), cstr(value));
-            list = dpma_glue_exports_variable_prepend(list, n.as_ptr(), v.as_ptr());
-        }
-        let ct = cstr(content_type);
-        let b = cstr(body);
-        let opt = |s: &std::ffi::CString| if s.as_bytes().is_empty() { std::ptr::null() } else { s.as_ptr() };
-        let r = dpma_info_send(chan, list, opt(&ct), opt(&b), std::ptr::null());
-        dpma_glue_exports_variables_destroy(list);
-        r
+    let mut list: *mut AstVariable = std::ptr::null_mut();
+    for (name, value) in headers.iter().rev() {
+        let (n, v) = (cstr(name), cstr(value));
+        list = dpma_glue_exports_variable_prepend(list, n.as_ptr(), v.as_ptr());
     }
+    let ct = cstr(content_type);
+    let b = cstr(body);
+    let opt = |s: &std::ffi::CString| if s.as_bytes().is_empty() { std::ptr::null() } else { s.as_ptr() };
+    let r = dpma_info_send(chan, list, opt(&ct), opt(&b), std::ptr::null());
+    dpma_glue_exports_variables_destroy(list);
+    r
 }
 
 /// Rust-side `dpma_process_config_handlers` with the lines container

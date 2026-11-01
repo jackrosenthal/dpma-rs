@@ -1,7 +1,5 @@
 //! AMI action `DPMAShowPhones` (`action_dpma_show_phones` FUN_001500d0),
 //! with the phone user details of FUN_0016aa10.
-//!
-//! Owner: P7 "session" (wave 2).
 
 use super::now;
 use crate::ami::AmiAction;

@@ -2,16 +2,12 @@
 //! `phone_request_load` (FUN_00177610) in this order: Echo, Handshake
 //! (`session::handshake`), HTTPRequest, AsteriskRequest, UserlistRequest,
 //! TokenRequest, ConfigRequest, FileRequest, VerifyRequest, PingRequest.
-//!
-//! Owner: P12 "request-handlers" (wave 3); `handle_echo` and `handle_ping`
-//! by P7 "session" (wave 2).  The registration list below matches the
-//! original's.
 
 use super::{error_response_json, error_response_xml, register_handler};
 use crate::method::{self, MethodCall};
 use crate::session::{Outgoing, Transaction};
 use crate::users;
-use dpma_ast::{astxml, dpma_debug, dpma_log};
+use dpma_ast::{astxml, dpma_debug, dpma_log, json};
 use dpma_proto::errors;
 use std::io::Read;
 use std::sync::atomic::Ordering;
@@ -47,12 +43,12 @@ pub fn load() -> Result<(), ()> {
 /// `handle_request_echo` (FUN_001764f0): answer directly (not through the
 /// session layer, so unencrypted and in one message) with an EchoResponse
 /// carrying Error-ID 0, the request's ID and origination network, and its
-/// body.  (Implemented by P7 so the stack can be tested end to end.)
+/// body.
 pub fn handle_echo(tx: Arc<Transaction>) -> i32 {
     use dpma_proto::headers as h;
     let var = |name: &str| tx.first_msg.as_ref().and_then(|m| m.get_var(name));
     let uri = var(h::RESPONSE_URI);
-    let Some(m) = crate::transport::new_outgoing(uri.as_deref().unwrap_or("")) else {
+    let Some(mut m) = crate::transport::new_outgoing(uri.as_deref().unwrap_or("")) else {
         dpma_ast::ast_log!(dpma_ast::log::LOG_ERROR, "Unable to allocate msg");
         return 0;
     };
@@ -617,87 +613,7 @@ fn json_request(tx: &Arc<Transaction>, phone: &str, text: &[u8], buf: &mut Strin
     None
 }
 
-/// The few `ast_json` (jansson) calls the JSON requests need.
-mod json {
-    use std::os::raw::{c_char, c_int, c_void};
-
-    extern "C" {
-        fn ast_json_load_string(input: *const c_char, error: *mut c_void) -> *mut c_void;
-        fn ast_json_object_get(object: *mut c_void, key: *const c_char) -> *mut c_void;
-        fn ast_json_typeof(value: *const c_void) -> c_int;
-        fn ast_json_string_get(string: *const c_void) -> *const c_char;
-        fn ast_json_dump_string_format(root: *mut c_void, format: c_int) -> *mut c_char;
-        fn ast_json_free(p: *mut c_void);
-        fn ast_json_unref(value: *mut c_void);
-    }
-
-    /// `AST_JSON_OBJECT`.
-    pub const OBJECT: c_int = 0;
-    /// `AST_JSON_STRING`.
-    pub const STRING: c_int = 2;
-
-    /// A parsed document (owned reference).
-    pub struct Json(*mut c_void);
-
-    /// A value inside a [`Json`] (borrowed reference).
-    #[derive(Clone, Copy)]
-    pub struct Value<'a>(*mut c_void, std::marker::PhantomData<&'a Json>);
-
-    impl Json {
-        /// `ast_json_load_string`; None when the text is not valid JSON.
-        pub fn load(text: &[u8]) -> Option<Json> {
-            let c = std::ffi::CString::new(text).ok()?;
-            let p = unsafe { ast_json_load_string(c.as_ptr(), std::ptr::null_mut()) };
-            (!p.is_null()).then_some(Json(p))
-        }
-
-        pub fn get(&self, key: &str) -> Option<Value<'_>> {
-            Value(self.0, std::marker::PhantomData).get(key)
-        }
-    }
-
-    impl Drop for Json {
-        fn drop(&mut self) {
-            unsafe { ast_json_unref(self.0) };
-        }
-    }
-
-    impl<'a> Value<'a> {
-        /// `ast_json_object_get` (None for a missing key or a non-object).
-        pub fn get(&self, key: &str) -> Option<Value<'a>> {
-            let k = dpma_ast::cstr(key);
-            let p = unsafe { ast_json_object_get(self.0, k.as_ptr()) };
-            (!p.is_null()).then_some(Value(p, std::marker::PhantomData))
-        }
-
-        /// `ast_json_typeof`.
-        pub fn kind(&self) -> c_int {
-            unsafe { ast_json_typeof(self.0) }
-        }
-
-        /// `ast_json_string_get` ("" for a non-string).
-        pub fn string(&self) -> String {
-            unsafe { dpma_ast::from_ptr(ast_json_string_get(self.0)).unwrap_or_default() }
-        }
-
-        /// `ast_json_dump_string` (compact); None when jansson refuses
-        /// (anything but an object or an array).
-        pub fn dump(&self) -> Option<String> {
-            unsafe {
-                let s = ast_json_dump_string_format(self.0, 0);
-                if s.is_null() {
-                    return None;
-                }
-                let r = dpma_ast::from_ptr(s);
-                ast_json_free(s as *mut c_void);
-                r
-            }
-        }
-    }
-}
-
 /// `handle_request_ping` (FUN_001758e0): send the (empty) PingResponse.
-/// (Implemented by P7 so the stack can be tested end to end.)
 pub fn handle_ping(tx: Arc<Transaction>) -> i32 {
     crate::session::send_and_destroy(&tx);
     0

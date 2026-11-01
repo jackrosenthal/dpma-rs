@@ -1,11 +1,10 @@
 //! Channels: lookup by name prefix and technology call id, the name and
-//! unique id under the channel lock, and the queue member call scan
-//! (glue in `glue/channel.c`).
-//!
-//! Filled in by P10 "methods-calls" (wave 2); state and answer by P14.
+//! unique id under the channel lock, the queue member call scan (glue in
+//! `glue/channel.c`), and channel names, variables, state, and answering.
 
 use crate::types::AstChannel;
-use crate::util::{cstr, take_ast_string};
+use crate::util::{cstr, from_ptr, take_ast_string};
+use crate::vm::c_bytes;
 use std::os::raw::{c_char, c_int, c_long};
 
 extern "C" {
@@ -14,7 +13,29 @@ extern "C" {
     fn dpma_glue_channel_name_uniqueid(chan: *mut AstChannel, name: *mut *mut c_char, uniqueid: *mut *mut c_char);
     fn dpma_glue_channel_queue_member_call(interface: *const c_char, created: *mut c_long) -> c_int;
     fn ast_channel_state(chan: *const AstChannel) -> c_int;
+    fn ast_channel_name(chan: *const AstChannel) -> *const c_char;
     fn ast_answer(chan: *mut AstChannel) -> c_int;
+}
+
+/// `ast_channel_name` (copied; "" for NULL).
+///
+/// # Safety
+/// `chan` must be NULL or a live channel.
+pub unsafe fn name(chan: *const AstChannel) -> String {
+    if chan.is_null() {
+        return String::new();
+    }
+    from_ptr(ast_channel_name(chan)).unwrap_or_default()
+}
+
+/// `pbx_builtin_setvar_helper(chan, name, value)`: set a variable, or
+/// write a dialplan function when `name` is one (e.g., `PJSIP_HEADER(...)`).
+///
+/// # Safety
+/// `chan` must be NULL or a live channel.
+pub unsafe fn setvar(chan: *mut AstChannel, name: &str, value: &[u8]) -> c_int {
+    let (name, value) = (cstr(name), c_bytes(value));
+    crate::ffi::pbx_builtin_setvar_helper(chan, name.as_ptr(), value.as_ptr())
 }
 
 /// `AST_STATE_UP`.
