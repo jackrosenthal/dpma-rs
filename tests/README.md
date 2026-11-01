@@ -41,7 +41,7 @@ Asterisk, resets the configuration, runs the suite's setup, installs the
 build (`ast.sh install`, which also installs the PJSIP helpers), and
 starts Asterisk.  At the end it puts the simulator setup back (reset,
 test PKI, `install-conf.sh`) and stops Asterisk.  A full run takes about
-seven minutes.
+five minutes.
 
 ## Running one suite by hand
 
