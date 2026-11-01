@@ -3,8 +3,8 @@
 //! (`session::handshake`), HTTPRequest, AsteriskRequest, UserlistRequest,
 //! TokenRequest, ConfigRequest, FileRequest, VerifyRequest, PingRequest.
 //!
-//! Owner: P12 "request-handlers" (wave 3).  The registration list below is
-//! final; only the handler bodies are to be written.
+//! Owner: P12 "request-handlers" (wave 3).  The registration list below
+//! matches the original's.
 
 use super::register_handler;
 use crate::session::Transaction;

@@ -2,7 +2,7 @@
 //! 0x5bcec0 registered by `phone_method_internal_load` (FUN_00186920) and
 //! removed by `phone_method_internal_cleanup` (FUN_00186840).
 //!
-//! This file (the table and load order) is complete.  The handlers live
+//! The table and load order match the original.  The handlers live
 //! in `voicemail.rs` (P9 "methods-vm", wave 2), `calls.rs` (P10
 //! "methods-calls", wave 2), and `presence.rs` (P8 "users-runtime",
 //! wave 2).

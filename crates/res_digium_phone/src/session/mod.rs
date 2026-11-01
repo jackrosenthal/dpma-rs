@@ -7,9 +7,8 @@
 //! from several SIP MESSAGEs); handlers answer it by filling in its
 //! [`Outgoing`] and calling [`outgoing::send_and_destroy`].
 //!
-//! The types below are the agreed cross-package interface; other packages
-//! read them.  The session package may add fields but must not rename or
-//! remove the ones listed here.
+//! The types below are the starting cross-package interface; other
+//! packages read them.  Changes are fine; mention them in the hand-off.
 //!
 //! Owner: P7 "session" (wave 2).
 

@@ -6,9 +6,9 @@
 //! with that module's own `AST_MODULE` definition; see the `dpma-build`
 //! crate).
 //!
-//! `ffi.rs` and `glue/common.c` are frozen: new declarations go into the
-//! per-area module that owns them (`threadpool.rs`, `ao2.rs`, ...) and new
-//! glue into a new `glue/<area>.c`.
+//! Raw declarations live in `ffi.rs` or in the per-area modules
+//! (`threadpool.rs`, `ao2.rs`, ...); glue lives in `glue/common.c` or in a
+//! per-area `glue/<area>.c`.
 
 #![allow(clippy::missing_safety_doc)]
 

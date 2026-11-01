@@ -4,8 +4,7 @@
 //! This file wires the subsystems together in the original's order
 //! (res_digium_phone.c: `load_module`, `load_full_components`,
 //! `unload_full_components`, `reload`).  The work is divided into packages
-//! described in dev/notes/port-plan.md; each package owns its own files
-//! and only fills in the functions called from here.
+//! described in dev/notes/port-plan.md.
 
 #![allow(clippy::result_unit_err)]
 

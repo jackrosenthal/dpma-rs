@@ -20,8 +20,8 @@
 //! which unregisters only some of them at unload (leaving dangling
 //! handlers), every registered action is unregistered.
 //!
-//! This file is complete; packages only implement their `actions()`.
-//! `messages.rs` is owned by P13 "ami" (wave 3).
+//! Packages contribute through their `actions()`.  `messages.rs` is
+//! expected to be filled in by P13 "ami" (wave 3).
 
 pub mod messages;
 

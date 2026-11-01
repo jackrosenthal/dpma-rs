@@ -1,6 +1,6 @@
 //! Asterisk XML API wrappers (`ast_xml_*`, libxml2 behind Asterisk).
 //!
-//! Owner: P4 "config-xml" (wave 1).  Put the raw `extern "C"` declarations this area needs in
-//! this file (not in `ffi.rs`), and any C glue in
-//! `crates/dpma-ast/glue/xml.c` (core Asterisk headers only; it is
-//! compiled into every module).  See dev/notes/port-plan.md, "Ground rules".
+//! Expected to be filled in by P4 "config-xml" (wave 1).  Raw `extern "C"` declarations for
+//! this area and wrappers around them go here; C glue can go in
+//! `crates/dpma-ast/glue/xml.c` (core Asterisk headers only, since it is
+//! compiled into every module).
