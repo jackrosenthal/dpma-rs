@@ -7,7 +7,8 @@
 //! differ from plain libxml2 (parser options, XInclude processing, attribute
 //! matching).  This wraps those functions so the behavior is the same.
 //!
-//! Added by P10 "methods-calls" (wave 2).
+//! Added by P10 "methods-calls" (wave 2); attributes and node markup added
+//! by P12 "request-handlers" (wave 3) for phone requests.
 
 use crate::util::{cstr, from_ptr};
 use std::marker::PhantomData;
@@ -43,6 +44,19 @@ extern "C" {
     fn ast_xml_set_attribute(node: *mut AstXmlNode, name: *const c_char, value: *const c_char) -> c_int;
     fn ast_xml_get_text(node: *mut AstXmlNode) -> *const c_char;
     fn ast_xml_free_text(text: *const c_char);
+    fn ast_xml_get_attribute(node: *mut AstXmlNode, attrname: *const c_char) -> *const c_char;
+    fn ast_xml_free_attr(attribute: *const c_char);
+    /// libxml2, for serializing a node (`xmlNodeDump` into an `xmlBuffer`).
+    fn xmlBufferCreate() -> *mut std::os::raw::c_void;
+    fn xmlBufferFree(buf: *mut std::os::raw::c_void);
+    fn xmlBufferContent(buf: *const std::os::raw::c_void) -> *const c_char;
+    fn xmlNodeDump(
+        buf: *mut std::os::raw::c_void,
+        doc: *mut AstXmlDoc,
+        cur: *mut AstXmlNode,
+        level: c_int,
+        format: c_int,
+    ) -> c_int;
     fn ast_xml_doc_dump_file(output: *mut libc::FILE, doc: *mut AstXmlDoc) -> c_int;
 }
 
@@ -75,7 +89,8 @@ impl Doc {
     }
 
     /// `ast_xml_read_memory(buffer, size)` (libxml2's `xmlParseMemory`).
-    pub fn read_memory(buf: &str) -> Option<Doc> {
+    pub fn read_memory(buf: impl AsRef<[u8]>) -> Option<Doc> {
+        let buf = buf.as_ref();
         let len = c_int::try_from(buf.len()).ok()?;
         let p = unsafe { xmlParseMemory(buf.as_ptr() as *const c_char, len) } as *mut AstXmlDoc;
         (!p.is_null()).then_some(Doc(p))
@@ -99,6 +114,24 @@ impl Doc {
             libc::fclose(f);
         }
         true
+    }
+
+    /// The markup of `node` (one of this document's nodes) as libxml2's
+    /// `xmlNodeDump` writes it, unformatted; None when libxml2 fails.
+    pub fn node_markup(&self, node: &Node<'_>) -> Option<String> {
+        unsafe {
+            let buf = xmlBufferCreate();
+            if buf.is_null() {
+                return None;
+            }
+            let res = if xmlNodeDump(buf, self.0, node.ptr, 0, 0) < 0 {
+                None
+            } else {
+                from_ptr(xmlBufferContent(buf))
+            };
+            xmlBufferFree(buf);
+            res
+        }
     }
 }
 
@@ -146,6 +179,21 @@ impl<'a> Node<'a> {
         let n = cstr(name);
         let v = cstr(value);
         unsafe { ast_xml_set_attribute(self.ptr, n.as_ptr(), v.as_ptr()) == 0 }
+    }
+
+    /// `ast_xml_get_attribute(self, name)`; None when the element has no
+    /// such attribute.
+    pub fn attribute(&self, name: &str) -> Option<String> {
+        let n = cstr(name);
+        unsafe {
+            let a = ast_xml_get_attribute(self.ptr, n.as_ptr());
+            if a.is_null() {
+                return None;
+            }
+            let s = from_ptr(a);
+            ast_xml_free_attr(a);
+            s
+        }
     }
 
     /// `ast_xml_get_text` (libxml2's `xmlNodeGetContent`); None when it
