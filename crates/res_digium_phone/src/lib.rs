@@ -108,7 +108,6 @@ fn unload_components(full: Option<Full>) {
     phone_main::stop();
     avahi::stop();
     ami::sched_destroy();
-    exports::unregister_builtin_info_handler();
     firmware::unload();
     drop(full);
     manager::unregister(ACTION_RECONFIGURE);
@@ -176,7 +175,6 @@ fn load_full() -> Result<Full, ()> {
     if ami::sched_create().is_err() {
         return fail("Failed to create ami schedule context");
     }
-    exports::register_builtin_info_handler();
     if method::load().is_err() {
         return fail("Failed to load phone method");
     }

@@ -261,11 +261,13 @@ pub fn load() -> Result<(Option<Arc<General>>, Arc<General>), ()> {
     }
 
     let new = Arc::new(g);
+    crate::exports::config_api::publish(&new);
     let old = CURRENT.write().unwrap().replace(new.clone());
     Ok((old, new))
 }
 
 pub fn unload() {
+    crate::exports::config_api::unpublish();
     CURRENT.write().unwrap().take();
 }
 
