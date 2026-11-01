@@ -648,7 +648,14 @@ pub fn commands() -> Vec<CliCommand> {
         cmd!("digium_phones show lines", "Usage digium_phones show lines\n", show_lines),
         cmd!("digium_phones show line", "Usage digium_phones show line <line name>\n", show_line, complete_line),
         cmd!("digium_phones show alerts", "Usage digium_phones show alerts\n", show_alerts),
-        cmd!("digium_phones show alert", "Usage digium_phones show alert <alert name>\n", show_alert, complete_alert),
+        // The original's summary has this typo ("core show help").
+        CliCommand {
+            command: "digium_phones show alert",
+            summary: "digum_phones show alert",
+            usage: "Usage digium_phones show alert <alert name>\n",
+            exec: show_alert,
+            complete: Some(complete_alert),
+        },
         cmd!("digium_phones show networks", "Usage digium_phones show networks\n", show_networks),
         cmd!(
             "digium_phones show network",
