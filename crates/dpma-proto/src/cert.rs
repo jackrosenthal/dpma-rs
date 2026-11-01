@@ -6,6 +6,7 @@
 //! into this project).
 
 use crate::{LogLevel, ProtoError, Result};
+use dpma_bytes::{bformat, ByteSlice};
 use foreign_types::{ForeignType, ForeignTypeRef};
 use openssl::pkey::{PKey, Public};
 use openssl::stack::Stack;
@@ -71,9 +72,9 @@ impl CaStore {
 /// as "(null)", as glibc prints the original's NULL pointer.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ClientInfo<'a> {
-    pub contact: &'a str,
-    pub mac: Option<&'a str>,
-    pub user_agent: &'a str,
+    pub contact: &'a [u8],
+    pub mac: Option<&'a [u8]>,
+    pub user_agent: &'a [u8],
 }
 
 /// A phone certificate that passed verification.
@@ -122,28 +123,29 @@ pub enum CertError {
 impl CertError {
     /// The message the original logs for this error (with its newline,
     /// except for the chain length message, which has none).
-    pub fn log_message(&self, contact: &str) -> String {
+    pub fn log_message(&self, contact: &[u8]) -> Vec<u8> {
         match self {
-            CertError::Unreadable(e) => format!("<{}>: Unable to read client cert: {}\n", contact, e),
+            CertError::Unreadable(e) => bformat!("<{}>: Unable to read client cert: {}\n", contact, e),
             CertError::WrongChainLength(n) => {
-                format!("<{}>: Expected two certificates in the chain, found {}", contact, n)
+                bformat!("<{}>: Expected two certificates in the chain, found {}", contact, n)
             }
             CertError::NoSerial(e) => {
-                format!("<{}>: Unable to get serial number of intermediate cert: {}\n", contact, e)
+                bformat!("<{}>: Unable to get serial number of intermediate cert: {}\n", contact, e)
             }
-            CertError::Context(e) => format!("<{}>: Could not initialize store context: {}\n", contact, e),
-            CertError::Verify(e) => format!("<{}>: Client cert failed to verify: {}\n", contact, e),
+            CertError::Context(e) => bformat!("<{}>: Could not initialize store context: {}\n", contact, e),
+            CertError::Verify(e) => bformat!("<{}>: Client cert failed to verify: {}\n", contact, e),
         }
     }
 }
 
 impl std::fmt::Display for CertError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.log_message("").trim_start_matches("<>: ").trim_end())
+        let msg = self.log_message(b"");
+        f.write_str(String::from_utf8_lossy(&msg).trim_start_matches("<>: ").trim_end())
     }
 }
 
-fn log(level: LogLevel, line: u32, msg: &str) {
+fn log(level: LogLevel, line: u32, msg: &[u8]) {
     crate::log(level, "phone_message.c", line, "session_verify_cert", msg);
 }
 
@@ -215,34 +217,35 @@ fn serial_of(cert: &X509) -> Option<i64> {
 /// every `-----BEGIN ` and `-----END ` marker line that does not start the
 /// text or a line, and after every such line that is not followed by one
 /// or by the end of the text.  Well-formed PEM text is returned unchanged.
-pub fn restore_pem_newlines(pem: &str) -> String {
-    const DASHES: &str = "-----";
-    let mut out = String::with_capacity(pem.len() + 8);
+pub fn restore_pem_newlines(pem: impl AsRef<[u8]>) -> Vec<u8> {
+    const DASHES: &[u8] = b"-----";
+    let pem = pem.as_ref();
+    let mut out = Vec::with_capacity(pem.len() + 8);
     let mut rest = pem;
     loop {
         let start = [rest.find("-----BEGIN "), rest.find("-----END ")].into_iter().flatten().min();
         let Some(start) = start else {
-            out.push_str(rest);
+            out.extend_from_slice(rest);
             return out;
         };
-        out.push_str(&rest[..start]);
+        out.extend_from_slice(&rest[..start]);
         let at = &rest[start..];
-        let label_start = if at.starts_with("-----BEGIN ") { 11 } else { 9 };
-        let label_len = at[label_start..].find(['-', '\r', '\n']).unwrap_or(at.len() - label_start);
+        let label_start = if at.starts_with(b"-----BEGIN ") { 11 } else { 9 };
+        let label_len = at[label_start..].find_byteset(b"-\r\n").unwrap_or(at.len() - label_start);
         let end = label_start + label_len + DASHES.len();
         if !at[label_start + label_len..].starts_with(DASHES) {
             // Not a marker line: keep the dashes and look further on.
-            out.push_str(DASHES);
+            out.extend_from_slice(DASHES);
             rest = &at[DASHES.len()..];
             continue;
         }
-        if !out.is_empty() && !out.ends_with('\n') {
-            out.push('\n');
+        if !out.is_empty() && !out.ends_with(b"\n") {
+            out.push(b'\n');
         }
-        out.push_str(&at[..end]);
+        out.extend_from_slice(&at[..end]);
         rest = &at[end..];
-        if !rest.is_empty() && !rest.starts_with('\n') && !rest.starts_with("\r\n") {
-            out.push('\n');
+        if !rest.is_empty() && !rest.starts_with(b"\n") && !rest.starts_with(b"\r\n") {
+            out.push(b'\n');
         }
     }
 }
@@ -261,10 +264,14 @@ pub fn restore_pem_newlines(pem: &str) -> String {
 /// 1.1.
 pub fn verify_client_chain(
     store: &CaStore,
-    pem: &str,
+    pem: impl AsRef<[u8]>,
     client: &ClientInfo,
 ) -> std::result::Result<VerifiedClient, CertError> {
-    let who = || format!("Contact: {} MAC: {} UA: {}", client.contact, client.mac.unwrap_or("(null)"), client.user_agent);
+    let pem = pem.as_ref();
+    let who = || {
+        let mac: &[u8] = client.mac.unwrap_or(b"(null)");
+        bformat!("Contact: {} MAC: {} UA: {}", client.contact, mac, client.user_agent)
+    };
     unsafe { ffi::ERR_clear_error() };
     let result = verify_inner(store, pem, client, &who);
     unsafe { ffi::ERR_clear_error() };
@@ -273,15 +280,15 @@ pub fn verify_client_chain(
 
 fn verify_inner(
     store: &CaStore,
-    pem: &str,
+    pem: &[u8],
     client: &ClientInfo,
-    who: &dyn Fn() -> String,
+    who: &dyn Fn() -> Vec<u8>,
 ) -> std::result::Result<VerifiedClient, CertError> {
     let fail = |line: u32, e: CertError| {
         log(LogLevel::Dpma, line, &e.log_message(client.contact));
         Err(e)
     };
-    let Ok((first, rest)) = read_certs(pem.as_bytes()) else {
+    let Ok((first, rest)) = read_certs(pem) else {
         return fail(0x208, CertError::Unreadable(openssl_error_string()));
     };
 
@@ -298,7 +305,7 @@ fn verify_inner(
                 log(
                     LogLevel::Debug(1),
                     0x22f,
-                    &format!("{} Intermediate cert serial number: {}\n", who(), s),
+                    &bformat!("{} Intermediate cert serial number: {}\n", who(), s),
                 );
             }
             _ => return fail(0x22b, CertError::NoSerial(openssl_error_string())),
@@ -307,7 +314,7 @@ fn verify_inner(
 
     let legacy = rest.is_empty();
     let cert = if legacy {
-        log(LogLevel::Debug(1), 0x235, &format!("{} Using legacy certificate\n", who()));
+        log(LogLevel::Debug(1), 0x235, &bformat!("{} Using legacy certificate\n", who()));
         match first {
             Some(c) => c,
             None => return fail(0x23a, CertError::Unreadable(openssl_error_string())),
@@ -324,7 +331,7 @@ fn verify_inner(
     }
     let Ok(mut ctx) = X509StoreContext::new() else {
         let e = openssl_error_string();
-        log(LogLevel::Dpma, 0x246, &format!("<{}>: Unable create context: {}\n", client.contact, e));
+        log(LogLevel::Dpma, 0x246, &bformat!("<{}>: Unable create context: {}\n", client.contact, e));
         return Err(CertError::Context(e));
     };
     let verified = ctx.init(&store.store, &cert, &chain, |ctx: &mut X509StoreContextRef| {
@@ -356,16 +363,17 @@ fn verify_inner(
 /// bits is logged and dropped (`Ok(None)`); the original then keeps the
 /// session without a key.  Unreadable input is an error (the caller logs
 /// "Failed to load rsa key").
-pub fn load_public_key(pem: &str) -> Result<Option<PKey<Public>>> {
+pub fn load_public_key(pem: impl AsRef<[u8]>) -> Result<Option<PKey<Public>>> {
+    let pem = pem.as_ref();
     let log = |line: u32, msg: &str| {
-        crate::log(LogLevel::Dpma, "phone_message.c", line, "session_load_rsa_key", &format!("{}\n", msg));
+        crate::log(LogLevel::Dpma, "phone_message.c", line, "session_load_rsa_key", format!("{}\n", msg).as_bytes());
     };
     if pem.is_empty() {
         let msg = "failed to load client public rsa key - is null";
         log(0x1a8, msg);
         return Err(ProtoError::Invalid(msg.into()));
     }
-    let rsa = openssl::rsa::Rsa::public_key_from_pem(pem.as_bytes()).map_err(|e| ProtoError::Crypto(e.to_string()))?;
+    let rsa = openssl::rsa::Rsa::public_key_from_pem(pem).map_err(|e| ProtoError::Crypto(e.to_string()))?;
     if rsa.size() < 0x40 {
         log(0x1bd, "failed to load client public rsa key - less than 512 bits");
         return Ok(None);
@@ -447,7 +455,8 @@ mod tests {
     use crate::testlog;
     use openssl::hash::MessageDigest;
 
-    const CLIENT: ClientInfo = ClientInfo { contact: "sip:phone@127.0.0.1:5060", mac: Some("000fd3000001"), user_agent: "Digium D65 2_9_17" };
+    const CLIENT: ClientInfo =
+        ClientInfo { contact: b"sip:phone@127.0.0.1:5060", mac: Some(b"000fd3000001"), user_agent: b"Digium D65 2_9_17" };
 
     struct Pki {
         root: Issued,
@@ -489,7 +498,7 @@ mod tests {
     #[test]
     fn legacy_form() {
         let p = pki();
-        let (r, logs) = testlog::capture(|| verify_client_chain(&store(&p), &pem(&[&p.legacy.cert]), &CLIENT));
+        let (r, logs) = testlog::capture(|| verify_client_chain(&store(&p), pem(&[&p.legacy.cert]), &CLIENT));
         let v = r.unwrap();
         assert!(v.legacy);
         assert_eq!(v.intermediate_serial, 0);
@@ -532,24 +541,24 @@ mod tests {
         // Well-formed text (LF or CRLF) and text without markers are
         // unchanged.
         for body in [pem(&[&p.legacy.cert]), pem(&[&p.legacy.cert, &p.inter.cert, &p.phone.cert])] {
-            assert_eq!(restore_pem_newlines(&body), body);
+            assert_eq!(restore_pem_newlines(&body), body.as_bytes());
             let crlf = body.replace('\n', "\r\n");
-            assert_eq!(restore_pem_newlines(&crlf), crlf);
+            assert_eq!(restore_pem_newlines(&crlf), crlf.as_bytes());
         }
         for s in ["", "hello", "-----", "a-----b", "-----BEGIN", "-----BEGIN CERT", "x-----BEGIN CERT\n-----", "-----END-----"] {
-            assert_eq!(restore_pem_newlines(s), s);
+            assert_eq!(restore_pem_newlines(s), s.as_bytes());
         }
         // Each kind of lost line break: after a BEGIN line, before an END
         // line, and between an END line and the next BEGIN line.
         assert_eq!(
             restore_pem_newlines("-----BEGIN CERTIFICATE-----AAAA\nBBBB-----END CERTIFICATE-----"),
-            "-----BEGIN CERTIFICATE-----\nAAAA\nBBBB\n-----END CERTIFICATE-----"
+            "-----BEGIN CERTIFICATE-----\nAAAA\nBBBB\n-----END CERTIFICATE-----".as_bytes()
         );
         assert_eq!(
             restore_pem_newlines("-----END A-----\r\n-----BEGIN B----------END B----------BEGIN C-----x"),
-            "-----END A-----\r\n-----BEGIN B-----\n-----END B-----\n-----BEGIN C-----\nx"
+            "-----END A-----\r\n-----BEGIN B-----\n-----END B-----\n-----BEGIN C-----\nx".as_bytes()
         );
-        assert_eq!(restore_pem_newlines("junk-----BEGIN A-----"), "junk\n-----BEGIN A-----");
+        assert_eq!(restore_pem_newlines("junk-----BEGIN A-----"), b"junk\n-----BEGIN A-----");
         // Every line break at a PEM boundary lost (chunks ending right
         // before and after each BEGIN and END line): both forms verify
         // again.
@@ -557,7 +566,7 @@ mod tests {
             let broken = body.replace("-----\n", "-----").replace("\n-----", "-----");
             assert!(verify_client_chain(&store(&p), &broken, &CLIENT).is_err());
             let fixed = restore_pem_newlines(&broken);
-            assert_eq!(fixed, body.trim_end_matches('\n'));
+            assert_eq!(fixed, body.trim_end_matches('\n').as_bytes());
             assert!(verify_client_chain(&store(&p), &fixed, &CLIENT).is_ok());
         }
     }
@@ -566,7 +575,7 @@ mod tests {
     fn wrong_chain_lengths() {
         let p = pki();
         let s = store(&p);
-        let (r, logs) = testlog::capture(|| verify_client_chain(&s, &pem(&[&p.inter.cert, &p.phone.cert]), &CLIENT));
+        let (r, logs) = testlog::capture(|| verify_client_chain(&s, pem(&[&p.inter.cert, &p.phone.cert]), &CLIENT));
         assert_eq!(r.err(), Some(CertError::WrongChainLength(1)));
         assert_eq!(logs.last().unwrap(), "<sip:phone@127.0.0.1:5060>: Expected two certificates in the chain, found 1");
         let four = pem(&[&p.legacy.cert, &p.inter.cert, &p.phone.cert, &p.phone.cert]);
@@ -578,7 +587,7 @@ mod tests {
         let p = pki();
         let s = store(&p);
         for body in ["", "hello", "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"] {
-            let (r, logs) = testlog::capture(|| verify_client_chain(&s, body, &ClientInfo { contact: "c", mac: None, user_agent: "ua" }));
+            let (r, logs) = testlog::capture(|| verify_client_chain(&s, body, &ClientInfo { contact: b"c", mac: None, user_agent: b"ua" }));
             assert!(matches!(r, Err(CertError::Unreadable(_))), "{:?}", body);
             assert_eq!(logs[0], "Contact: c MAC: (null) UA: ua Using legacy certificate\n");
             assert!(logs[1].starts_with("<c>: Unable to read client cert: error:"), "{}", logs[1]);
@@ -589,15 +598,15 @@ mod tests {
     fn expired_and_not_yet_valid_accepted() {
         let p = pki();
         let expired = issue("old phone", Some(&p.root), Opts { not_before_days: -400, not_after_days: -30, ..Default::default() });
-        assert!(verify_client_chain(&store(&p), &pem(&[&expired.cert]), &CLIENT).is_ok());
+        assert!(verify_client_chain(&store(&p), pem(&[&expired.cert]), &CLIENT).is_ok());
         let future = issue("new phone", Some(&p.root), Opts { not_before_days: 30, not_after_days: 400, ..Default::default() });
-        assert!(verify_client_chain(&store(&p), &pem(&[&future.cert]), &CLIENT).is_ok());
+        assert!(verify_client_chain(&store(&p), pem(&[&future.cert]), &CLIENT).is_ok());
         // An expired intermediate and root, too.
         let root = issue("Old Root", None, Opts { ca: true, not_before_days: -900, not_after_days: -1, ..Default::default() });
         let inter = issue("Old Inter", Some(&root), Opts { ca: true, serial: 9, not_before_days: -900, not_after_days: -1, ..Default::default() });
         let phone = issue("phone", Some(&inter), Opts { not_before_days: -900, not_after_days: -1, ..Default::default() });
         let s = CaStore::from_certs(std::slice::from_ref(&root.cert)).unwrap();
-        let v = verify_client_chain(&s, &pem(&[&phone.cert, &inter.cert, &phone.cert]), &CLIENT).unwrap();
+        let v = verify_client_chain(&s, pem(&[&phone.cert, &inter.cert, &phone.cert]), &CLIENT).unwrap();
         assert_eq!(v.intermediate_serial, 9);
     }
 
@@ -607,13 +616,13 @@ mod tests {
         let inter = issue("Weak Inter", Some(&root), Opts { ca: true, bits: 512, serial: 3, md: MessageDigest::sha1(), ..Default::default() });
         let phone = issue("phone", Some(&inter), Opts { bits: 512, md: MessageDigest::sha1(), ..Default::default() });
         let s = CaStore::from_certs(std::slice::from_ref(&root.cert)).unwrap();
-        let v = verify_client_chain(&s, &pem(&[&phone.cert, &inter.cert, &phone.cert]), &CLIENT).unwrap();
+        let v = verify_client_chain(&s, pem(&[&phone.cert, &inter.cert, &phone.cert]), &CLIENT).unwrap();
         // The common password can be encrypted to a 512-bit key.
         let pass = crate::crypto::new_common_password().unwrap();
         let b64 = crate::crypto::encrypt_common_password(v.public_key.as_ref().unwrap(), &pass).unwrap();
         assert_eq!(crate::crypto::decrypt_common_password(&phone.key, &b64).unwrap(), pass);
         let legacy = issue("legacy", Some(&root), Opts { bits: 512, md: MessageDigest::sha1(), ..Default::default() });
-        assert!(verify_client_chain(&s, &pem(&[&legacy.cert]), &CLIENT).is_ok());
+        assert!(verify_client_chain(&s, pem(&[&legacy.cert]), &CLIENT).is_ok());
     }
 
     #[test]
@@ -621,7 +630,7 @@ mod tests {
         let p = pki();
         let other = issue("Other Root", None, Opts { ca: true, ..Default::default() });
         let s = CaStore::from_certs(std::slice::from_ref(&other.cert)).unwrap();
-        let (r, logs) = testlog::capture(|| verify_client_chain(&s, &pem(&[&p.legacy.cert]), &CLIENT));
+        let (r, logs) = testlog::capture(|| verify_client_chain(&s, pem(&[&p.legacy.cert]), &CLIENT));
         assert_eq!(r.err(), Some(CertError::Verify("unable to get local issuer certificate".into())));
         assert_eq!(logs[1], "<sip:phone@127.0.0.1:5060>: Client cert failed to verify: unable to get local issuer certificate\n");
         let body = pem(&[&p.legacy.cert, &p.inter.cert, &p.phone.cert]);
@@ -632,7 +641,7 @@ mod tests {
         assert!(matches!(verify_client_chain(&store(&p), &body, &CLIENT), Err(CertError::Verify(_))));
         // The intermediate alone is not trusted as a root.
         let s = CaStore::from_certs(std::slice::from_ref(&p.inter.cert)).unwrap();
-        assert!(verify_client_chain(&s, &pem(&[&p.legacy.cert]), &CLIENT).is_err());
+        assert!(verify_client_chain(&s, pem(&[&p.legacy.cert]), &CLIENT).is_err());
     }
 
     #[test]
@@ -642,14 +651,14 @@ mod tests {
         // next certificate's serial.
         let inter0 = issue("Inter0", Some(&p.root), Opts { ca: true, serial: 0, ..Default::default() });
         let phone = issue("phone", Some(&inter0), Opts { serial: 99, ..Default::default() });
-        let (r, logs) = testlog::capture(|| verify_client_chain(&store(&p), &pem(&[&p.legacy.cert, &inter0.cert, &phone.cert]), &CLIENT));
+        let (r, logs) = testlog::capture(|| verify_client_chain(&store(&p), pem(&[&p.legacy.cert, &inter0.cert, &phone.cert]), &CLIENT));
         assert_eq!(r.unwrap().intermediate_serial, 99);
         assert_eq!(logs.len(), 2);
         assert!(logs[0].ends_with("Intermediate cert serial number: 0\n"));
         assert!(logs[1].ends_with("Intermediate cert serial number: 99\n"));
         // A negative serial is an error.
         let neg = issue("InterNeg", Some(&p.root), Opts { ca: true, serial: -5, ..Default::default() });
-        let (r, logs) = testlog::capture(|| verify_client_chain(&store(&p), &pem(&[&p.legacy.cert, &neg.cert, &phone.cert]), &CLIENT));
+        let (r, logs) = testlog::capture(|| verify_client_chain(&store(&p), pem(&[&p.legacy.cert, &neg.cert, &phone.cert]), &CLIENT));
         assert!(matches!(r, Err(CertError::NoSerial(_))));
         assert!(logs[0].starts_with("<sip:phone@127.0.0.1:5060>: Unable to get serial number of intermediate cert: "));
     }
@@ -666,14 +675,14 @@ mod tests {
         // is not a public key.
         let mixed = format!("{}{}", pem(&[&p.phone.cert]), pem_text);
         assert!(load_public_key(&mixed).unwrap().unwrap().public_eq(&public));
-        assert!(load_public_key(&pem(&[&p.phone.cert])).is_err());
+        assert!(load_public_key(pem(&[&p.phone.cert])).is_err());
         let (r, logs) = testlog::capture(|| load_public_key(""));
         assert!(r.is_err());
         assert_eq!(logs, vec!["failed to load client public rsa key - is null\n"]);
         // 512 bits is the minimum; smaller keys are dropped.
         let k512 = PKey::from_rsa(openssl::rsa::Rsa::generate(512).unwrap()).unwrap();
         let k512 = PKey::public_key_from_pem(&k512.public_key_to_pem().unwrap()).unwrap();
-        assert!(load_public_key(&public_key_pem(&k512).unwrap()).unwrap().is_some());
+        assert!(load_public_key(public_key_pem(&k512).unwrap()).unwrap().is_some());
         // Build a 504-bit public key by hand (OpenSSL will not generate one).
         let n = openssl::bn::BigNum::from_hex_str(&format!("C{}1", "0".repeat(124))).unwrap();
         let e = openssl::bn::BigNum::from_u32(65537).unwrap();

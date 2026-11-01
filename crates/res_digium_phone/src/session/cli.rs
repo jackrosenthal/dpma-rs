@@ -1,12 +1,13 @@
 //! `digium_phones show sessions` (`handle_cli_show_sessions` FUN_00148e40).
 
 use super::now;
+use dpma_ast::bformat;
 use dpma_ast::cli::{CliArgs, CliCommand, CliResult};
 
 /// "NONE" for an empty value.
-fn or_none(s: &str) -> &str {
+fn or_none(s: &[u8]) -> &[u8] {
     if s.is_empty() {
-        "NONE"
+        b"NONE"
     } else {
         s
     }
@@ -28,7 +29,7 @@ fn show_sessions(a: &CliArgs) -> CliResult {
     for s in super::store::all() {
         let line = {
             let st = s.lock();
-            format!(
+            bformat!(
                 "SessionID:{:<20} SecondsAlive:{:<7} SecondsLastActivity:{:<7} URI:{:<28} Auth:{:<3} Inactive:{:<3} Configured: {:<3} MAC:{}\n",
                 s.id,
                 t - st.created,
@@ -43,7 +44,7 @@ fn show_sessions(a: &CliArgs) -> CliResult {
         count += 1;
         a.out(&line);
     }
-    a.out(&format!("--- Total active sessions:{} ---\n", count));
+    a.out(bformat!("--- Total active sessions:{} ---\n", count));
     CliResult::Success
 }
 

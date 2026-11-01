@@ -29,7 +29,8 @@
 
 use super::store::{alloc, NewSession};
 use super::{Session, DB_FAMILY};
-use dpma_ast::{db, dpma_log};
+use dpma_ast::dpma_bytes::ByteSlice;
+use dpma_ast::{bformat, db, dpma_log};
 use dpma_proto::crypto;
 use std::sync::{Arc, Mutex};
 
@@ -42,10 +43,10 @@ static DB_CRYPTO: Mutex<()> = Mutex::new(());
 
 /// `send_encrypt_hdr_helper` into a buffer of `size` bytes, with the
 /// original's messages; "" on failure.
-pub(crate) fn encrypt_helper(plain: &[u8], password: &[u8], salt: &[u8; crypto::SALT_LEN], size: usize) -> String {
+pub(crate) fn encrypt_helper(plain: &[u8], password: &[u8], salt: &[u8; crypto::SALT_LEN], size: usize) -> Vec<u8> {
     let fail = |msg: &str| {
         dpma_log!("{}", msg);
-        String::new()
+        Vec::new()
     };
     let Ok(mut enc) = crypto::Encryptor::new(password, salt) else {
         return fail("Call to init_encryption failed");
@@ -57,7 +58,7 @@ pub(crate) fn encrypt_helper(plain: &[u8], password: &[u8], salt: &[u8; crypto::
         Ok(last) => cipher.extend(last),
         Err(_) => return fail("Call to encrypt_final returned failure"),
     }
-    crypto::base64_encode_max(&cipher, size)
+    crypto::base64_encode_max(&cipher, size).into_bytes()
 }
 
 /// `phone_session_update_db_info` (FUN_00149250): write the session's
@@ -71,17 +72,17 @@ pub fn update_db_info(s: &Arc<Session>) {
         let _db = DB_CRYPTO.lock().unwrap_or_else(|e| e.into_inner());
         let salt = crypto::new_salt().unwrap_or([0; crypto::SALT_LEN]);
         let data = encrypt_helper(&st.common_password, DB_PASSPHRASE, &salt, 0x100);
-        format!(
+        bformat!(
             "mac={};auth_flags={};data={};data_len={};ran={};contact={};uri={};cfgd={};ua={};client_cert={};origination_network={}",
             st.mac,
             st.auth_flags as i32,
             data,
             st.common_password.len(),
             crypto::salt_to_hex(&salt),
-            crypto::base64_encode_max(st.contact.as_bytes(), 0x200),
-            crypto::base64_encode_max(st.response_uri.as_bytes(), 0x200),
+            crypto::base64_encode_max(&st.contact, 0x200),
+            crypto::base64_encode_max(&st.response_uri, 0x200),
             -i32::from(st.configured),
-            crypto::base64_encode_max(st.user_agent.as_bytes(), 0x200),
+            crypto::base64_encode_max(&st.user_agent, 0x200),
             st.client_cert_pem,
             st.origination_network
         )
@@ -91,27 +92,27 @@ pub fn update_db_info(s: &Arc<Session>) {
 
 /// The value after `name=` (first occurrence anywhere in the entry, as the
 /// original's `strstr` finds it), up to the next `;`.
-fn field<'a>(value: &'a str, name: &str) -> Option<&'a str> {
+fn field<'a>(value: &'a [u8], name: &str) -> Option<&'a [u8]> {
     let start = value.find(name)? + name.len();
     let rest = &value[start..];
-    Some(rest.split(';').next().unwrap_or(""))
+    Some(rest.split(|&c| c == b';').next().unwrap_or(b""))
 }
 
 /// `strtol(s, NULL, 10)` as an int.
-fn strtol(s: &str) -> i32 {
+fn strtol(s: &[u8]) -> i32 {
     dpma_proto::framing::parse_sequence(s)
 }
 
 /// `ast_base64decode` of a field into a buffer of its length plus one,
 /// read as a C string.
-fn b64_text(s: &str) -> String {
+fn b64_text(s: &[u8]) -> Vec<u8> {
     let bytes = crypto::base64_decode_max(s, s.len());
-    String::from_utf8_lossy(crypto::c_str(&bytes)).into_owned()
+    crypto::c_str(&bytes).to_vec()
 }
 
 /// `phone_session_db_restore_entry`: restore one AstDB entry.
-fn restore_entry(key: &str, value: &str) {
-    let Some(slash) = key.rfind('/') else { return };
+fn restore_entry(key: &[u8], value: &[u8]) {
+    let Some(slash) = key.rfind_byte(b'/') else { return };
     let id = &key[slash + 1..];
     let get = |n: &str| field(value, n);
     let (Some(contact), Some(data), Some(ran), Some(data_len)) =
@@ -126,10 +127,10 @@ fn restore_entry(key: &str, value: &str) {
     let cfgd = get("cfgd=").filter(|v| !v.is_empty()).map(strtol).unwrap_or(0);
     let auth_flags = get("auth_flags=").filter(|v| !v.is_empty()).map(strtol).unwrap_or(0);
     let mac = get("mac=");
-    let uri = b64_text(get("uri=").unwrap_or(""));
-    let ua = b64_text(get("ua=").unwrap_or(""));
+    let uri = b64_text(get("uri=").unwrap_or(b""));
+    let ua = b64_text(get("ua=").unwrap_or(b""));
     let contact = b64_text(contact);
-    let client_cert = get("client_cert=").unwrap_or("");
+    let client_cert = get("client_cert=").unwrap_or(b"");
     let origination_network = get("origination_network=");
 
     let password = {

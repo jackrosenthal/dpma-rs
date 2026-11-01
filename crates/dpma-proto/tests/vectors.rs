@@ -229,7 +229,7 @@ fn verify_fixture() {
             assert_eq!(w["sequence"], json!(ch.sequence));
             assert_eq!(w["finished"], json!(ch.finished));
         }
-        let refs: Vec<&str> = wire.iter().map(|w| s(&w["b64"])).collect();
+        let refs: Vec<&[u8]> = wire.iter().map(|w| s(&w["b64"]).as_bytes()).collect();
         let plain = framing::decrypt_chunks(&refs, &p, s(&c["salt_hex"])).unwrap();
         let expected: Vec<u8> = chunks.iter().flat_map(|c| c.plain.clone()).collect();
         assert_eq!(plain, expected);
@@ -240,10 +240,10 @@ fn verify_fixture() {
         let mut r = framing::Reassembly::new();
         let parts = c["parts"].as_array().unwrap();
         for (i, part) in parts.iter().enumerate() {
-            r.add(Some(&i.to_string()), i + 1 == parts.len(), s(part).to_string());
+            r.add(Some(i.to_string().as_bytes()), i + 1 == parts.len(), s(part).into());
         }
         assert!(r.is_complete());
-        assert_eq!(crypto::decrypt_body(&p, s(&c["salt_hex"]), &r.body()).unwrap(), s(&c["body"]).as_bytes());
+        assert_eq!(crypto::decrypt_body(&p, s(&c["salt_hex"]), r.body()).unwrap(), s(&c["body"]).as_bytes());
     }
 
     let rsa = &v["rsa_common_password"];

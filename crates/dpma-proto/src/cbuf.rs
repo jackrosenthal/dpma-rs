@@ -84,9 +84,9 @@ impl CBuf {
         &self.b[i..self.end(i)]
     }
 
-    /// The C string at `i` as text (lossy for invalid UTF-8).
-    pub fn get(&self, i: usize) -> String {
-        String::from_utf8_lossy(self.bytes(i)).into_owned()
+    /// A copy of the C string at `i`.
+    pub fn get(&self, i: usize) -> Vec<u8> {
+        self.bytes(i).to_vec()
     }
 
     /// `strcmp(s + i, t) == 0`.

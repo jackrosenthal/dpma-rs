@@ -8,4 +8,5 @@ links = "dpma_ast"
 build = "build.rs"
 
 [dependencies]
+dpma-bytes.workspace = true
 libc.workspace = true

@@ -49,6 +49,7 @@
 
 use crate::crypto::{self, Encryptor, SALT_LEN};
 use crate::Result;
+use dpma_bytes::{bformat, ByteSlice};
 
 /// Prefix of every chunk of an event or error response.
 pub const COMMAND_PREFIX: &str = "Command: ";
@@ -72,8 +73,8 @@ pub const HANDSHAKE_REQUIRED_URI_BUF: usize = 0x50;
 
 /// Whether replies to `response_uri` use the TCP chunk limit
 /// (`strstr(uri, "transport=tcp")`, case sensitive).
-pub fn is_tcp(response_uri: &str) -> bool {
-    response_uri.contains("transport=tcp")
+pub fn is_tcp(response_uri: &[u8]) -> bool {
+    response_uri.contains_str("transport=tcp")
 }
 
 /// The chunk limit for a destination.  `tcp` is true when the response
@@ -154,9 +155,9 @@ pub fn encrypt_chunks(chunks: &[Chunk], password: &[u8], salt: &[u8; SALT_LEN]) 
 
 /// The phone's side of [`encrypt_chunks`]: base64 decode each chunk body,
 /// concatenate, and decrypt with the hex salt.
-pub fn decrypt_chunks(bodies: &[&str], password: &[u8], salt_hex: &str) -> Result<Vec<u8>> {
+pub fn decrypt_chunks(bodies: &[&[u8]], password: &[u8], salt_hex: impl AsRef<[u8]>) -> Result<Vec<u8>> {
     let salt = crypto::salt_from_hex(salt_hex)?;
-    let cipher: Vec<u8> = bodies.iter().flat_map(|b| crypto::base64_decode(b)).collect();
+    let cipher: Vec<u8> = bodies.iter().flat_map(crypto::base64_decode).collect();
     crypto::decrypt(password, &salt, &cipher)
 }
 
@@ -168,41 +169,39 @@ pub fn encrypt_for_server(body: &[u8], password: &[u8], salt: &[u8; SALT_LEN], c
     Ok(b64.as_bytes().chunks(chunk_len.max(1)).map(|c| String::from_utf8_lossy(c).into_owned()).collect())
 }
 
-/// `snprintf(buf, size, ...)`: `s` cut to `size - 1` bytes (at a byte
-/// boundary; invalid UTF-8 at the cut is replaced).
-fn snprintf(s: &str, size: usize) -> String {
-    let b = s.as_bytes();
-    let n = b.len().min(size.saturating_sub(1));
-    String::from_utf8_lossy(&b[..n]).into_owned()
+/// `snprintf(buf, size, ...)`: `s` cut to `size - 1` bytes.
+fn snprintf(mut s: Vec<u8>, size: usize) -> Vec<u8> {
+    s.truncate(size.saturating_sub(1));
+    s
 }
 
 /// The transaction key, `"%s-%s"` of `X-Digium-AppServer-ID` and the MAC
 /// (`"unknown"` when absent or empty), in a 0x80-byte buffer.
-pub fn transaction_key(id: &str, mac: Option<&str>) -> String {
+pub fn transaction_key(id: &[u8], mac: Option<&[u8]>) -> Vec<u8> {
     let mac = match mac {
         Some(m) if !m.is_empty() => m,
-        _ => "unknown",
+        _ => b"unknown",
     };
-    snprintf(&format!("{}-{}", id, mac), TRANSACTION_KEY_BUF)
+    snprintf(bformat!("{}-{}", id, mac), TRANSACTION_KEY_BUF)
 }
 
 /// Where replies go: `"%s%s%s"` of `X-Digium-AppServer-Response-URI`,
 /// `";transport="` when `PJSIP_TRANSPORT` is present (even if empty), and
 /// its value, in a buffer of `size` bytes ([`RESPONSE_URI_BUF`] or
 /// [`HANDSHAKE_REQUIRED_URI_BUF`]; `usize::MAX` for no limit).
-pub fn response_uri(uri: &str, transport: Option<&str>, size: usize) -> String {
+pub fn response_uri(uri: &[u8], transport: Option<&[u8]>, size: usize) -> Vec<u8> {
     let s = match transport {
-        Some(t) => format!("{};transport={}", uri, t),
-        None => uri.to_string(),
+        Some(t) => bformat!("{};transport={}", uri, t),
+        None => uri.to_vec(),
     };
-    snprintf(&s, size)
+    snprintf(s, size)
 }
 
 /// `strtol(s, NULL, 10)` truncated to `int`, as used for the sequence
 /// header: leading whitespace, an optional sign, then decimal digits;
 /// anything else ends the number (0 if there is none).
-pub fn parse_sequence(s: &str) -> i32 {
-    let b = s.as_bytes();
+pub fn parse_sequence(s: &[u8]) -> i32 {
+    let b = s;
     let mut i = 0;
     while i < b.len() && (b[i] == b' ' || (b'\t'..=b'\r').contains(&b[i])) {
         i += 1;
@@ -250,7 +249,7 @@ pub fn parse_sequence(s: &str) -> i32 {
 #[derive(Debug, Clone)]
 pub struct Part<M> {
     pub sequence: i32,
-    pub body: String,
+    pub body: Vec<u8>,
     /// Caller data, e.g., the message itself.
     pub meta: M,
 }
@@ -283,17 +282,16 @@ impl Reassembly<()> {
     /// `finished` is whether `Message-Finished` was present and non-empty.
     /// A part without a sequence, or with an empty one, finishes the
     /// transaction.
-    pub fn add(&mut self, sequence: Option<&str>, finished: bool, body: String) {
+    pub fn add(&mut self, sequence: Option<&[u8]>, finished: bool, body: Vec<u8>) {
         self.add_part(sequence, finished, body, ());
     }
 }
 
 impl<M> Reassembly<M> {
     /// Add a part with caller data (see [`Reassembly::add`]).
-    pub fn add_part(&mut self, sequence: Option<&str>, finished: bool, body: String, meta: M) {
+    pub fn add_part(&mut self, sequence: Option<&[u8]>, finished: bool, body: Vec<u8>, meta: M) {
         let seq = match sequence {
             None => 0,
-            Some("") => 0,
             Some(s) => parse_sequence(s),
         };
         let finishes = match sequence {
@@ -321,8 +319,8 @@ impl<M> Reassembly<M> {
     }
 
     /// The bodies concatenated in sequence order.
-    pub fn body(&self) -> String {
-        self.parts.iter().map(|p| p.body.as_str()).collect()
+    pub fn body(&self) -> Vec<u8> {
+        self.parts.iter().flat_map(|p| p.body.iter().copied()).collect()
     }
 
     /// The parts in sequence order.
@@ -352,9 +350,9 @@ mod tests {
         assert_eq!(chunk_limit(true, false), 420);
         assert_eq!(chunk_limit(true, true), 900);
         assert_eq!(chunk_limit(false, true), 900);
-        assert!(is_tcp("sip:1.2.3.4:5060;transport=tcp"));
-        assert!(!is_tcp("sip:1.2.3.4:5060;transport=TCP"));
-        assert!(!is_tcp("sip:1.2.3.4:5060;transport=udp"));
+        assert!(is_tcp(b"sip:1.2.3.4:5060;transport=tcp"));
+        assert!(!is_tcp(b"sip:1.2.3.4:5060;transport=TCP"));
+        assert!(!is_tcp(b"sip:1.2.3.4:5060;transport=udp"));
     }
 
     #[test]
@@ -416,15 +414,15 @@ mod tests {
             // the whole is one stream.
             let all_plain: Vec<u8> = chunks.iter().flat_map(|c| c.plain.clone()).collect();
             let one_shot = crypto::encrypt(PASS, &salt, &all_plain).unwrap();
-            let cat: Vec<u8> = b64.iter().flat_map(|b| crypto::base64_decode(b)).collect();
+            let cat: Vec<u8> = b64.iter().flat_map(crypto::base64_decode).collect();
             assert_eq!(cat, one_shot);
-            let refs: Vec<&str> = b64.iter().map(|s| s.as_str()).collect();
-            assert_eq!(decrypt_chunks(&refs, PASS, &crypto::salt_to_hex(&salt)).unwrap(), all_plain);
+            let refs: Vec<&[u8]> = b64.iter().map(|s| s.as_bytes()).collect();
+            assert_eq!(decrypt_chunks(&refs, PASS, crypto::salt_to_hex(&salt)).unwrap(), all_plain);
             // Concatenating the chunk texts (what the server does with
             // incoming parts) only works when no chunk is padded.
             let concat: String = b64.concat();
             let padded = b64[..b64.len() - 1].iter().any(|s| s.ends_with('='));
-            let r = crypto::decrypt_body(PASS, &crypto::salt_to_hex(&salt), &concat);
+            let r = crypto::decrypt_body(PASS, crypto::salt_to_hex(&salt), &concat);
             assert_eq!(padded, r.ok() != Some(all_plain.clone()));
         }
     }
@@ -438,22 +436,22 @@ mod tests {
         let mut r = Reassembly::new();
         let n = parts.len();
         for (i, p) in parts.iter().enumerate().rev() {
-            r.add(Some(&i.to_string()), i + 1 == n, p.clone());
+            r.add(Some(i.to_string().as_bytes()), i + 1 == n, p.clone().into_bytes());
         }
         assert!(r.is_complete());
-        assert_eq!(crypto::decrypt_body(PASS, "0101010101010101", &r.body()).unwrap(), body.as_bytes());
+        assert_eq!(crypto::decrypt_body(PASS, "0101010101010101", r.body()).unwrap(), body.as_bytes());
     }
 
     #[test]
     fn reassembly_ordering() {
         let mut r = Reassembly::new();
-        r.add(Some("2"), true, "c".into());
+        r.add(Some(b"2".as_slice()), true, "c".into());
         assert!(!r.is_complete());
-        r.add(Some("0"), false, "a".into());
+        r.add(Some(b"0".as_slice()), false, "a".into());
         assert!(!r.is_complete());
-        r.add(Some("1"), false, "b".into());
+        r.add(Some(b"1".as_slice()), false, "b".into());
         assert!(r.is_complete());
-        assert_eq!(r.body(), "abc");
+        assert_eq!(r.body(), b"abc");
         assert_eq!(r.count, 3);
         assert_eq!(r.last_sequence, 2);
 
@@ -463,29 +461,29 @@ mod tests {
         assert!(r.is_complete());
         // Empty sequence: finished at 0.
         let mut r = Reassembly::new();
-        r.add(Some(""), false, "x".into());
+        r.add(Some(b"".as_slice()), false, "x".into());
         assert!(r.is_complete());
         // Not finished without the flag.
         let mut r = Reassembly::new();
-        r.add(Some("0"), false, "x".into());
+        r.add(Some(b"0".as_slice()), false, "x".into());
         assert!(!r.is_complete());
         // A duplicate counts, so a missing part can be papered over, as in
         // the original.
         let mut r = Reassembly::new();
-        r.add(Some("0"), false, "a".into());
-        r.add(Some("0"), false, "a2".into());
-        r.add(Some("2"), true, "c".into());
+        r.add(Some(b"0".as_slice()), false, "a".into());
+        r.add(Some(b"0".as_slice()), false, "a2".into());
+        r.add(Some(b"2".as_slice()), true, "c".into());
         assert!(r.is_complete());
-        assert_eq!(r.body(), "aa2c");
+        assert_eq!(r.body(), b"aa2c");
         // Equal sequences keep arrival order; lower ones go in front.
         let mut r: Reassembly<u32> = Reassembly::default();
-        r.add_part(Some("5"), false, "e".into(), 1);
-        r.add_part(Some("3"), false, "c".into(), 2);
-        r.add_part(Some("5"), false, "e2".into(), 3);
-        r.add_part(Some("4"), false, "d".into(), 4);
-        r.add_part(Some("1"), false, "a".into(), 5);
-        r.add_part(Some("9"), false, "z".into(), 6);
-        assert_eq!(r.body(), "acdee2z");
+        r.add_part(Some(b"5".as_slice()), false, "e".into(), 1);
+        r.add_part(Some(b"3".as_slice()), false, "c".into(), 2);
+        r.add_part(Some(b"5".as_slice()), false, "e2".into(), 3);
+        r.add_part(Some(b"4".as_slice()), false, "d".into(), 4);
+        r.add_part(Some(b"1".as_slice()), false, "a".into(), 5);
+        r.add_part(Some(b"9".as_slice()), false, "z".into(), 6);
+        assert_eq!(r.body(), b"acdee2z");
         assert_eq!(r.first(), Some(&5));
         let seqs: Vec<i32> = r.parts().iter().map(|p| p.sequence).collect();
         assert_eq!(seqs, vec![1, 3, 4, 5, 5, 9]);
@@ -493,28 +491,30 @@ mod tests {
 
     #[test]
     fn sequence_parsing() {
-        assert_eq!(parse_sequence("0"), 0);
-        assert_eq!(parse_sequence("17"), 17);
-        assert_eq!(parse_sequence(" 3x"), 3);
-        assert_eq!(parse_sequence("+4"), 4);
-        assert_eq!(parse_sequence("-1"), -1);
-        assert_eq!(parse_sequence("abc"), 0);
-        assert_eq!(parse_sequence("4294967297"), 1);
-        assert_eq!(parse_sequence("99999999999999999999"), -1);
+        assert_eq!(parse_sequence(b"0"), 0);
+        assert_eq!(parse_sequence(b"17"), 17);
+        assert_eq!(parse_sequence(b" 3x"), 3);
+        assert_eq!(parse_sequence(b"+4"), 4);
+        assert_eq!(parse_sequence(b"-1"), -1);
+        assert_eq!(parse_sequence(b"abc"), 0);
+        assert_eq!(parse_sequence(b"4294967297"), 1);
+        assert_eq!(parse_sequence(b"99999999999999999999"), -1);
     }
 
     #[test]
     fn keys_and_uris() {
-        assert_eq!(transaction_key("12", Some("000fd3000001")), "12-000fd3000001");
-        assert_eq!(transaction_key("12", Some("")), "12-unknown");
-        assert_eq!(transaction_key("12", None), "12-unknown");
-        assert_eq!(transaction_key(&"9".repeat(200), None).len(), 127);
-        assert_eq!(response_uri("pjsip:1.2.3.4:5060", Some("transport-udp"), RESPONSE_URI_BUF), "pjsip:1.2.3.4:5060;transport=transport-udp");
-        assert_eq!(response_uri("pjsip:1.2.3.4:5060", Some(""), RESPONSE_URI_BUF), "pjsip:1.2.3.4:5060;transport=");
-        assert_eq!(response_uri("pjsip:1.2.3.4:5060", None, RESPONSE_URI_BUF), "pjsip:1.2.3.4:5060");
+        assert_eq!(transaction_key(b"12", Some(b"000fd3000001")), b"12-000fd3000001");
+        assert_eq!(transaction_key(b"12", Some(b"")), b"12-unknown");
+        assert_eq!(transaction_key(b"12", None), b"12-unknown");
+        assert_eq!(transaction_key(b"\xe9", Some(b"\xff")), b"\xe9-\xff");
+        assert_eq!(transaction_key("9".repeat(200).as_bytes(), None).len(), 127);
+        let uri = b"pjsip:1.2.3.4:5060";
+        assert_eq!(response_uri(uri, Some(b"transport-udp"), RESPONSE_URI_BUF), b"pjsip:1.2.3.4:5060;transport=transport-udp");
+        assert_eq!(response_uri(uri, Some(b""), RESPONSE_URI_BUF), b"pjsip:1.2.3.4:5060;transport=");
+        assert_eq!(response_uri(uri, None, RESPONSE_URI_BUF), uri);
         let long = format!("pjsip:{}", "a".repeat(100));
-        assert_eq!(response_uri(&long, None, RESPONSE_URI_BUF).len(), 78);
-        assert_eq!(response_uri(&long, None, HANDSHAKE_REQUIRED_URI_BUF).len(), 79);
-        assert_eq!(response_uri(&long, Some("tcp"), usize::MAX), format!("{};transport=tcp", long));
+        assert_eq!(response_uri(long.as_bytes(), None, RESPONSE_URI_BUF).len(), 78);
+        assert_eq!(response_uri(long.as_bytes(), None, HANDSHAKE_REQUIRED_URI_BUF).len(), 79);
+        assert_eq!(response_uri(long.as_bytes(), Some(b"tcp"), usize::MAX), format!("{};transport=tcp", long).as_bytes());
     }
 }

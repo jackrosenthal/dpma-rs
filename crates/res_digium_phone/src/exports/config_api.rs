@@ -87,9 +87,10 @@ fn cptr(s: &'static [u8]) -> *const c_char {
 }
 
 /// `ast_copy_string(dst, src, sizeof(dst))`.
-fn copy(dst: &mut [c_char], src: &str) {
+fn copy(dst: &mut [c_char], src: &[u8]) {
+    let src = dpma_ast::dpma_bytes::c_view(src);
     let n = src.len().min(dst.len() - 1);
-    for (d, s) in dst.iter_mut().zip(src.as_bytes()[..n].iter()) {
+    for (d, s) in dst.iter_mut().zip(src[..n].iter()) {
         *d = *s as c_char;
     }
     dst[n] = 0;
@@ -99,7 +100,7 @@ fn copy(dst: &mut [c_char], src: &str) {
 /// (`config_replace` in `load_phone_config`).
 pub fn publish(g: &General) {
     let mut dir = [0 as c_char; 0x1000];
-    copy(&mut dir, &format!("{}/digium_phones", dpma_ast::var_dir()));
+    copy(&mut dir, &dpma_ast::bformat!("{}/digium_phones", dpma_ast::var_dir()));
     unsafe {
         let buf = DEFAULT_FILE_DIR.0.get();
         if *buf != dir {
@@ -147,16 +148,11 @@ pub fn unpublish() {
 ///
 /// # Safety
 /// `cfg` must be NULL or a live configuration object.
-pub unsafe fn text(cfg: *mut DpmaConfig, get: unsafe fn(*mut DpmaConfig) -> *const c_char) -> String {
+pub unsafe fn text(cfg: *mut DpmaConfig, get: unsafe fn(*mut DpmaConfig) -> *const c_char) -> Vec<u8> {
     if cfg.is_null() {
-        return String::new();
+        return Vec::new();
     }
-    let p = get(cfg);
-    if p.is_null() {
-        String::new()
-    } else {
-        std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned()
-    }
+    dpma_ast::from_ptr(get(cfg)).unwrap_or_default()
 }
 
 /// `struct dpma_config *dpma_config_get(void)`: the current configuration

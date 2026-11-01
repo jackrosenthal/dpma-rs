@@ -81,11 +81,8 @@ fn non_empty(arg: &Option<Vec<u8>>) -> bool {
 }
 
 /// How `%s` prints an argument (glibc prints NULL as "(null)").
-fn show(arg: &Option<Vec<u8>>) -> String {
-    match arg {
-        Some(a) => String::from_utf8_lossy(a).into_owned(),
-        None => "(null)".into(),
-    }
+fn show(arg: &Option<Vec<u8>>) -> &[u8] {
+    arg.as_deref().unwrap_or(b"(null)")
 }
 
 /// `playback_cb` (FUN_001728e0), the `ast_waitstream_fr_cb` of both
@@ -95,7 +92,7 @@ unsafe extern "C" fn playback_cb(chan: *mut AstChannel, ms: c_long, val: c_int) 
     dpma_ast::guard((), || {
         if val == WAITSTREAM_CB_REWIND || val == WAITSTREAM_CB_FASTFORWARD {
             let body = format!("{{'location':{}}}", ms / 1000);
-            crate::exports::info_send(chan, &[("X-Event-Name", LOCATION_EVENT)], "application/json", &body);
+            crate::exports::info_send(chan, &[("X-Event-Name", LOCATION_EVENT)], "application/json", body.as_bytes());
         }
     })
 }

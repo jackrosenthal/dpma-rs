@@ -110,6 +110,12 @@ existing setup carries over unchanged:
 chan_sip is not supported: no lines are read from `sip.conf` or from the
 `users.conf` users with `hassip`.
 
+As in the original, text is used as the bytes in the files, whatever
+their encoding: a name in Latin-1 reaches the phones, the CLI, AMI, and
+the Asterisk database unchanged.  Where the original hands text to JSON
+(the user list and the phone methods' answers), text that is not UTF-8
+makes the request fail as it does in the original.
+
 dpma-rs adds two options to the `[general]` section of
 `res_digium_phone.conf`, `appserver_certificate` and `phone_ca_file`,
 described in the next section.  The original module has no such options;
@@ -178,7 +184,9 @@ deliberate exceptions:
    these small differences: the service's host name is
    `<hostname>-dpma.local` (Avahi uses `<hostname>.local`), and a service
    name that collides with another is renamed `name (2)` (Avahi:
-   `name #2`).  Discovery is on unless `service_discovery_enabled=no`.
+   `name #2`).  A service name that is not valid UTF-8 is announced with
+   the invalid bytes replaced by U+FFFD.  Discovery is on unless
+   `service_discovery_enabled=no`.
 9. Authentication incidents from IPv6 phones are tracked per address.  The
    original cuts the address at its first colon, so all IPv6 phones share
    one incident record.  IPv4 behavior is unchanged.
@@ -196,11 +204,16 @@ deliberate exceptions:
     `DPMAMessageRegister`) expire after 300 seconds without a
     `DPMAMessageResponse`, with the log message "No response to request
     (...), expired."  The original never expires them.
-14. File requests from phones cannot leave `file_directory`: paths with
-    `..` components and absolute paths are answered as if the file did
-    not exist (files in subdirectories are still served).  With `..`, the
-    original serves any file the Asterisk process can read; it looks up
-    absolute paths inside `file_directory`.
+14. File requests from phones cannot leave `file_directory`: names with
+    a `..` component are answered as if the file did not exist.  With
+    `..`, the original serves any file the Asterisk process can read.
+    Other names are served as by the original, files in subdirectories
+    included; absolute names are looked up inside `file_directory`.
+15. `digium_phones show line` shows the line's `authname` as `AuthName`,
+    and `digium_phones show application` shows a queue application's
+    `logout_exten` as `Logout Extension` and a status application's
+    `send486=yes` as `Send486: Yes`.  The original shows the secondary
+    server port, the login extension, and "No" there.
 
 Beyond these, a number of inputs that crash the original modules (for
 example, some NULL arguments to the C API, and PJSIP AOR changes while a

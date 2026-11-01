@@ -7,6 +7,18 @@
 use super::*;
 use crate::testlog;
 
+/// The parser's results as text (every input here is ASCII).
+trait AsStr {
+    fn as_str(&self) -> &str;
+}
+
+impl AsStr for Vec<u8> {
+    fn as_str(&self) -> &str {
+        std::str::from_utf8(self).unwrap()
+    }
+}
+
+
 struct Full {
     desc: &'static str,
     uri: &'static str,
@@ -136,14 +148,14 @@ fn chan_sip_parse_uri_full() {
     for c in cases {
         let r = parse_uri_full(c.uri, Some("sip:,sips:,tel:"), ParseOpts::ALL);
         assert!(!r.error, "{}", c.desc);
-        assert_eq!(r.user, c.user, "{}", c.desc);
-        assert_eq!(r.pass, c.pass, "{}", c.desc);
-        assert_eq!(r.hostport, c.hostport, "{}", c.desc);
-        assert_eq!(r.headers, c.headers, "{}", c.desc);
-        assert_eq!(r.residue, c.residue, "{}", c.desc);
-        assert_eq!(r.params.transport, c.transport, "{}", c.desc);
+        assert_eq!(r.user.as_str(), c.user, "{}", c.desc);
+        assert_eq!(r.pass.as_str(), c.pass, "{}", c.desc);
+        assert_eq!(r.hostport.as_str(), c.hostport, "{}", c.desc);
+        assert_eq!(r.headers.as_str(), c.headers, "{}", c.desc);
+        assert_eq!(r.residue.as_str(), c.residue, "{}", c.desc);
+        assert_eq!(r.params.transport.as_str(), c.transport, "{}", c.desc);
         assert_eq!(r.params.lr, c.lr, "{}", c.desc);
-        assert_eq!(r.params.user, "", "{}", c.desc);
+        assert_eq!(r.params.user.as_str(), "", "{}", c.desc);
     }
 }
 
@@ -172,16 +184,16 @@ fn chan_sip_parse_uri() {
     assert_eq!((r.error, r.user.as_str(), r.hostport.as_str()), (false, "name:secret", "host:port"));
     let r = parse_uri("sip:host", S, true, true);
     assert_eq!((r.error, r.user.as_str(), r.hostport.as_str()), (false, "", "host"));
-    let r = parse_uri(&format!("sip:host:port;transport=tcp{}", tail), S, true, true);
+    let r = parse_uri(format!("sip:host:port;transport=tcp{}", tail), S, true, true);
     assert_eq!((r.error, r.user.as_str(), r.pass.as_str(), r.hostport.as_str(), r.params.transport.as_str()), (false, "", "", "host:port", "tcp"));
     // Tests 10 and 11: a missing scheme is an error, but the parts are
     // still filled in (and the original logs it).
-    let (r, logs) = testlog::capture(|| parse_uri(&format!("host:port;transport=tcp{}", tail), S, true, true));
+    let (r, logs) = testlog::capture(|| parse_uri(format!("host:port;transport=tcp{}", tail), S, true, true));
     assert_eq!((r.error, r.user.as_str(), r.pass.as_str(), r.hostport.as_str(), r.params.transport.as_str()), (true, "", "", "host:port", "tcp"));
     assert_eq!(logs, vec![format!("No supported scheme found in 'host:port;transport=tcp{}' using the scheme[s] sip:,sips:\n", tail)]);
     let r = parse_uri("host", S, true, true);
     assert_eq!((r.error, r.user.as_str(), r.pass.as_str(), r.hostport.as_str(), r.params.transport.as_str()), (true, "", "", "host", ""));
-    let r = parse_uri(&format!("sip:name:secret@host:port;transport=tcp{};lr", tail), S, true, true);
+    let r = parse_uri(format!("sip:name:secret@host:port;transport=tcp{};lr", tail), S, true, true);
     assert_eq!((r.error, r.user.as_str(), r.pass.as_str(), r.hostport.as_str(), r.params.transport.as_str()), (false, "name", "secret", "host:port", "tcp"));
 }
 
@@ -232,7 +244,7 @@ fn parse_uri_edge_cases() {
     assert_eq!((r.params.lr, r.residue.as_str()), (true, ""));
     // Unknown trailing parameters stay in the residue.
     let r = parse_uri_full("sip:b@h;transport=udp;a=1;b=2", Some("sip:"), ParseOpts::ALL);
-    assert_eq!(r.residue, "a=1;b=2");
+    assert_eq!(r.residue.as_str(), "a=1;b=2");
     // '?' in the user part is not a header separator.
     let r = parse_uri_full("sip:a?b@h?x=y", Some("sip:"), ParseOpts::ALL);
     assert_eq!((r.user.as_str(), r.hostport.as_str(), r.headers.as_str()), ("a?b", "h", "x=y"));
@@ -241,11 +253,11 @@ fn parse_uri_edge_cases() {
 #[test]
 fn chan_sip_get_calleridname() {
     let (name, rest) = get_calleridname(" \" quoted-text internal \\\" quote \"<stuff>", 40);
-    assert_eq!(name, " quoted-text internal \" quote ");
-    assert_eq!(rest, "<stuff>");
+    assert_eq!(name.as_str(), " quoted-text internal \" quote ");
+    assert_eq!(rest.as_str(), "<stuff>");
     let (name, rest) = get_calleridname(" token text with no quotes <stuff>", 40);
-    assert_eq!(name, "token text with no quotes");
-    assert_eq!(rest, "<stuff>");
+    assert_eq!(name.as_str(), "token text with no quotes");
+    assert_eq!(rest.as_str(), "<stuff>");
     let (name, _) = get_calleridname(" \"quoted-text overflow 1234567890123456789012345678901234567890\" <stuff>", 40);
     assert_eq!(name.len(), 39);
     let (name, _) = get_calleridname(" non-quoted text overflow 1234567890123456789012345678901234567890 <stuff>", 40);
@@ -260,9 +272,9 @@ fn chan_sip_get_calleridname() {
     assert_eq!((name.as_str(), rest.as_str()), ("", "blah@blah"));
     // Invalid characters are skipped; control characters in quotes too.
     let (name, _) = get_calleridname("Bob (x) <sip:b@h>", 40);
-    assert_eq!(name, "Bob x");
+    assert_eq!(name.as_str(), "Bob x");
     let (name, _) = get_calleridname("\"a\x01b\\\nc\"<sip:b@h>", 40);
-    assert_eq!(name, "abc");
+    assert_eq!(name.as_str(), "abc");
     let (name, rest) = get_calleridname("<sip:b@h>", 40);
     assert_eq!((name.as_str(), rest.as_str()), ("", "<sip:b@h>"));
 }
@@ -270,20 +282,20 @@ fn chan_sip_get_calleridname() {
 #[test]
 fn chan_sip_get_in_brackets() {
     let in_brackets = "sip:name:secret@host:port;transport=tcp?headers=testblah&headers2=blahblah";
-    assert_eq!(get_in_brackets(&format!("<{}>", in_brackets)), in_brackets);
-    assert_eq!(get_in_brackets(&format!("\"I'm a quote stri><ng\" <{}>", in_brackets)), in_brackets);
+    assert_eq!(get_in_brackets(format!("<{}>", in_brackets)).as_str(), in_brackets);
+    assert_eq!(get_in_brackets(format!("\"I'm a quote stri><ng\" <{}>", in_brackets)).as_str(), in_brackets);
     let missing_end_quote = format!("\"I'm a quote string <{}>", in_brackets);
     let (r, logs) = testlog::capture(|| get_in_brackets(&missing_end_quote));
-    assert_eq!(r, missing_end_quote);
+    assert_eq!(r.as_str(), missing_end_quote);
     assert_eq!(logs, vec![format!("No closing quote found in '{}'\n", missing_end_quote)]);
-    assert_eq!(get_in_brackets(&format!("name not in quotes <{}>", in_brackets)), in_brackets);
+    assert_eq!(get_in_brackets(format!("name not in quotes <{}>", in_brackets)).as_str(), in_brackets);
     let no_end_bracket = format!("name not in quotes <{}", in_brackets);
     let (r, logs) = testlog::capture(|| get_in_brackets(&no_end_bracket));
-    assert_ne!(r, in_brackets);
+    assert_ne!(r.as_str(), in_brackets);
     assert_eq!(logs, vec![format!("No closing bracket found in '{}'\n", no_end_bracket)]);
-    assert_eq!(get_in_brackets(""), "");
-    assert_eq!(get_in_brackets("sip:name@host"), "sip:name@host");
-    assert_eq!(get_in_brackets(&format!("{}>", in_brackets)), in_brackets);
+    assert_eq!(get_in_brackets("").as_str(), "");
+    assert_eq!(get_in_brackets("sip:name@host").as_str(), "sip:name@host");
+    assert_eq!(get_in_brackets(format!("{}>", in_brackets)).as_str(), in_brackets);
 
     let r = get_in_brackets_full("\"x\" <sip:a@b>;tag=1");
     assert_eq!(r, InBrackets { result: 0, out: "sip:a@b".into(), residue: ";tag=1".into() });
@@ -293,7 +305,7 @@ fn chan_sip_get_in_brackets() {
     assert_eq!(r, InBrackets { result: 1, out: "".into(), residue: "".into() });
     // An escaped quote inside the quoted part.
     let r = get_in_brackets_full("\"a\\\"<x>\" <sip:a@b>");
-    assert_eq!(r.out, "sip:a@b");
+    assert_eq!(r.out.as_str(), "sip:a@b");
 }
 
 #[test]
@@ -340,13 +352,13 @@ fn chan_sip_parse_name_andor_addr() {
     for c in cases {
         let r = parse_name_andor_addr(c.uri, Some("sip:,sips:"), true, ParseOpts::ALL);
         assert!(!r.uri.error, "{}", c.uri);
-        assert_eq!(r.name, c.name, "{}", c.uri);
-        assert_eq!(r.uri.user, c.user, "{}", c.uri);
-        assert_eq!(r.uri.pass, c.pass, "{}", c.uri);
-        assert_eq!(r.uri.hostport, c.hostport, "{}", c.uri);
-        assert_eq!(r.uri.headers, "", "{}", c.uri);
-        assert_eq!(r.uri.residue, c.residue, "{}", c.uri);
-        assert_eq!(r.uri.params.transport, c.transport, "{}", c.uri);
+        assert_eq!(r.name.as_str(), c.name, "{}", c.uri);
+        assert_eq!(r.uri.user.as_str(), c.user, "{}", c.uri);
+        assert_eq!(r.uri.pass.as_str(), c.pass, "{}", c.uri);
+        assert_eq!(r.uri.hostport.as_str(), c.hostport, "{}", c.uri);
+        assert_eq!(r.uri.headers.as_str(), "", "{}", c.uri);
+        assert_eq!(r.uri.residue.as_str(), c.residue, "{}", c.uri);
+        assert_eq!(r.uri.params.transport.as_str(), c.transport, "{}", c.uri);
     }
 }
 
@@ -474,4 +486,15 @@ fn uri_comparison() {
     assert!(!same_uri("sip:100@1.2.3.4:5060;transport=tcp", "sip:100@1.2.3.4:5060"));
     assert!(!same_uri("sip:100@1.2.3.4:5060", "sip:100@1.2.3.4:5061"));
     assert!(same_uri("x", "y"));
+}
+
+#[test]
+fn bytes_that_are_not_utf8_pass_through() {
+    let r = parse_uri(b"sip:Jos\xe9@h\xf4te;transport=tcp", Some("sip:"), true, true);
+    assert_eq!((r.user, r.hostport, r.params.transport), (b"Jos\xe9".to_vec(), b"h\xf4te".to_vec(), b"tcp".to_vec()));
+    let (name, rest) = get_calleridname(b"\"Fran\xe7ois\" <sip:f@h>", 40);
+    assert_eq!((name, rest), (b"Fran\xe7ois".to_vec(), b" <sip:f@h>".to_vec()));
+    assert_eq!(get_in_brackets(b"\"\xe9\" <sip:\xe9@h>"), b"sip:\xe9@h");
+    assert_eq!(phone_utils_parse_uri(b"pjsip:\xe9@1.2.3.4:5060;transport=udp"), (b"1.2.3.4:5060".to_vec(), Some(b"udp".to_vec())));
+    assert!(same_uri(b"sip:\xe9@H:1", b"sip:x@h:1;transport=udp"));
 }

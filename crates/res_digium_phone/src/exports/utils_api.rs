@@ -104,7 +104,7 @@ pub unsafe extern "C" fn phone_utils_xml_add_doc(parent: *mut c_void, doc: *mut 
 #[no_mangle]
 pub unsafe extern "C" fn phone_utils_xml_add_file(parent: *mut c_void, file: *const c_char, xpath: *const c_char) {
     dpma_ast::guard((), || {
-        let name = || CStr::from_ptr(file).to_string_lossy().into_owned();
+        let name = || dpma_ast::from_ptr(file).unwrap_or_default();
         let doc = xmlReadFile(file, std::ptr::null(), 0);
         if doc.is_null() {
             dpma_log!("Unable to read XML file {}", name());
@@ -239,7 +239,7 @@ pub unsafe extern "C" fn phone_utils_str_to_uint(s: *const c_char, out: *mut c_u
 pub unsafe extern "C" fn dpma_asprintf(ret: *mut *mut c_char, fmt: *const c_char, args: ...) -> c_int {
     if dpma_glue_exports_vasprintf(ret, fmt, args) < 0 {
         dpma_ast::guard((), || {
-            let f = if fmt.is_null() { String::from("(null)") } else { CStr::from_ptr(fmt).to_string_lossy().into_owned() };
+            let f = dpma_ast::from_ptr(fmt).unwrap_or_else(|| b"(null)".to_vec());
             ast_log!(LOG_ERROR, "Unable to encode format '{}'", f);
         });
         return -1;

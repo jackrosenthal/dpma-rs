@@ -4,14 +4,14 @@
 use crate::util::NamedMap;
 use dpma_ast::cli::{complete_from, CliArgs, CliCommand, CliResult, CompleteArgs};
 use dpma_ast::config::{self, LoadResult};
-use dpma_ast::dpma_log;
+use dpma_ast::{bformat, dpma_log};
 use std::sync::{Arc, RwLock};
 
 #[derive(Debug)]
 pub struct Table {
-    pub name: String,
+    pub name: Vec<u8>,
     /// (folder, translated name) in file order.
-    pub entries: Vec<(String, String)>,
+    pub entries: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
 static TABLES: RwLock<Option<Arc<NamedMap<Arc<Table>>>>> = RwLock::new(None);
@@ -22,14 +22,14 @@ fn load_tables(filename: &str) -> Option<NamedMap<Arc<Table>>> {
         _ => return None,
     };
     let mut tables = NamedMap::new(31);
-    for cat in cats.iter().filter(|c| !c.name.eq_ignore_ascii_case("general")) {
+    for cat in cats.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
         match cat.get("type") {
             None => dpma_log!("No type set for translation table {}", cat.name),
-            Some(t) if t.eq_ignore_ascii_case("translation") => {
+            Some(t) if t.eq_ignore_ascii_case(b"translation") => {
                 let entries = cat
                     .vars
                     .iter()
-                    .filter(|v| !v.name.eq_ignore_ascii_case("type"))
+                    .filter(|v| !v.name.eq_ignore_ascii_case(b"type"))
                     .map(|v| (v.name.clone(), v.value.clone()))
                     .collect();
                 tables.insert(&cat.name, Arc::new(Table { name: cat.name.clone(), entries }));
@@ -59,15 +59,15 @@ pub fn unload() {
 }
 
 /// Look up a table by name (case insensitive).
-pub fn get(name: &str) -> Option<Arc<Table>> {
+pub fn get(name: &[u8]) -> Option<Arc<Table>> {
     TABLES.read().unwrap().as_ref()?.get(name).cloned()
 }
 
-pub fn exists(name: &str) -> bool {
+pub fn exists(name: &[u8]) -> bool {
     get(name).is_some()
 }
 
-fn names() -> Vec<String> {
+fn names() -> Vec<Vec<u8>> {
     TABLES
         .read()
         .unwrap()
@@ -82,7 +82,7 @@ fn show_translations(a: &CliArgs) -> CliResult {
     }
     a.out("--- Translation tables ---\n");
     for n in names() {
-        a.out(&format!("    {}\n", n));
+        a.out(bformat!("    {}\n", n));
     }
     CliResult::Success
 }
@@ -93,11 +93,11 @@ fn show_translation(a: &CliArgs) -> CliResult {
     }
     let name = crate::util::truncate(&a.argv[3], 0x80);
     match get(&name) {
-        None => a.out(&format!("Table {} not found.\n", a.argv[3])),
+        None => a.out(bformat!("Table {} not found.\n", a.argv[3])),
         Some(t) => {
-            a.out(&format!("--- {} ---\n", t.name));
+            a.out(bformat!("--- {} ---\n", t.name));
             for (k, v) in &t.entries {
-                a.out(&format!("    {} ==> {}\n", k, v));
+                a.out(bformat!("    {} ==> {}\n", k, v));
             }
             a.out("\n");
         }
@@ -105,7 +105,7 @@ fn show_translation(a: &CliArgs) -> CliResult {
     CliResult::Success
 }
 
-fn complete_translation(a: &CompleteArgs) -> Option<String> {
+fn complete_translation(a: &CompleteArgs) -> Option<Vec<u8>> {
     complete_from(a, names())
 }
 

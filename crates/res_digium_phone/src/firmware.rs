@@ -6,16 +6,16 @@
 use crate::util::NamedMap;
 use dpma_ast::cli::CliArgs;
 use dpma_ast::config::{self, LoadResult};
-use dpma_ast::dpma_log;
+use dpma_ast::{bformat, dpma_log, dpma_bytes::ByteSlice};
 use std::sync::RwLock;
 
 pub const PACKAGE_CONFIG_FILE: &str = "digium_phones_firmware.conf";
 
 #[derive(Debug, Clone)]
 pub struct Package {
-    pub model: String,
-    pub version: String,
-    pub file: String,
+    pub model: Vec<u8>,
+    pub version: Vec<u8>,
+    pub file: Vec<u8>,
 }
 
 static PACKAGES: RwLock<Option<NamedMap<Package>>> = RwLock::new(None);
@@ -40,13 +40,13 @@ fn read_config() -> Option<Vec<Package>> {
             .map(|cat| {
                 let mut p = Package {
                     model: crate::util::truncate(&cat.name, 0x80),
-                    version: String::new(),
-                    file: String::new(),
+                    version: Vec::new(),
+                    file: Vec::new(),
                 };
                 for v in &cat.vars {
-                    if v.name.eq_ignore_ascii_case("version") {
+                    if v.name.eq_ignore_ascii_case(b"version") {
                         p.version = crate::util::truncate(&v.value, 0x100);
-                    } else if v.name.eq_ignore_ascii_case("file") {
+                    } else if v.name.eq_ignore_ascii_case(b"file") {
                         p.file = crate::util::truncate(&v.value, 0x1000);
                     }
                 }
@@ -69,7 +69,7 @@ pub fn reload() -> Result<(), ()> {
     let Some(pkgs) = read_config() else { return Ok(()) };
     let mut g = PACKAGES.write().unwrap();
     let map = g.get_or_insert_with(|| NamedMap::new(13));
-    let keep: Vec<String> = pkgs.iter().map(|p| p.model.to_ascii_lowercase()).collect();
+    let keep: Vec<Vec<u8>> = pkgs.iter().map(|p| p.model.to_ascii_lowercase()).collect();
     for p in pkgs {
         let model = p.model.clone();
         map.insert(&model, p);
@@ -83,7 +83,7 @@ pub fn unload() {
 }
 
 /// The package for a phone model.
-pub fn find(model: &str) -> Option<Package> {
+pub fn find(model: &[u8]) -> Option<Package> {
     PACKAGES.read().unwrap().as_ref()?.get(model).cloned()
 }
 
@@ -98,21 +98,21 @@ pub fn all() -> Vec<Package> {
 /// URLs under `url_prefix` (the network's `file_url_prefix`).  Each piece
 /// goes through `append`, one call per piece of the original.  Nothing is
 /// emitted when the packages were never loaded.
-pub fn no_option_settings(append: &mut dyn FnMut(&str), url_prefix: &str, network: &str) {
+pub fn no_option_settings(append: &mut dyn FnMut(&[u8]), url_prefix: &[u8], network: &[u8]) {
     let g = PACKAGES.read().unwrap();
     let Some(map) = g.as_ref() else { return };
-    append("<firmwares>\n");
+    append(b"<firmwares>\n");
     for p in map.values() {
         if p.version.is_empty() || p.file.is_empty() {
             continue;
         }
-        let prefix = if p.file.starts_with('/') || p.file.contains("//") { "" } else { url_prefix };
-        append(&format!(
+        let prefix = if p.file.starts_with(b"/") || p.file.contains_str("//") { b"" } else { url_prefix };
+        append(&bformat!(
             "<firmware model=\"{}\" version=\"{}\" url=\"{}{}\" network_id=\"{}\" />\n",
             p.model, p.version, prefix, p.file, network
         ));
     }
-    append("</firmwares>\n");
+    append(b"</firmwares>\n");
 }
 
 /// `firmwares_cli_display`, shown at the top of `digium_phones show
@@ -125,9 +125,9 @@ pub fn cli_display(a: &CliArgs) {
     let dir = crate::config::get().firmware_package_directory.clone();
     a.out("--- Firmware Package Settings ---\n");
     for p in pkgs {
-        a.out(&format!("Phone Model: {}\n", p.model));
-        a.out(&format!("Firmware Version: {}\n", p.version));
-        a.out(&format!("Path: {}\n", dir));
-        a.out(&format!("Filename: {}\n\n", p.file));
+        a.out(bformat!("Phone Model: {}\n", p.model));
+        a.out(bformat!("Firmware Version: {}\n", p.version));
+        a.out(bformat!("Path: {}\n", dir));
+        a.out(bformat!("Filename: {}\n\n", p.file));
     }
 }

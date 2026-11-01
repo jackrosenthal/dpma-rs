@@ -17,7 +17,8 @@
 
 use super::*;
 use crate::xmlutil;
-use dpma_ast::dpma_log;
+use dpma_ast::dpma_bytes::{ByteSlice, ByteVec};
+use dpma_ast::{bformat, dpma_log};
 use dpma_ast::xml::Doc;
 
 /// Size of the original's escape buffers.
@@ -27,7 +28,7 @@ const ESC_BUF: usize = 0x100;
 /// builds the document in (`ast_str_create(0x400)`).
 pub const INITIAL_BUF: usize = 0x400;
 
-fn esc(s: &str) -> String {
+fn esc(s: &[u8]) -> Vec<u8> {
     xmlutil::escape(s, ESC_BUF)
 }
 
@@ -36,13 +37,13 @@ fn esc(s: &str) -> String {
 /// the merged document with `ast_str_set(buf, len, ...)`, which drops the
 /// last character when the buffer has to grow (see `insert_display_rules`).
 struct Out<'a> {
-    s: &'a mut String,
+    s: &'a mut Vec<u8>,
     cap: usize,
 }
 
 impl Out<'_> {
     /// `ast_str_append(&buf, 0, "%s", text)` as `__ast_str_helper` sizes it.
-    fn ap(&mut self, text: &str) {
+    fn ap(&mut self, text: &[u8]) {
         let need = self.s.len() + text.len() + 1;
         if need > self.cap {
             self.cap = need + 16 + need / 4;
@@ -53,15 +54,15 @@ impl Out<'_> {
 
 macro_rules! ap {
     ($o:expr, $($arg:tt)*) => {
-        $o.ap(&format!($($arg)*))
+        $o.ap(&bformat!($($arg)*))
     };
 }
 
 /// The URL prefix to put in front of `path`: none when the path is
 /// absolute or already a URL (contains "//").
-fn url_prefix<'a>(path: &str, prefix: &'a str) -> &'a str {
-    if path.starts_with('/') || path.contains("//") {
-        ""
+fn url_prefix<'a>(path: &[u8], prefix: &'a [u8]) -> &'a [u8] {
+    if path.starts_with(b"/") || path.contains_str("//") {
+        b""
     } else {
         prefix
     }
@@ -69,19 +70,19 @@ fn url_prefix<'a>(path: &str, prefix: &'a str) -> &'a str {
 
 /// The value of a certificate or file setting: `value`, or else the file
 /// name part of `url` (empty when the URL has no '/').
-fn file_value<'a>(url: &'a str, value: &'a str) -> &'a str {
+fn file_value<'a>(url: &'a [u8], value: &'a [u8]) -> &'a [u8] {
     if !value.is_empty() {
         return value;
     }
-    match url.rfind('/') {
+    match url.rfind_byte(b'/') {
         Some(i) => &url[i + 1..],
-        None => "",
+        None => b"",
     }
 }
 
-fn or<'a>(s: &'a str, default: &'a str) -> &'a str {
+fn or<'a, D: AsRef<[u8]> + ?Sized>(s: &'a [u8], default: &'a D) -> &'a [u8] {
     if s.is_empty() {
-        default
+        default.as_ref()
     } else {
         s
     }
@@ -90,7 +91,7 @@ fn or<'a>(s: &'a str, default: &'a str) -> &'a str {
 /// `phone_user_get_primary_line`: the line object named by the phone's
 /// first line slot.
 pub fn primary_line<'a>(reg: &'a Registry, phone: &Phone) -> Option<&'a Line> {
-    let name = phone.lines.first().map_or("", |l| l.name.as_str());
+    let name = phone.lines.first().map_or(&b""[..], |l| l.name.as_slice());
     if name.is_empty() {
         return None;
     }
@@ -122,7 +123,7 @@ pub fn application_settings<'a>(reg: &'a Registry, phone: &Phone, type_name: &st
 }
 
 /// The `<account .../>` element of the phone's applications.
-fn app_account(o: &mut Out, server_uuid: &str, account_id: &str, phone: &Phone, net: &Network) {
+fn app_account(o: &mut Out, server_uuid: &[u8], account_id: &[u8], phone: &Phone, net: &Network) {
     ap!(o, "<account ");
     if !server_uuid.is_empty() {
         ap!(o, "server_uuid=\"{}\" ", server_uuid);
@@ -171,13 +172,13 @@ fn outbound_proxy(o: &mut Out, line: &Line) {
         return;
     }
     ap!(o, "outbound_proxy=\"{}\"\n", esc(&line.outboundproxy_address));
-    let port = if line.outboundproxy_port.is_empty() { "5060".to_string() } else { esc(&line.outboundproxy_port) };
+    let port = if line.outboundproxy_port.is_empty() { b"5060".to_vec() } else { esc(&line.outboundproxy_port) };
     ap!(o, "outbound_port=\"{}\"\n", port);
 }
 
 /// `add_internal_line_account`.  Returns the line, whose CustomPresence
 /// state the caller initializes (the original does it here).
-fn add_internal_line_account(o: &mut Out, phone: &Phone, line: &Line, net: &Network, index: i32, server_uuid: &str) {
+fn add_internal_line_account(o: &mut Out, phone: &Phone, line: &Line, net: &Network, index: i32, server_uuid: &[u8]) {
     ap!(o, "<account \n");
     if !server_uuid.is_empty() {
         ap!(o, "server_uuid=\"{}\" ", server_uuid);
@@ -375,14 +376,14 @@ fn add_firmware_settings(o: &mut Out, reg: &Registry, phone: &Phone) {
 }
 
 /// Does `dir/name` exist (and can it be opened)?  FUN_001523a0.
-fn file_exists(dir: &str, name: &str) -> bool {
-    std::fs::File::open(crate::util::truncate(&format!("{}/{}", dir, name), 0x1000)).is_ok()
+fn file_exists(dir: &[u8], name: &[u8]) -> bool {
+    std::fs::File::open(crate::util::path(&crate::util::truncate(&bformat!("{}/{}", dir, name), 0x1000))).is_ok()
 }
 
 /// A user image setting (`logo_file`, `wallpaper_file`): served from the
 /// file directory when the file is there, otherwise from every network's
 /// file URL prefix.
-fn user_image(o: &mut Out, reg: &Registry, phone: &Phone, dir: &str, id: &str, file: &str, path: &str) {
+fn user_image(o: &mut Out, reg: &Registry, phone: &Phone, dir: &[u8], id: &str, file: &[u8], path: &str) {
     if file_exists(dir, file) {
         ap!(
             o,
@@ -409,16 +410,16 @@ fn user_image(o: &mut Out, reg: &Registry, phone: &Phone, dir: &str, id: &str, f
 /// `phone_user_build_config`.  Returns the internal lines whose
 /// CustomPresence state must be initialized, which the original does
 /// while adding their accounts.
-fn build_config(reg: &Registry, phone: &Phone, out: &mut String, dir: &str, model: &str) -> Vec<String> {
+fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], model: &[u8]) -> Vec<Vec<u8>> {
     let p = phone;
     out.clear();
     let mut o = Out { s: out, cap: INITIAL_BUF };
     let general = crate::config::get();
-    let uuid = general.server_uuid.as_str();
+    let uuid = general.server_uuid.as_slice();
     let has_queue = has_queue(reg, p);
     let primary = primary_line(reg, p);
     let conflict = if p.lock_preferences { "freeze" } else { "replace" };
-    let slot0 = p.lines.first().map_or("", |l| l.name.as_str());
+    let slot0 = p.lines.first().map_or(&b""[..], |l| l.name.as_slice());
 
     // Softkeys.
     ap!(o, "<config>\n");
@@ -1085,11 +1086,11 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut String, dir: &str, mode
 /// `ast_str_set(&buf, len, "%s", dump)`; when the dump does not fit in the
 /// buffer's current allocation, that caps the buffer at `len` bytes and the
 /// last character (the final newline) is lost.  Reproduced.
-fn insert_display_rules(rules: &str, o: &mut Out, dir: &str) {
+fn insert_display_rules(rules: &[u8], o: &mut Out, dir: &[u8]) {
     if rules.is_empty() {
         return;
     }
-    let Some(doc) = Doc::parse_memory(o.s.as_bytes()) else {
+    let Some(doc) = Doc::parse_memory(o.s) else {
         dpma_log!("Error Parsing phone user config, phone configuration may be invalid.");
         return;
     };
@@ -1098,22 +1099,22 @@ fn insert_display_rules(rules: &str, o: &mut Out, dir: &str) {
         dpma_ast::dpma_debug!(3, "Contacts not found in phone config, display rules not added.");
         return;
     };
-    let path = crate::util::truncate(&format!("{}/{}", dir, rules), 0x1000);
+    let path = crate::util::truncate(&bformat!("{}/{}", dir, rules), 0x1000);
     xmlutil::xml_add_file(contacts, &path, None);
     let mut dump = doc.dump_format();
     if dump.len() >= o.cap {
         dump.pop();
         o.cap = dump.len() + 1;
     }
-    *o.s = String::from_utf8_lossy(&dump).into_owned();
+    *o.s = dump;
 }
 
 /// `phone_user_read_config`: append the file `dir/file` to `out`, the way
 /// the original does (in 2047 byte reads, each cut at its first NUL).
-pub fn read_config(out: &mut String, dir: &str, file: &str) -> Result<(), ()> {
+pub fn read_config(out: &mut Vec<u8>, dir: &[u8], file: &[u8]) -> Result<(), ()> {
     use std::io::Read;
-    let path = crate::util::truncate(&format!("{}/{}", dir, file), 0x1000);
-    let mut f = match std::fs::File::open(&path) {
+    let path = crate::util::truncate(&bformat!("{}/{}", dir, file), 0x1000);
+    let mut f = match std::fs::File::open(crate::util::path(&path)) {
         Ok(f) => f,
         Err(_) => {
             dpma_log!("Failed to open file {}", path);
@@ -1140,7 +1141,7 @@ pub fn read_config(out: &mut String, dir: &str, file: &str) -> Result<(), ()> {
             break;
         }
     }
-    out.push_str(&String::from_utf8_lossy(&bytes));
+    out.extend_from_slice(&bytes);
     Ok(())
 }
 
@@ -1153,7 +1154,7 @@ pub fn read_config(out: &mut String, dir: &str, file: &str) -> Result<(), ()> {
 /// its user agent (e.g., "D65"), which selects the `<model>_logo_file`.
 /// Calls `users::presence::user_application_sync` first, as the original
 /// does.  Err when the phone does not exist.
-pub fn get_config(phone: &str, out: &mut String, file_dir: &str, model: &str) -> Result<(), ()> {
+pub fn get_config(phone: &[u8], out: &mut Vec<u8>, file_dir: &[u8], model: &[u8]) -> Result<(), ()> {
     super::presence::user_application_sync(phone);
     let presence_lines = {
         // The phone's lines are locked while they are read (the original
@@ -1182,7 +1183,7 @@ pub fn get_config(phone: &str, out: &mut String, file_dir: &str, model: &str) ->
 
 /// `phone_user_get_primary_line_name`: the name in the phone's first line
 /// slot (empty when it has none).  None when the phone does not exist.
-pub fn primary_line_name(phone: &str) -> Option<String> {
+pub fn primary_line_name(phone: &[u8]) -> Option<Vec<u8>> {
     let g = read();
     let p = g.as_ref()?.phones.get(phone)?;
     Some(p.lines.first().map(|l| l.name.clone()).unwrap_or_default())
@@ -1192,17 +1193,18 @@ pub fn primary_line_name(phone: &str) -> Option<String> {
 /// phone (in container order) that has `line` in any of its twelve line
 /// slots (an empty name matches a phone with a free slot); true when no
 /// phone has it.
-pub fn show_call_parking(line: &str) -> bool {
+pub fn show_call_parking(line: &[u8]) -> bool {
     let g = read();
     let Some(reg) = g.as_ref() else { return true };
     let found = reg.phones.values().find(|p| {
-        (0..MAX_LINES).any(|i| p.lines.get(i).map_or("", |l| l.name.as_str()).eq_ignore_ascii_case(line))
+        (0..MAX_LINES).any(|i| p.lines.get(i).map_or(&b""[..], |l| l.name.as_slice()).eq_ignore_ascii_case(line))
     });
     found.is_none_or(|p| p.show_call_parking)
 }
 
 #[cfg(feature = "devtest")]
 mod devtest {
+    use dpma_ast::bformat;
     use dpma_ast::cli::{CliArgs, CliCommand, CliResult};
 
     /// `dpmadev config <phone> [model]`: the document a ConfigRequest from
@@ -1212,11 +1214,11 @@ mod devtest {
         if a.argc() < 3 || a.argc() > 4 {
             return CliResult::ShowUsage;
         }
-        let model = a.argv.get(3).map_or("", |s| s.as_str());
+        let model = a.argv.get(3).map_or(&b""[..], |s| s.as_slice());
         let dir = crate::util::truncate(&crate::config::get().file_directory, 0x1000);
-        let mut out = String::new();
+        let mut out = Vec::new();
         if super::get_config(&a.argv[2], &mut out, &dir, model).is_err() {
-            a.out(&format!("No such phone '{}'\n", a.argv[2]));
+            a.out(bformat!("No such phone '{}'\n", a.argv[2]));
             return CliResult::Failure;
         }
         a.out(&out);
@@ -1225,7 +1227,7 @@ mod devtest {
 
     /// `dpmadev contacts`: the `file://default` contacts document.
     fn contacts(a: &CliArgs) -> CliResult {
-        let mut out = String::new();
+        let mut out = Vec::new();
         crate::users::contacts::default_contacts_xml(&mut out);
         a.out(&out);
         CliResult::Success
@@ -1237,12 +1239,12 @@ mod devtest {
         if a.argc() > 3 {
             return CliResult::ShowUsage;
         }
-        let pass = a.argv.get(2).map_or("", |s| s.as_str());
+        let pass = a.argv.get(2).map_or(&b""[..], |s| s.as_slice());
         let general = crate::config::get();
         let filter = pass != general.globalpin && general.auth_flags & crate::config::auth::USERLIST_GLOBALPIN != 0;
-        let mut out = String::new();
+        let mut out = Vec::new();
         match crate::users::userlist::build_userlist_json(&mut out, filter, pass) {
-            Ok(n) => a.out(&format!("{} user(s), group pin filter {}\n{}\n", n, if filter { "on" } else { "off" }, out)),
+            Ok(n) => a.out(bformat!("{} user(s), group pin filter {}\n{}\n", n, if filter { "on" } else { "off" }, out)),
             Err(()) => a.out("Failed to build the user list\n"),
         }
         CliResult::Success

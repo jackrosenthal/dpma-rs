@@ -5,6 +5,7 @@
 
 use crate::ffi;
 use crate::util::{ast_strdup, cstr, from_ptr};
+use dpma_bytes::starts_with_ic;
 use std::collections::HashMap;
 use std::os::raw::{c_char, c_int, c_void};
 use std::sync::{Mutex, OnceLock};
@@ -12,7 +13,7 @@ use std::sync::{Mutex, OnceLock};
 /// Arguments passed to a CLI command handler.
 pub struct CliArgs {
     pub fd: i32,
-    pub argv: Vec<String>,
+    pub argv: Vec<Vec<u8>>,
 }
 
 impl CliArgs {
@@ -20,8 +21,8 @@ impl CliArgs {
         self.argv.len()
     }
 
-    /// Write text to the CLI.
-    pub fn out(&self, text: &str) {
+    /// Write text to the CLI (`ast_cli(fd, "%s", text)`: up to a NUL).
+    pub fn out(&self, text: impl AsRef<[u8]>) {
         let c = cstr(text);
         unsafe { ffi::dpma_glue_cli_out(self.fd, c.as_ptr()) };
     }
@@ -29,8 +30,8 @@ impl CliArgs {
 
 /// Arguments passed to a completion handler.
 pub struct CompleteArgs {
-    pub line: String,
-    pub word: String,
+    pub line: Vec<u8>,
+    pub word: Vec<u8>,
     pub pos: i32,
     pub n: i32,
 }
@@ -42,7 +43,7 @@ pub enum CliResult {
 }
 
 pub type ExecFn = fn(&CliArgs) -> CliResult;
-pub type CompleteFn = fn(&CompleteArgs) -> Option<String>;
+pub type CompleteFn = fn(&CompleteArgs) -> Option<Vec<u8>>;
 
 /// Definition of one CLI command.
 pub struct CliCommand {
@@ -149,18 +150,17 @@ pub unsafe extern "C" fn dpma_rust_cli_complete(
             n,
         };
         match complete(&args) {
-            Some(s) => ast_strdup(&s),
+            Some(s) => ast_strdup(s),
             None => std::ptr::null_mut(),
         }
     })
 }
 
 /// Standard completion over a list of candidate names: returns the n-th name
-/// that starts with `word` (case insensitive).
-pub fn complete_from<I: IntoIterator<Item = String>>(args: &CompleteArgs, names: I) -> Option<String> {
-    let word = args.word.to_ascii_lowercase();
+/// that starts with `word` (`strncasecmp`).
+pub fn complete_from<I: IntoIterator<Item = Vec<u8>>>(args: &CompleteArgs, names: I) -> Option<Vec<u8>> {
     names
         .into_iter()
-        .filter(|n| n.to_ascii_lowercase().starts_with(&word))
+        .filter(|n| starts_with_ic(n, &args.word))
         .nth(args.n.max(0) as usize)
 }

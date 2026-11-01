@@ -39,12 +39,12 @@ pub enum Transport {
 
 impl Transport {
     /// `udp`, `tcp`, or `tls` (case insensitive); anything else is unset.
-    pub fn parse(s: &str) -> Transport {
-        if s.eq_ignore_ascii_case("udp") {
+    pub fn parse(s: &[u8]) -> Transport {
+        if s.eq_ignore_ascii_case(b"udp") {
             Transport::Udp
-        } else if s.eq_ignore_ascii_case("tcp") {
+        } else if s.eq_ignore_ascii_case(b"tcp") {
             Transport::Tcp
-        } else if s.eq_ignore_ascii_case("tls") {
+        } else if s.eq_ignore_ascii_case(b"tls") {
             Transport::Tls
         } else {
             Transport::Unset
@@ -102,7 +102,7 @@ pub const BUILTIN_RINGTONES: &[&str] = &[
 /// A line slot on a phone.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PhoneLine {
-    pub name: String,
+    pub name: Vec<u8>,
     /// Assigned with `external_line=` rather than `line=`.
     pub external: bool,
 }
@@ -119,61 +119,61 @@ pub enum ParkingTransfer {
 /// A `type=phone` section (the original's `phone_user`).
 #[derive(Debug, Clone)]
 pub struct Phone {
-    pub name: String,
+    pub name: Vec<u8>,
 
-    pub config_file: String,
-    pub full_name: String,
-    pub timezone: String,
-    pub active_ringtone: String,
-    pub blf_contact_group: String,
-    pub contacts_display_rules: String,
-    pub group_pin: String,
-    pub pin: String,
-    pub mac: String,
-    pub parking_exten: String,
-    pub wallpaper_file: String,
-    pub active_locale: String,
-    pub lan_port_mode: String,
-    pub pc_port_mode: String,
-    pub blf_items: String,
-    pub login_password: String,
-    pub accept_local_calls: String,
-    pub name_format: String,
-    pub ehs: String,
-    pub dot1x_passthrough: String,
-    pub dot1x_method: String,
-    pub dot1x_eapol_on_disconnect: String,
-    pub dot1x_identity: String,
-    pub dot1x_anonymous_identity: String,
-    pub dot1x_password: String,
-    pub dot1x_client_cert_url: String,
-    pub dot1x_client_cert_value: String,
-    pub dot1x_root_cert_url: String,
-    pub dot1x_root_cert_value: String,
-    pub dot1x_debug: String,
+    pub config_file: Vec<u8>,
+    pub full_name: Vec<u8>,
+    pub timezone: Vec<u8>,
+    pub active_ringtone: Vec<u8>,
+    pub blf_contact_group: Vec<u8>,
+    pub contacts_display_rules: Vec<u8>,
+    pub group_pin: Vec<u8>,
+    pub pin: Vec<u8>,
+    pub mac: Vec<u8>,
+    pub parking_exten: Vec<u8>,
+    pub wallpaper_file: Vec<u8>,
+    pub active_locale: Vec<u8>,
+    pub lan_port_mode: Vec<u8>,
+    pub pc_port_mode: Vec<u8>,
+    pub blf_items: Vec<u8>,
+    pub login_password: Vec<u8>,
+    pub accept_local_calls: Vec<u8>,
+    pub name_format: Vec<u8>,
+    pub ehs: Vec<u8>,
+    pub dot1x_passthrough: Vec<u8>,
+    pub dot1x_method: Vec<u8>,
+    pub dot1x_eapol_on_disconnect: Vec<u8>,
+    pub dot1x_identity: Vec<u8>,
+    pub dot1x_anonymous_identity: Vec<u8>,
+    pub dot1x_password: Vec<u8>,
+    pub dot1x_client_cert_url: Vec<u8>,
+    pub dot1x_client_cert_value: Vec<u8>,
+    pub dot1x_root_cert_url: Vec<u8>,
+    pub dot1x_root_cert_value: Vec<u8>,
+    pub dot1x_debug: Vec<u8>,
     /// "0" or "1".
-    pub openvpn_enable: String,
-    pub openvpn_config_file_url: String,
-    pub openvpn_config_file_value: String,
-    pub openvpn_root_cert_url: String,
-    pub openvpn_root_cert_value: String,
-    pub openvpn_client_cert_url: String,
-    pub openvpn_client_cert_value: String,
-    pub openvpn_client_key_url: String,
-    pub openvpn_client_key_value: String,
-    pub openvpn_logging: String,
-    pub idle_company_text: String,
+    pub openvpn_enable: Vec<u8>,
+    pub openvpn_config_file_url: Vec<u8>,
+    pub openvpn_config_file_value: Vec<u8>,
+    pub openvpn_root_cert_url: Vec<u8>,
+    pub openvpn_root_cert_value: Vec<u8>,
+    pub openvpn_client_cert_url: Vec<u8>,
+    pub openvpn_client_cert_value: Vec<u8>,
+    pub openvpn_client_key_url: Vec<u8>,
+    pub openvpn_client_key_value: Vec<u8>,
+    pub openvpn_logging: Vec<u8>,
+    pub idle_company_text: Vec<u8>,
 
     pub lines: Vec<PhoneLine>,
-    pub contacts: Vec<String>,
-    pub applications: Vec<String>,
-    pub networks: Vec<String>,
-    pub ringtones: Vec<String>,
-    pub firmware: Vec<String>,
-    pub alerts: Vec<String>,
-    pub multicastpages: Vec<String>,
+    pub contacts: Vec<Vec<u8>>,
+    pub applications: Vec<Vec<u8>>,
+    pub networks: Vec<Vec<u8>>,
+    pub ringtones: Vec<Vec<u8>>,
+    pub firmware: Vec<Vec<u8>>,
+    pub alerts: Vec<Vec<u8>>,
+    pub multicastpages: Vec<Vec<u8>>,
     /// (model, file) from the `<model>_logo_file` options.
-    pub logos: Vec<(String, String)>,
+    pub logos: Vec<(Vec<u8>, Vec<u8>)>,
     pub codecs: Vec<Codec>,
 
     pub ntp_resync: i32,
@@ -232,11 +232,11 @@ pub struct Phone {
     pub pin_is_voicemail: bool,
 
     // ---- runtime state (survives reloads) ----
-    pub last_mac: String,
-    pub last_uri: String,
-    pub last_session_id: String,
+    pub last_mac: Vec<u8>,
+    pub last_uri: Vec<u8>,
+    pub last_session_id: Vec<u8>,
     /// The phone's pin as last applied (also tracks voicemail pins).
-    pub applied_pin: String,
+    pub applied_pin: Vec<u8>,
     /// Configuration token state (+0x984): 0 until the first token is
     /// issued, then 1.  (The user list's unported variant also knows 2
     /// and 3.)
@@ -253,8 +253,8 @@ pub struct Phone {
 }
 
 impl Phone {
-    pub fn new(name: &str) -> Phone {
-        Phone { name: name.to_string(), ..Phone::blank() }
+    pub fn new(name: &[u8]) -> Phone {
+        Phone { name: name.to_vec(), ..Phone::blank() }
     }
 
     /// Reset everything that comes from configuration (`set_user_defaults`),
@@ -286,48 +286,48 @@ impl Phone {
         // A zeroed phone, as returned by ao2_alloc, with the defaults that
         // set_user_defaults applies.
         Phone {
-            name: String::new(),
-            config_file: String::new(),
-            full_name: String::new(),
-            timezone: String::new(),
-            active_ringtone: String::new(),
-            blf_contact_group: String::new(),
-            contacts_display_rules: String::new(),
-            group_pin: String::new(),
-            pin: String::new(),
-            mac: String::new(),
-            parking_exten: String::new(),
-            wallpaper_file: String::new(),
-            active_locale: String::new(),
-            lan_port_mode: String::new(),
-            pc_port_mode: String::new(),
-            blf_items: String::new(),
-            login_password: String::new(),
-            accept_local_calls: String::new(),
-            name_format: String::new(),
-            ehs: String::new(),
-            dot1x_passthrough: String::new(),
-            dot1x_method: String::new(),
-            dot1x_eapol_on_disconnect: String::new(),
-            dot1x_identity: String::new(),
-            dot1x_anonymous_identity: String::new(),
-            dot1x_password: String::new(),
-            dot1x_client_cert_url: String::new(),
-            dot1x_client_cert_value: String::new(),
-            dot1x_root_cert_url: String::new(),
-            dot1x_root_cert_value: String::new(),
-            dot1x_debug: String::new(),
+            name: Vec::new(),
+            config_file: Vec::new(),
+            full_name: Vec::new(),
+            timezone: Vec::new(),
+            active_ringtone: Vec::new(),
+            blf_contact_group: Vec::new(),
+            contacts_display_rules: Vec::new(),
+            group_pin: Vec::new(),
+            pin: Vec::new(),
+            mac: Vec::new(),
+            parking_exten: Vec::new(),
+            wallpaper_file: Vec::new(),
+            active_locale: Vec::new(),
+            lan_port_mode: Vec::new(),
+            pc_port_mode: Vec::new(),
+            blf_items: Vec::new(),
+            login_password: Vec::new(),
+            accept_local_calls: Vec::new(),
+            name_format: Vec::new(),
+            ehs: Vec::new(),
+            dot1x_passthrough: Vec::new(),
+            dot1x_method: Vec::new(),
+            dot1x_eapol_on_disconnect: Vec::new(),
+            dot1x_identity: Vec::new(),
+            dot1x_anonymous_identity: Vec::new(),
+            dot1x_password: Vec::new(),
+            dot1x_client_cert_url: Vec::new(),
+            dot1x_client_cert_value: Vec::new(),
+            dot1x_root_cert_url: Vec::new(),
+            dot1x_root_cert_value: Vec::new(),
+            dot1x_debug: Vec::new(),
             openvpn_enable: "0".into(),
-            openvpn_config_file_url: String::new(),
-            openvpn_config_file_value: String::new(),
-            openvpn_root_cert_url: String::new(),
-            openvpn_root_cert_value: String::new(),
-            openvpn_client_cert_url: String::new(),
-            openvpn_client_cert_value: String::new(),
-            openvpn_client_key_url: String::new(),
-            openvpn_client_key_value: String::new(),
-            openvpn_logging: String::new(),
-            idle_company_text: String::new(),
+            openvpn_config_file_url: Vec::new(),
+            openvpn_config_file_value: Vec::new(),
+            openvpn_root_cert_url: Vec::new(),
+            openvpn_root_cert_value: Vec::new(),
+            openvpn_client_cert_url: Vec::new(),
+            openvpn_client_cert_value: Vec::new(),
+            openvpn_client_key_url: Vec::new(),
+            openvpn_client_key_value: Vec::new(),
+            openvpn_logging: Vec::new(),
+            idle_company_text: Vec::new(),
             lines: Vec::new(),
             contacts: Vec::new(),
             applications: Vec::new(),
@@ -380,10 +380,10 @@ impl Phone {
             expansion_enabled: false,
             expansion_page_indicators_enabled: false,
             pin_is_voicemail: false,
-            last_mac: String::new(),
-            last_uri: String::new(),
-            last_session_id: String::new(),
-            applied_pin: String::new(),
+            last_mac: Vec::new(),
+            last_uri: Vec::new(),
+            last_session_id: Vec::new(),
+            applied_pin: Vec::new(),
             token_state: 0,
             token_sum: 0,
             prev_token_sum: 0,
@@ -399,7 +399,7 @@ impl Phone {
 
     /// `phone_user_has_line` (FUN_0016aab0): is `line` one of the phone's
     /// line slots (`line=` or `external_line=`, case insensitive)?
-    pub fn has_line(&self, line: &str) -> bool {
+    pub fn has_line(&self, line: &[u8]) -> bool {
         self.lines.iter().any(|l| l.name.eq_ignore_ascii_case(line))
     }
 }
@@ -408,37 +408,37 @@ impl Phone {
 /// phone) or an `external_line`.
 #[derive(Debug, Clone, Default)]
 pub struct Line {
-    pub name: String,
+    pub name: Vec<u8>,
     pub external: bool,
 
-    pub tech: String,
-    pub secret: String,
-    pub callerid: String,
-    pub mailbox: String,
-    pub exten: String,
-    pub context: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub title: String,
-    pub line_label: String,
-    pub location: String,
-    pub digit_map: String,
-    pub outboundproxy_address: String,
-    pub outboundproxy_port: String,
-    pub voicemail_uri: String,
-    pub media_encryption: String,
-    pub server_address: String,
-    pub server_port: String,
-    pub secondary_server_address: String,
-    pub secondary_server_port: String,
-    pub authname: String,
-    pub userid: String,
-    pub secondary_media_encryption: String,
-    pub subscribecontext: String,
+    pub tech: Vec<u8>,
+    pub secret: Vec<u8>,
+    pub callerid: Vec<u8>,
+    pub mailbox: Vec<u8>,
+    pub exten: Vec<u8>,
+    pub context: Vec<u8>,
+    pub first_name: Vec<u8>,
+    pub last_name: Vec<u8>,
+    pub title: Vec<u8>,
+    pub line_label: Vec<u8>,
+    pub location: Vec<u8>,
+    pub digit_map: Vec<u8>,
+    pub outboundproxy_address: Vec<u8>,
+    pub outboundproxy_port: Vec<u8>,
+    pub voicemail_uri: Vec<u8>,
+    pub media_encryption: Vec<u8>,
+    pub server_address: Vec<u8>,
+    pub server_port: Vec<u8>,
+    pub secondary_server_address: Vec<u8>,
+    pub secondary_server_port: Vec<u8>,
+    pub authname: Vec<u8>,
+    pub userid: Vec<u8>,
+    pub secondary_media_encryption: Vec<u8>,
+    pub subscribecontext: Vec<u8>,
     /// Context the line's auto hint currently lives in.
-    pub hint_context: String,
-    pub pjsip_auth: String,
-    pub plar_number: String,
+    pub hint_context: Vec<u8>,
+    pub pjsip_auth: Vec<u8>,
+    pub plar_number: Vec<u8>,
     pub reregistration_timeout: i32,
     pub registration_retry_interval: i32,
     pub registration_max_retries: i32,
@@ -451,8 +451,8 @@ pub struct Line {
 }
 
 impl Line {
-    pub fn new(name: &str, external: bool) -> Line {
-        Line { name: name.to_string(), external, ..Default::default() }
+    pub fn new(name: &[u8], external: bool) -> Line {
+        Line { name: name.to_vec(), external, ..Default::default() }
     }
 
     /// `set_line_defaults`: applied whenever a phone (re)claims the line.
@@ -460,7 +460,7 @@ impl Line {
     /// `context` when there is one; chan_sip is not supported).
     pub fn set_defaults(&mut self) {
         self.exten.clear();
-        self.context = "default".to_string();
+        self.context = b"default".to_vec();
         for f in [
             &mut self.first_name,
             &mut self.last_name,
@@ -495,7 +495,7 @@ impl Line {
     }
 
     /// The extension used to dial this line.
-    pub fn dialable_exten(&self) -> &str {
+    pub fn dialable_exten(&self) -> &[u8] {
         if self.exten.is_empty() {
             &self.name
         } else {
@@ -507,20 +507,20 @@ impl Line {
 /// A `type=network` section, or an implicit network named after a phone.
 #[derive(Debug, Clone)]
 pub struct Network {
-    pub name: String,
-    pub alias: String,
-    pub cidr: String,
-    pub registration_address: String,
-    pub registration_port: String,
-    pub alternate_registration_address: String,
-    pub alternate_registration_port: String,
-    pub file_url_prefix: String,
-    pub ntp_server: String,
-    pub syslog_server: String,
-    pub syslog_port: String,
-    pub syslog_level: String,
-    pub network_vlan_discovery_mode: String,
-    pub public_firmware_url_prefix: String,
+    pub name: Vec<u8>,
+    pub alias: Vec<u8>,
+    pub cidr: Vec<u8>,
+    pub registration_address: Vec<u8>,
+    pub registration_port: Vec<u8>,
+    pub alternate_registration_address: Vec<u8>,
+    pub alternate_registration_port: Vec<u8>,
+    pub file_url_prefix: Vec<u8>,
+    pub ntp_server: Vec<u8>,
+    pub syslog_server: Vec<u8>,
+    pub syslog_port: Vec<u8>,
+    pub syslog_level: Vec<u8>,
+    pub network_vlan_discovery_mode: Vec<u8>,
+    pub public_firmware_url_prefix: Vec<u8>,
     pub network_vlan_id: i32,
     pub sip_qos: i32,
     pub rtp_qos: i32,
@@ -536,22 +536,22 @@ pub struct Network {
 
 impl Network {
     /// `phone_network_create`.
-    pub fn new(name: &str) -> Network {
+    pub fn new(name: &[u8]) -> Network {
         Network {
-            name: name.to_string(),
-            alias: String::new(),
-            cidr: String::new(),
-            registration_address: String::new(),
-            registration_port: String::new(),
-            alternate_registration_address: String::new(),
-            alternate_registration_port: String::new(),
-            file_url_prefix: String::new(),
-            ntp_server: String::new(),
-            syslog_server: String::new(),
-            syslog_port: String::new(),
-            syslog_level: String::new(),
-            network_vlan_discovery_mode: String::new(),
-            public_firmware_url_prefix: String::new(),
+            name: name.to_vec(),
+            alias: Vec::new(),
+            cidr: Vec::new(),
+            registration_address: Vec::new(),
+            registration_port: Vec::new(),
+            alternate_registration_address: Vec::new(),
+            alternate_registration_port: Vec::new(),
+            file_url_prefix: Vec::new(),
+            ntp_server: Vec::new(),
+            syslog_server: Vec::new(),
+            syslog_port: Vec::new(),
+            syslog_level: Vec::new(),
+            network_vlan_discovery_mode: Vec::new(),
+            public_firmware_url_prefix: Vec::new(),
             network_vlan_id: 0,
             sip_qos: 3,
             rtp_qos: -1,
@@ -583,43 +583,43 @@ impl Network {
 
 #[derive(Debug, Clone, Default)]
 pub struct Ringtone {
-    pub name: String,
-    pub alias: String,
-    pub filename: String,
+    pub name: Vec<u8>,
+    pub alias: Vec<u8>,
+    pub filename: Vec<u8>,
     pub delme: bool,
 }
 
 /// A `type=firmware` section.
 #[derive(Debug, Clone, Default)]
 pub struct FirmwareOpt {
-    pub name: String,
+    pub name: Vec<u8>,
     /// Upper-cased.
-    pub model: String,
-    pub version: String,
-    pub file: String,
+    pub model: Vec<u8>,
+    pub version: Vec<u8>,
+    pub file: Vec<u8>,
     pub public_firmware: bool,
     pub delme: bool,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Alert {
-    pub name: String,
-    pub alert_info: String,
-    pub ring_type: String,
-    pub ringtone: String,
+    pub name: Vec<u8>,
+    pub alert_info: Vec<u8>,
+    pub ring_type: Vec<u8>,
+    pub ringtone: Vec<u8>,
     pub delme: bool,
 }
 
 /// A `type=multicastpage` section.
 #[derive(Debug, Clone, Default)]
 pub struct Page {
-    pub name: String,
-    pub alias: String,
-    pub address: String,
-    pub port: String,
-    pub priority: String,
+    pub name: Vec<u8>,
+    pub alias: Vec<u8>,
+    pub address: Vec<u8>,
+    pub port: Vec<u8>,
+    pub priority: Vec<u8>,
     /// Defaults to "0".
-    pub interrupt: String,
+    pub interrupt: Vec<u8>,
     pub delme: bool,
 }
 
@@ -632,11 +632,11 @@ pub enum QueuePermission {
 
 #[derive(Debug, Clone)]
 pub struct QueueApp {
-    pub queue: String,
-    pub membername: String,
-    pub location: String,
-    pub login_exten: String,
-    pub logout_exten: String,
+    pub queue: Vec<u8>,
+    pub membername: Vec<u8>,
+    pub location: Vec<u8>,
+    pub login_exten: Vec<u8>,
+    pub logout_exten: Vec<u8>,
     pub member: bool,
     pub permission: QueuePermission,
 }
@@ -655,30 +655,30 @@ pub struct StatusApp {
     /// Presence state (`dpma_ast::presence`).
     pub status: i32,
     pub send486: Send486,
-    pub substatuses: Vec<String>,
+    pub substatuses: Vec<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct ParkingApp {
-    pub parkinglots: Vec<String>,
+    pub parkinglots: Vec<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct VoicemailApp {
     /// Name of the translation table.
-    pub translation: Option<String>,
+    pub translation: Option<Vec<u8>>,
     pub require_password: bool,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct CustomApp {
-    pub name: String,
-    pub filename: String,
-    pub md5: String,
+    pub name: Vec<u8>,
+    pub filename: Vec<u8>,
+    pub md5: Vec<u8>,
     pub autostart: bool,
     pub idlescreen_softkey: bool,
     /// Any other option, in order.
-    pub settings: Vec<(String, String)>,
+    pub settings: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
 #[derive(Debug, Clone)]
@@ -705,7 +705,7 @@ impl AppKind {
 /// A `type=application` section.
 #[derive(Debug, Clone)]
 pub struct Application {
-    pub name: String,
+    pub name: Vec<u8>,
     pub kind: Option<AppKind>,
     pub delme: bool,
 }
@@ -737,14 +737,14 @@ impl Registry {
     }
 
     /// Is `line` assigned to any phone?
-    pub fn line_is_mapped(&self, line: &str) -> bool {
+    pub fn line_is_mapped(&self, line: &[u8]) -> bool {
         self.phones
             .values()
             .any(|p| p.lines.iter().any(|l| l.name.eq_ignore_ascii_case(line)))
     }
 
     /// The phone whose primary line is `line`.
-    pub fn phone_for_line(&self, line: &str) -> Option<&Phone> {
+    pub fn phone_for_line(&self, line: &[u8]) -> Option<&Phone> {
         self.phones
             .values()
             .find(|p| p.primary_line().is_some_and(|l| l.name.eq_ignore_ascii_case(line)))
@@ -765,7 +765,7 @@ pub fn write() -> RwLockWriteGuard<'static, Option<Registry>> {
 
 /// Ask a phone to fetch its configuration again (`phone_user_reconfigure`).
 /// With `delete_token` the phone also discards its configuration token.
-pub fn reconfigure(name: &str, delete_token: bool) -> Result<(), ()> {
+pub fn reconfigure(name: &[u8], delete_token: bool) -> Result<(), ()> {
     let (name, uri, session) = {
         let g = read();
         let Some(p) = g.as_ref().and_then(|r| r.phones.get(name)) else { return Err(()) };
@@ -775,7 +775,7 @@ pub fn reconfigure(name: &str, delete_token: bool) -> Result<(), ()> {
 }
 
 /// Send the reconfigure message to the phone's last known location.
-pub fn send_reconfigure(name: &str, uri: &str, session: &str, delete_token: bool) -> Result<(), ()> {
+pub fn send_reconfigure(name: &[u8], uri: &[u8], session: &[u8], delete_token: bool) -> Result<(), ()> {
     if uri.is_empty() {
         return Err(());
     }

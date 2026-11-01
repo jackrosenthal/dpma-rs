@@ -3,6 +3,7 @@
 
 use super::now;
 use crate::ami::AmiAction;
+use dpma_ast::{bformat, bwrite};
 use dpma_ast::manager::{self, Request};
 
 fn one_zero(b: bool) -> &'static str {
@@ -16,20 +17,20 @@ fn one_zero(b: bool) -> &'static str {
 /// `phone_user_for_last_token_mac` (0x170560) plus FUN_0016aa10: the
 /// "Username" and "TokenURI" lines of the first phone (in container order)
 /// whose last token MAC equals `mac`, ignoring case.
-fn user_details(mac: &str) -> Option<String> {
+fn user_details(mac: &[u8]) -> Option<Vec<u8>> {
     if mac.is_empty() {
         return None;
     }
     let g = crate::users::read();
     let p = g.as_ref()?.phones.values().find(|p| p.last_mac.eq_ignore_ascii_case(mac))?;
-    Some(format!("Username: {}\r\nTokenURI: {}\r\n", p.name, p.last_uri))
+    Some(bformat!("Username: {}\r\nTokenURI: {}\r\n", p.name, p.last_uri))
 }
 
 /// `action_dpma_show_phones`: one `DPMAShowPhonesList` event per session.
 fn action_show_phones(r: &Request) -> i32 {
     let id = r.header("ActionID");
     // snprintf into an 80-byte buffer.
-    let idtext = if id.is_empty() { String::new() } else { crate::util::truncate(&format!("ActionID: {}\r\n", id), 0x50) };
+    let idtext = if id.is_empty() { Vec::new() } else { crate::util::truncate(&bformat!("ActionID: {}\r\n", id), 0x50) };
     r.send_listack("DPMA phone list will follow", "start");
     let mut count = 0;
     for s in super::store::all() {
@@ -37,7 +38,7 @@ fn action_show_phones(r: &Request) -> i32 {
             let st = s.lock();
             let t = now();
             (
-                format!(
+                bformat!(
                     "Event: DPMAShowPhonesList\r\n{}SessionID: {}\r\nSecondsAlive: {}\r\nSecondsLastActivity: {}\r\nContact: {}\r\nURI: {}\r\nAuth: {}\r\nInactive: {}\r\nConfigured: {}\r\nMAC: {}\r\nUserAgent: {}\r\n",
                     idtext,
                     s.id,
@@ -56,17 +57,17 @@ fn action_show_phones(r: &Request) -> i32 {
         };
         let mut text = event;
         if let Some(user) = user_details(&mac) {
-            text.push_str(&user);
+            text.extend_from_slice(&user);
         }
-        text.push_str("\r\n");
+        text.extend_from_slice(b"\r\n");
         r.append(&text);
         count += 1;
     }
-    let mut done = String::from("Event: DPMAShowPhonesComplete\r\n");
+    let mut done = b"Event: DPMAShowPhonesComplete\r\n".to_vec();
     if !id.is_empty() {
-        done.push_str(&format!("ActionID: {}\r\n", id));
+        bwrite!(done, "ActionID: {}\r\n", id);
     }
-    done.push_str(&format!("EventList: Complete\r\nListItems: {}\r\n\r\n", count));
+    bwrite!(done, "EventList: Complete\r\nListItems: {}\r\n\r\n", count);
     r.append(&done);
     0
 }

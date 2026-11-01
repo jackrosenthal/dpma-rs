@@ -20,6 +20,7 @@
 
 use crate::cbuf::c_bytes;
 use crate::{LogLevel, ProtoError, Result};
+use dpma_bytes::bformat;
 use openssl::error::ErrorStack;
 use openssl::pkey::{PKey, Private, Public};
 use openssl::rsa::Padding;
@@ -42,7 +43,7 @@ pub const COMMON_PASSWORD_B64_BUF: usize = 0x3ff;
 /// config token) are decrypted into (`incoming_check_finalize`).
 pub const HEADER_FIELD_BUF: usize = 0x80;
 
-fn log_dpma(line: u32, func: &str, msg: &str) {
+fn log_dpma(line: u32, func: &str, msg: &[u8]) {
     crate::log(LogLevel::Dpma, "phone_crypto.c", line, func, msg);
 }
 
@@ -56,13 +57,13 @@ fn log_ssl(fmt: &str, err: &ErrorStack) -> ProtoError {
         errs.push('\n');
     }
     let text = fmt.replacen("%s", &errs, 1);
-    log_dpma(0x50, "log_ssl", &text);
+    log_dpma(0x50, "log_ssl", text.as_bytes());
     ProtoError::Crypto(text.trim_end_matches('\n').to_string())
 }
 
 /// Log a fixed phone_crypto.c message and return it as an error.
 fn fail(line: u32, func: &str, msg: &str) -> ProtoError {
-    log_dpma(line, func, &format!("{}\n", msg));
+    log_dpma(line, func, format!("{}\n", msg).as_bytes());
     ProtoError::Crypto(msg.to_string())
 }
 
@@ -91,10 +92,10 @@ pub fn salt_to_hex(salt: &[u8; SALT_LEN]) -> String {
 /// a nibble per digit, so short (and odd-length) strings leave the rest
 /// zero: "A" gives `A0 00 ...`.  On an invalid digit `out` keeps what was
 /// filled so far, as in the original.
-pub fn set_hex(hex: &str, out: &mut [u8]) -> Result<()> {
-    let digits = c_bytes(hex.as_bytes());
+pub fn set_hex(hex: impl AsRef<[u8]>, out: &mut [u8]) -> Result<()> {
+    let digits = c_bytes(hex.as_ref());
     if digits.len() > out.len() * 2 {
-        log_dpma(0x18, "set_hex", "hex string is too long\n");
+        log_dpma(0x18, "set_hex", b"hex string is too long\n");
         return Err(ProtoError::Invalid("hex string is too long".into()));
     }
     out.iter_mut().for_each(|b| *b = 0);
@@ -104,8 +105,8 @@ pub fn set_hex(hex: &str, out: &mut [u8]) -> Result<()> {
             b'A'..=b'F' => c - b'A' + 10,
             b'a'..=b'f' => c - b'a' + 10,
             _ => {
-                let msg = format!("Invalid character in hex string '{}'", c as char);
-                log_dpma(0x2b, "set_hex", &format!("{}\n", msg));
+                log_dpma(0x2b, "set_hex", &bformat!("Invalid character in hex string '{}'\n", [c]));
+                let msg = format!("Invalid character in hex string '{}'", String::from_utf8_lossy(&[c]));
                 return Err(ProtoError::Invalid(msg));
             }
         };
@@ -120,7 +121,7 @@ pub fn set_hex(hex: &str, out: &mut [u8]) -> Result<()> {
 
 /// Parse a wire salt (`set_hex` with 8 bytes): at most 16 hex digits,
 /// either case; shorter strings are zero filled on the right.
-pub fn salt_from_hex(hex: &str) -> Result<[u8; SALT_LEN]> {
+pub fn salt_from_hex(hex: impl AsRef<[u8]>) -> Result<[u8; SALT_LEN]> {
     let mut salt = [0u8; SALT_LEN];
     set_hex(hex, &mut salt)?;
     Ok(salt)
@@ -221,7 +222,13 @@ pub fn decrypt(password: &[u8], salt: &[u8; SALT_LEN], cipher: &[u8]) -> Result<
 /// `ast_base64decode` does), then decrypt with `password` and the hex
 /// `salt`.  Returns the plaintext bytes; the original uses them as a C
 /// string (see [`c_str`]).
-pub fn decrypt_field_limited(password: &[u8], salt_hex: &str, field_b64: &str, buf_len: usize) -> Result<Vec<u8>> {
+pub fn decrypt_field_limited(
+    password: &[u8],
+    salt_hex: impl AsRef<[u8]>,
+    field_b64: impl AsRef<[u8]>,
+    buf_len: usize,
+) -> Result<Vec<u8>> {
+    let (salt_hex, field_b64) = (salt_hex.as_ref(), field_b64.as_ref());
     if field_b64.is_empty() {
         return Err(fail(0xf4, "decrypt_msg_field", "Unable to decrypt null field"));
     }
@@ -234,7 +241,7 @@ pub fn decrypt_field_limited(password: &[u8], salt_hex: &str, field_b64: &str, b
 }
 
 /// `decrypt_msg_field` without a size limit.
-pub fn decrypt_field(password: &[u8], salt_hex: &str, field_b64: &str) -> Result<Vec<u8>> {
+pub fn decrypt_field(password: &[u8], salt_hex: impl AsRef<[u8]>, field_b64: impl AsRef<[u8]>) -> Result<Vec<u8>> {
     decrypt_field_limited(password, salt_hex, field_b64, usize::MAX)
 }
 
@@ -242,7 +249,8 @@ pub fn decrypt_field(password: &[u8], salt_hex: &str, field_b64: &str) -> Result
 /// `incoming_check_finalize` does: an empty body stays empty (no
 /// decryption), otherwise `decrypt_msg_field` with a buffer of the body's
 /// length, and the result is cut at its first NUL (`ast_str_set("%s")`).
-pub fn decrypt_body(password: &[u8], salt_hex: &str, body: &str) -> Result<Vec<u8>> {
+pub fn decrypt_body(password: &[u8], salt_hex: impl AsRef<[u8]>, body: impl AsRef<[u8]>) -> Result<Vec<u8>> {
+    let body = body.as_ref();
     if body.is_empty() {
         return Ok(Vec::new());
     }
@@ -253,7 +261,7 @@ pub fn decrypt_body(password: &[u8], salt_hex: &str, body: &str) -> Result<Vec<u
 /// Decrypt an incoming `Password`, `ConfigPassword`, or `Config-Token`
 /// header the way `incoming_check_finalize` does (0x80-byte buffer, cut
 /// at the first NUL).
-pub fn decrypt_header_field(password: &[u8], salt_hex: &str, field_b64: &str) -> Result<Vec<u8>> {
+pub fn decrypt_header_field(password: &[u8], salt_hex: impl AsRef<[u8]>, field_b64: impl AsRef<[u8]>) -> Result<Vec<u8>> {
     let plain = decrypt_field_limited(password, salt_hex, field_b64, HEADER_FIELD_BUF)?;
     Ok(c_str(&plain).to_vec())
 }
@@ -278,7 +286,7 @@ pub fn c_str(bytes: &[u8]) -> &[u8] {
 pub fn encrypt_common_password(phone_key: &PKey<Public>, password: &[u8]) -> Result<String> {
     let rsa = phone_key.rsa().map_err(|_| {
         let msg = "failed to get rsa during common password generation";
-        crate::log(LogLevel::Dpma, "phone_message.c", 0x3b4, "phone_msg_set_common_password", &format!("{}\n", msg));
+        crate::log(LogLevel::Dpma, "phone_message.c", 0x3b4, "phone_msg_set_common_password", format!("{}\n", msg).as_bytes());
         ProtoError::Crypto(msg.into())
     })?;
     let mut out = vec![0u8; rsa.size() as usize];
@@ -291,7 +299,7 @@ pub fn encrypt_common_password(phone_key: &PKey<Public>, password: &[u8]) -> Res
 
 /// The phone's side of the handshake: recover the common password from
 /// `X-Digium-AppServer-Password` with the phone's private key.
-pub fn decrypt_common_password(phone_key: &PKey<Private>, password_b64: &str) -> Result<Vec<u8>> {
+pub fn decrypt_common_password(phone_key: &PKey<Private>, password_b64: impl AsRef<[u8]>) -> Result<Vec<u8>> {
     let rsa = phone_key.rsa().map_err(|e| ProtoError::Crypto(e.to_string()))?;
     let cipher = base64_decode(password_b64);
     let mut out = vec![0u8; rsa.size() as usize];
@@ -347,7 +355,7 @@ pub fn base64_encode_max(data: &[u8], max: usize) -> String {
 }
 
 /// `ast_base64decode` without a size limit.
-pub fn base64_decode(text: &str) -> Vec<u8> {
+pub fn base64_decode(text: impl AsRef<[u8]>) -> Vec<u8> {
     base64_decode_max(text, usize::MAX)
 }
 
@@ -357,7 +365,7 @@ pub fn base64_decode(text: &str) -> Vec<u8> {
 /// decoder masks to 63 (as if they were `/`).  (Bytes 0x80 and above index
 /// before the table in Asterisk, which is undefined; they are treated like
 /// the other non-alphabet characters here.)  Leftover bits are dropped.
-pub fn base64_decode_max(text: &str, max: usize) -> Vec<u8> {
+pub fn base64_decode_max(text: impl AsRef<[u8]>, max: usize) -> Vec<u8> {
     fn value(c: u8) -> u32 {
         match c {
             b'A'..=b'Z' => u32::from(c - b'A'),
@@ -370,7 +378,7 @@ pub fn base64_decode_max(text: &str, max: usize) -> Vec<u8> {
     let mut out = Vec::new();
     let mut byte: u32 = 0;
     let mut bits = 0;
-    for &c in text.as_bytes() {
+    for &c in text.as_ref() {
         if c == 0 || c == b'=' || out.len() >= max {
             break;
         }
@@ -481,7 +489,7 @@ mod tests {
             let b64 = encrypt_field(PASS40, &salt, v.as_bytes()).unwrap();
             assert!(!b64.contains('\n'));
             assert_eq!(decrypt_header_field(PASS40, &hexsalt, &b64).unwrap(), v.as_bytes());
-            assert_eq!(decrypt_header_field(PASS40, &hexsalt.to_lowercase(), &b64).unwrap(), v.as_bytes());
+            assert_eq!(decrypt_header_field(PASS40, hexsalt.to_lowercase(), &b64).unwrap(), v.as_bytes());
         }
         // 112 bytes of plaintext need 128 bytes of ciphertext, more than
         // the 0x80-byte buffer's 127 decoded bytes: the original fails.
@@ -547,7 +555,7 @@ mod tests {
         assert!(salt_from_hex("0x12").is_err());
         for _ in 0..20 {
             let s = new_salt().unwrap();
-            assert_eq!(salt_from_hex(&salt_to_hex(&s)).unwrap(), s);
+            assert_eq!(salt_from_hex(salt_to_hex(&s)).unwrap(), s);
         }
     }
 
@@ -560,7 +568,7 @@ mod tests {
         let data: Vec<u8> = (0..=255u8).collect();
         for n in 0..data.len() {
             assert_eq!(base64_encode_max(&data[..n], usize::MAX), base64_encode(&data[..n]));
-            assert_eq!(base64_decode(&base64_encode(&data[..n])), &data[..n]);
+            assert_eq!(base64_decode(base64_encode(&data[..n])), &data[..n]);
         }
         // Truncation: max 9 leaves room for 8 characters.
         assert_eq!(base64_encode_max(b"foobarbaz", 9), "Zm9vYmFy");

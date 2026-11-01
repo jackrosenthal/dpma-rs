@@ -41,7 +41,7 @@ pub const STRING: c_int = 2;
 ///
 /// # Safety
 /// `root` must be a live `struct ast_json`.
-pub unsafe fn dump_string(root: *mut c_void) -> Option<String> {
+pub unsafe fn dump_string(root: *mut c_void) -> Option<Vec<u8>> {
     let s = ast_json_dump_string_format(root, COMPACT);
     if s.is_null() {
         return None;
@@ -59,10 +59,10 @@ pub struct Json(*mut c_void);
 pub struct Value<'a>(*mut c_void, PhantomData<&'a Json>);
 
 impl Json {
-    /// `ast_json_load_string`; None when the text is not valid JSON (or
-    /// contains a NUL byte).
+    /// `ast_json_load_string` of the C string in `text` (up to a NUL);
+    /// None when it is not valid JSON (jansson also refuses invalid UTF-8).
     pub fn load(text: &[u8]) -> Option<Json> {
-        let c = std::ffi::CString::new(text).ok()?;
+        let c = cstr(text);
         let p = unsafe { ast_json_load_string(c.as_ptr(), std::ptr::null_mut()) };
         (!p.is_null()).then_some(Json(p))
     }
@@ -92,13 +92,13 @@ impl<'a> Value<'a> {
     }
 
     /// `ast_json_string_get` ("" for a non-string).
-    pub fn string(&self) -> String {
+    pub fn string(&self) -> Vec<u8> {
         unsafe { from_ptr(ast_json_string_get(self.0)).unwrap_or_default() }
     }
 
     /// `ast_json_dump_string` (compact); None when jansson refuses
     /// (anything but an object or an array).
-    pub fn dump(&self) -> Option<String> {
+    pub fn dump(&self) -> Option<Vec<u8>> {
         unsafe { dump_string(self.0) }
     }
 }

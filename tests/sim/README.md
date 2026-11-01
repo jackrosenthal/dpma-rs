@@ -261,6 +261,13 @@ chunk_style=, txid=, mac=, contact=)` is the general form; it returns an
 `.parts`).  `ami.AmiClient` is the AMI side (`action`, `command`,
 `wait_event`).
 
+Bodies are bytes.  Header values (and the user agent, origination
+network, user name, and passwords) are text in which bytes that are not
+UTF-8 are lone surrogates (Python's `surrogateescape`), both ways: send
+`b"Jos\xe9".decode("utf-8", "surrogateescape")` to put the Latin-1 bytes
+on the wire, and encode a received value the same way to get its bytes
+back.  `ami.py` treats AMI text the same way.
+
 ## AMI helper
 
 ```

@@ -51,6 +51,13 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
+# Text from Asterisk and from phones can hold bytes that are not UTF-8,
+# kept as lone surrogates ("surrogateescape"); print them as those bytes
+# instead of failing.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(errors="surrogateescape")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
@@ -236,7 +243,7 @@ def encrypt_field(password, salt, value):
     """A header field (send_encrypt_hdr_helper): its own CBC stream with the
     message's key and IV, base64 encoded."""
     if isinstance(value, str):
-        value = value.encode()
+        value = value.encode("utf-8", "surrogateescape")
     return b64encode(encrypt(password, salt, value))
 
 
@@ -437,8 +444,10 @@ class SipMessage:
         return [v for k, v in self.headers if k.lower() == n]
 
     def encode(self):
+        # Header values are text whose bytes that are not UTF-8 travel as
+        # lone surrogates ("surrogateescape"), so any bytes can be sent.
         lines = [self.first_line] + ["%s: %s" % kv for kv in self.headers]
-        return ("\r\n".join(lines) + "\r\n\r\n").encode("utf-8") + self.body
+        return ("\r\n".join(lines) + "\r\n\r\n").encode("utf-8", "surrogateescape") + self.body
 
     def text(self):
         return self.encode().decode("utf-8", "replace")
@@ -448,7 +457,7 @@ def parse_sip(data, source=None):
     head, sep, body = data.partition(b"\r\n\r\n")
     if not sep:
         head, sep, body = data.partition(b"\n\n")
-    lines = head.decode("utf-8", "replace").replace("\r\n", "\n").split("\n")
+    lines = head.decode("utf-8", "surrogateescape").replace("\r\n", "\n").split("\n")
     while lines and lines[0] == "":
         lines.pop(0)
     if not lines:
@@ -821,7 +830,7 @@ class Reply:
                     v = self.first.get(name)
                     if v:
                         self.fields[name] = decrypt_field(password, salt, v).decode(
-                            "utf-8", "replace")
+                            "utf-8", "surrogateescape")
             except SimError as e:
                 self.problems.append(str(e))
                 return
@@ -1143,7 +1152,7 @@ class Phone:
         this request only.  `pem_cuts` ends plaintext chunks at PEM
         BEGIN and END lines (see frame_request_body)."""
         if isinstance(body, str):
-            body = body.encode()
+            body = body.encode("utf-8", "surrogateescape")
         needs_session = rtype.lower() not in NO_SESSION_TYPES
         if session is None:
             session = self.session if needs_session else None

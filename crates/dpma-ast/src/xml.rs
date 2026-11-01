@@ -89,7 +89,7 @@ impl Doc {
     }
 
     /// `xmlReadFile(path, NULL, 0)`.
-    pub fn read_file(path: &str) -> Option<Doc> {
+    pub fn read_file(path: impl AsRef<[u8]>) -> Option<Doc> {
         let c = cstr(path);
         let p = unsafe { xmlReadFile(c.as_ptr(), std::ptr::null(), 0) };
         (!p.is_null()).then_some(Doc(p))
@@ -120,7 +120,7 @@ impl Doc {
     }
 
     /// The first node matching an XPath expression (`phone_utils_xml_find`).
-    pub fn xpath_first(&self, expr: &str) -> Option<Node<'_>> {
+    pub fn xpath_first(&self, expr: impl AsRef<[u8]>) -> Option<Node<'_>> {
         // SAFETY: the context and result are freed here; the node belongs
         // to the document.
         unsafe { xpath_first_raw(self.0, expr).and_then(Node::new) }
@@ -153,7 +153,7 @@ impl Drop for Doc {
 ///
 /// # Safety
 /// `doc` must be a valid `xmlDocPtr`.
-pub unsafe fn xpath_first_raw(doc: *mut c_void, expr: &str) -> Option<*mut c_void> {
+pub unsafe fn xpath_first_raw(doc: *mut c_void, expr: impl AsRef<[u8]>) -> Option<*mut c_void> {
     let e = cstr(expr);
     xpath_first_cstr(doc, e.as_ptr())
 }

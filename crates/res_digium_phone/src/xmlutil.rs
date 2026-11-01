@@ -13,34 +13,11 @@ use dpma_ast::xml::{self, Doc, Node};
 /// when it is shorter than the space left (not counting the terminating
 /// NUL); otherwise the character itself is copied, and copying stops when
 /// the buffer is full.  So at most `size - 1` bytes come out, and a value
-/// near the limit can end with a raw special character.  (The configuration
-/// document always uses a 256 byte buffer.)  This version never splits a
-/// multibyte UTF-8 character; the original can.
-pub fn escape(input: &str, size: usize) -> String {
-    let mut left = size as i64 - 1;
-    let mut out = String::new();
-    for c in input.chars() {
-        let entity = match c {
-            '"' => "&quot;",
-            '&' => "&amp;",
-            '\'' => "&apos;",
-            '<' => "&lt;",
-            '>' => "&gt;",
-            _ => "",
-        };
-        if !entity.is_empty() && (entity.len() as i64) < left {
-            out.push_str(entity);
-            left -= entity.len() as i64;
-            continue;
-        }
-        let n = c.len_utf8() as i64;
-        if left < n {
-            break;
-        }
-        out.push(c);
-        left -= n;
-    }
-    out
+/// near the limit can end with a raw special character or half of a
+/// multi-byte character.  (The configuration document always uses a 256
+/// byte buffer.)
+pub fn escape(input: &[u8], size: usize) -> Vec<u8> {
+    dpma_proto::xml::escape_bounded(input, size)
 }
 
 /// `phone_utils_xml_find`: the first node of `doc` matching `xpath`.
@@ -64,7 +41,7 @@ pub fn xml_add_doc<'a>(parent: Node<'a>, doc: &Doc, xpath: Option<&str>) -> Opti
 
 /// `phone_utils_xml_add_file`: read the XML file `path` and append its
 /// root element (or the first node matching `xpath`) to `parent`.
-pub fn xml_add_file(parent: Node<'_>, path: &str, xpath: Option<&str>) {
+pub fn xml_add_file(parent: Node<'_>, path: &[u8], xpath: Option<&str>) {
     let Some(doc) = Doc::read_file(path) else {
         dpma_log!("Unable to read XML file {}", path);
         return;

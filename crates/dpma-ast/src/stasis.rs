@@ -17,7 +17,7 @@ pub const PARKED_CALL: i32 = 0;
 
 /// Receives a parked call message: the payload's `parker_dial_string`,
 /// `event_type`, and `parkingspace`.
-pub type ParkedCallFn = fn(parker_dial_string: &str, event_type: i32, parkingspace: u32);
+pub type ParkedCallFn = fn(parker_dial_string: &[u8], event_type: i32, parkingspace: u32);
 
 static PARKED_CALL_FN: RwLock<Option<ParkedCallFn>> = RwLock::new(None);
 

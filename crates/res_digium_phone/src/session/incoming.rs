@@ -15,7 +15,8 @@
 use super::{now, or_null, user_agent_of, Session, Transaction};
 use dpma_ast::log::LOG_ERROR;
 use dpma_ast::msg::Msg;
-use dpma_ast::{ast_log, dpma_debug, dpma_log};
+use dpma_ast::dpma_bytes::ByteSlice;
+use dpma_ast::{ast_log, bformat, dpma_debug, dpma_log};
 use dpma_proto::framing::{self, Reassembly};
 use dpma_proto::{crypto, headers as h, types};
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -35,9 +36,9 @@ const PRUNE_INTERVAL: i64 = 5;
 /// `incoming_check_finalize`).
 struct Pending {
     /// `"<ID>-<MAC or unknown>"`; empty when the message had no ID.
-    key: String,
+    key: Vec<u8>,
     /// The ID as received (None when absent).
-    app_server_id: Option<String>,
+    app_server_id: Option<Vec<u8>>,
     session: Option<Arc<Session>>,
     /// Ordering and completion; each part's data is an index into `msgs`.
     parts: Reassembly<usize>,
@@ -83,11 +84,11 @@ fn prune_inactive() {
                 None
             } else if !st.authenticated {
                 (idle > UNAUTHENTICATED_IDLE).then(|| {
-                    format!("Pruning unauthenticated session for device at '{}' due to inactivity.", st.contact)
+                    bformat!("Pruning unauthenticated session for device at '{}' due to inactivity.", st.contact)
                 })
             } else {
                 (idle > INACTIVE_IDLE)
-                    .then(|| format!("Pruning session for device at '{}' due to inactivity.", st.contact))
+                    .then(|| bformat!("Pruning session for device at '{}' due to inactivity.", st.contact))
             }
         };
         if let Some(msg) = doomed {
@@ -169,17 +170,17 @@ fn validate_session(m: &Msg, s: &Arc<Session>) -> bool {
 /// Why `validate_message` refuses a message; None when it is valid.
 fn validate_message(m: &Msg) -> Option<&'static str> {
     let no_salt = m.get_var(h::MESSAGE_SALT).is_none_or(|s| s.is_empty());
-    let no_body = m.body_bytes().is_none_or(|b| b.is_empty());
+    let no_body = m.body().is_none_or(|b| b.is_empty());
     let request = m.get_var(h::REQUEST_TYPE).filter(|r| !r.is_empty());
     let response = m.get_var(h::RESPONSE_TYPE);
-    if request.is_none() && response.as_deref().is_none_or(str::is_empty) {
+    if request.is_none() && response.as_deref().is_none_or(<[u8]>::is_empty) {
         return Some("Message dropped due to lack of response or request type.");
     }
     if no_salt {
-        if request.as_deref().is_some_and(|r| r.eq_ignore_ascii_case(types::ASTERISK_REQUEST)) && !no_body {
+        if request.as_deref().is_some_and(|r| r.eq_ignore_ascii_case(types::ASTERISK_REQUEST.as_bytes())) && !no_body {
             return Some("AsteriskRequest dropped due to lack of encryption.");
         }
-        if response.as_deref().is_some_and(|r| r.eq_ignore_ascii_case("UserlistResponse")) && !no_body {
+        if response.as_deref().is_some_and(|r| r.eq_ignore_ascii_case(b"UserlistResponse")) && !no_body {
             return Some("UserlistResponse dropped due to lack of encryption.");
         }
     }
@@ -192,7 +193,7 @@ fn validate_message(m: &Msg) -> Option<&'static str> {
 fn add_message(m: Msg, session: Option<Arc<Session>>) -> Option<Pending> {
     let id = m.get_var(h::APPSERVER_ID);
     let mac = m.get_var(h::MAC_ADDRESS);
-    let key = framing::transaction_key(id.as_deref().unwrap_or(""), mac.as_deref());
+    let key = framing::transaction_key(id.as_deref().unwrap_or(b""), mac.as_deref());
     let mut g = PENDING.lock().unwrap_or_else(|e| e.into_inner());
     let found = match id.as_deref() {
         Some(i) if !i.is_empty() => g.iter().position(|p| !p.key.is_empty() && p.key.eq_ignore_ascii_case(&key)),
@@ -202,7 +203,7 @@ fn add_message(m: Msg, session: Option<Arc<Session>>) -> Option<Pending> {
         Some(i) => i,
         None => {
             g.push(Pending {
-                key: if id.is_some() { key } else { String::new() },
+                key: if id.is_some() { key } else { Vec::new() },
                 app_server_id: id,
                 session,
                 parts: Reassembly::default(),
@@ -217,7 +218,7 @@ fn add_message(m: Msg, session: Option<Arc<Session>>) -> Option<Pending> {
     let sequence = m.get_var(h::MESSAGE_SEQUENCE);
     let finished = m.get_var(h::MESSAGE_FINISHED).is_some_and(|f| !f.is_empty());
     let n = p.msgs.len();
-    p.parts.add_part(sequence.as_deref(), finished, String::new(), n);
+    p.parts.add_part(sequence.as_deref(), finished, Vec::new(), n);
     p.msgs.push(Some(m));
     if !p.parts.is_complete() {
         return None;
@@ -231,7 +232,7 @@ fn finalize(mut p: Pending) -> Option<Transaction> {
     let order: Vec<usize> = p.parts.parts().iter().map(|part| part.meta).collect();
     let mut body: Vec<u8> = Vec::new();
     for &i in &order {
-        if let Some(b) = p.msgs[i].as_ref().and_then(Msg::body_bytes) {
+        if let Some(b) = p.msgs[i].as_ref().and_then(Msg::body) {
             body.extend(b);
         }
     }
@@ -251,8 +252,7 @@ fn finalize(mut p: Pending) -> Option<Transaction> {
         };
         let password = session.lock().common_password.clone();
         if !body.is_empty() {
-            let text = String::from_utf8_lossy(&body).into_owned();
-            match crypto::decrypt_body(&password, &salt, &text) {
+            match crypto::decrypt_body(&password, &salt, &body) {
                 Ok(plain) => body = plain,
                 Err(_) => {
                     dpma_log!("Call to decrypt_msg_field failed body");
@@ -267,7 +267,7 @@ fn finalize(mut p: Pending) -> Option<Transaction> {
         ] {
             if let Some(field) = var(name).filter(|f| !f.is_empty()) {
                 match crypto::decrypt_header_field(&password, &salt, &field) {
-                    Ok(plain) => *slot = String::from_utf8_lossy(&plain).into_owned(),
+                    Ok(plain) => *slot = plain,
                     Err(_) => {
                         dpma_log!("Call to decrypt_msg_field failed {}", what);
                         return None;
@@ -295,22 +295,21 @@ fn finalize(mut p: Pending) -> Option<Transaction> {
         tx.to_port = port.unwrap_or_default();
     }
     tx.origination_network = var(h::ORIGINATION_NETWORK).unwrap_or_default();
-    tx.body = String::from_utf8_lossy(&body).into_owned();
-    tx.body_bytes = body;
+    tx.body = body;
     tx.first_msg = Some(first);
-    dpma_debug!(3, "Receive fm {} '{}' body length = {}", tx.response_uri, tx.request_type, tx.body_bytes.len());
+    dpma_debug!(3, "Receive fm {} '{}' body length = {}", tx.response_uri, tx.request_type, tx.body.len());
     Some(tx)
 }
 
 /// `phone_utils_get_model`: the second word of a user agent whose first
 /// word is a prefix of "sangoma p" or "digium" (case insensitive).
-fn phone_model(ua: &str) -> Option<String> {
-    let (first, rest) = ua.split_once(' ')?;
-    let prefix_of = |w: &str| w.len() >= first.len() && w[..first.len()].eq_ignore_ascii_case(first);
-    if !prefix_of("sangoma p") && !prefix_of("digium") {
+fn phone_model(ua: &[u8]) -> Option<Vec<u8>> {
+    let (first, rest) = ua.split_once_str(" ")?;
+    let prefix_of = |w: &[u8]| w.len() >= first.len() && w[..first.len()].eq_ignore_ascii_case(first);
+    if !prefix_of(b"sangoma p") && !prefix_of(b"digium") {
         return None;
     }
-    Some(rest.split(' ').next().unwrap_or("").to_string())
+    Some(rest.split(|&c| c == b' ').next().unwrap_or(b"").to_vec())
 }
 
 /// `incoming_build_transaction` for one message: Some(transaction) when it
@@ -320,7 +319,7 @@ fn build(m: Msg) -> Option<Transaction> {
     let session_id = m.get_var(h::SESSION).filter(|s| !s.is_empty());
     let request = m.get_var(h::REQUEST_TYPE);
     let needs_session = !request.as_deref().is_some_and(|r| {
-        [types::HANDSHAKE, types::ECHO, types::PRECONFIG].iter().any(|t| r.eq_ignore_ascii_case(t))
+        [types::HANDSHAKE, types::ECHO, types::PRECONFIG].iter().any(|t| r.eq_ignore_ascii_case(t.as_bytes()))
     });
     let mut session = None;
     if needs_session {
@@ -341,7 +340,7 @@ fn build(m: Msg) -> Option<Transaction> {
                     session_id
                 );
                 let net = m.get_var(h::ORIGINATION_NETWORK).unwrap_or_default();
-                super::outgoing::send_handshake_required(id.as_deref().unwrap_or(""), &uri, None, "", "", &net);
+                super::outgoing::send_handshake_required(id.as_deref().unwrap_or(b""), &uri, None, b"", b"", &net);
                 return None;
             }
             Some(s) => {

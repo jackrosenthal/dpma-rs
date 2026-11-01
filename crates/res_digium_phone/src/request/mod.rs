@@ -7,8 +7,7 @@ pub mod handlers;
 use crate::session::{Outgoing, Transaction};
 use dpma_ast::log::LOG_ERROR;
 use dpma_ast::threadpool::{Options, Origin, ThreadPool};
-use dpma_ast::{ast_log, dpma_log};
-use std::fmt::Write as _;
+use dpma_ast::{ast_log, bformat, bwrite, dpma_log};
 use std::sync::{Arc, RwLock};
 
 /// A request-type handler (`request_register_handler`); runs on the
@@ -127,7 +126,7 @@ pub fn handle_incoming(tx: Arc<Transaction>) -> Result<(), ()> {
         .read()
         .unwrap()
         .iter()
-        .find(|r| r.request_type.eq_ignore_ascii_case(&tx.request_type))
+        .find(|r| r.request_type.as_bytes().eq_ignore_ascii_case(&tx.request_type))
         .copied();
     let Some(reg) = reg else {
         dpma_log!("Received request with unknown type '{}'", tx.request_type);
@@ -148,7 +147,7 @@ pub fn handle_incoming(tx: Arc<Transaction>) -> Result<(), ()> {
         if !tx.app_server_id.is_empty() {
             out.id = tx.app_server_id.clone();
         }
-        out.response_type = response_type.to_string();
+        out.response_type = response_type.into();
         *tx.outgoing.lock().unwrap() = Some(out);
     }
 
@@ -185,9 +184,9 @@ pub fn push_extended(task: Box<dyn FnOnce() + Send + 'static>) -> Result<(), ()>
 }
 
 /// The method name used in error documents: "NA" when empty.
-fn method_or_na(method: &str) -> &str {
+fn method_or_na(method: &[u8]) -> &[u8] {
     if method.is_empty() {
-        "NA"
+        b"NA"
     } else {
         method
     }
@@ -202,12 +201,12 @@ fn method_or_na(method: &str) -> &str {
 ///
 /// The original starts with `ast_str_set`, so anything already in the
 /// buffer is discarded.  Neither the method nor the text is XML-escaped.
-pub fn error_response_xml(out: &mut String, method: &str, code: i32) {
+pub fn error_response_xml(out: &mut Vec<u8>, method: impl AsRef<[u8]>, code: i32) {
     out.clear();
-    let _ = write!(
-        out,
+    bwrite!(
+        *out,
         "<response method=\"{}\">\r\n<errors>\r\n<error code=\"{}\" message=\"{}\" />\r\n</errors>\r\n</response>\r\n",
-        method_or_na(method),
+        method_or_na(method.as_ref()),
         code,
         dpma_proto::errors::request_error_text(code)
     );
@@ -224,15 +223,25 @@ pub fn error_response_xml(out: &mut String, method: &str, code: i32) {
 /// format and arguments, already formatted here).  The original appends
 /// a single space after the detail, so the message ends with one.  The
 /// method is "NA" when empty.
-pub fn error_response_json(out: &mut String, method: &str, code: i32, detail: &str) {
-    let message = format!("{}: {} ", dpma_proto::errors::request_error_text(code), detail);
+///
+/// As with the original's `ast_json_pack`, a method or detail that is not
+/// valid UTF-8 fails: the original then logs "Unable to generate JSON for
+/// error response" and leaves `out` as it was.
+pub fn error_response_json(out: &mut Vec<u8>, method: impl AsRef<[u8]>, code: i32, detail: impl AsRef<[u8]>) {
+    let message = bformat!("{}: {} ", dpma_proto::errors::request_error_text(code), detail.as_ref());
+    let (Some(method), Some(message)) =
+        (dpma_proto::json::utf8(method_or_na(method.as_ref())), dpma_proto::json::utf8(&message))
+    else {
+        dpma_log!("Unable to generate JSON for error response");
+        return;
+    };
     let doc = serde_json::json!({
         "response": {
-            "method": method_or_na(method),
+            "method": method,
             "errors": {"error": {"code": code, "message": message}},
         }
     });
-    *out = dpma_proto::json::dump(&doc);
+    *out = dpma_proto::json::dump(&doc).into_bytes();
 }
 
 #[cfg(feature = "devtest")]
@@ -246,15 +255,15 @@ mod devtest {
     static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 
     /// A synthetic transaction as session::next_transaction would build it.
-    pub fn synthetic(request_type: &str, response_type: &str, session: Option<&str>) -> Transaction {
+    pub fn synthetic(request_type: &[u8], response_type: &[u8], session: Option<&[u8]>) -> Transaction {
         let n = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let id = format!("dpmadev-{}", n);
-        let mac = "000fd3dead01".to_string();
+        let id = bformat!("dpmadev-{}", n);
+        let mac = b"000fd3dead01".to_vec();
         Transaction {
-            key: format!("{}-{}", id, mac),
+            key: bformat!("{}-{}", id, mac),
             app_server_id: id,
-            request_type: request_type.to_string(),
-            response_type: response_type.to_string(),
+            request_type: request_type.to_vec(),
+            response_type: response_type.to_vec(),
             response_uri: "pjsip:127.0.0.1:5060;transport=udp".into(),
             full_contact: "sip:dpmadev@127.0.0.1:5060".into(),
             mac,
@@ -264,9 +273,9 @@ mod devtest {
         }
     }
 
-    fn arg_or_empty(s: &str) -> &str {
-        if s == "-" {
-            ""
+    fn arg_or_empty(s: &[u8]) -> &[u8] {
+        if s == b"-" {
+            b""
         } else {
             s
         }
@@ -279,15 +288,15 @@ mod devtest {
         }
         let request_type = arg_or_empty(&a.argv[2]);
         let session = a.argv.get(3).map(|s| arg_or_empty(s)).filter(|s| !s.is_empty());
-        let response_type = a.argv.get(4).map(|s| arg_or_empty(s)).unwrap_or("");
+        let response_type = a.argv.get(4).map(|s| arg_or_empty(s)).unwrap_or(b"");
         let tx = Arc::new(synthetic(request_type, response_type, session));
         let probe = tx.clone();
         let res = crate::phone_main::dispatch(tx);
-        a.out(&format!(
+        a.out(bformat!(
             "Transaction {} type '{}' session {}: {}\n",
             probe.key,
             probe.request_type,
-            session.unwrap_or("(none)"),
+            session.unwrap_or(b"(none)"),
             match res {
                 Some(Ok(())) => "dispatched to DPMA_request",
                 Some(Err(())) => "rejected",
@@ -300,14 +309,14 @@ mod devtest {
             while Arc::strong_count(&probe) > 1 && start.elapsed() < Duration::from_secs(5) {
                 std::thread::sleep(Duration::from_millis(5));
             }
-            a.out(&format!(
+            a.out(bformat!(
                 "Handler {} after {} ms\n",
                 if Arc::strong_count(&probe) > 1 { "still running" } else { "finished" },
                 start.elapsed().as_millis()
             ));
         }
         match probe.outgoing.lock().unwrap().as_ref() {
-            Some(o) => a.out(&format!(
+            Some(o) => a.out(bformat!(
                 "Outgoing: response_type='{}' response_uri='{}' full_contact='{}' id='{}' body={} bytes\n",
                 o.response_type,
                 o.response_uri,
@@ -325,16 +334,16 @@ mod devtest {
             return CliResult::ShowUsage;
         }
         let h = HANDLERS.read().unwrap();
-        a.out(&format!("{:<18} {:<18} {}\n", "Request", "Response", "Session"));
+        a.out(format!("{:<18} {:<18} {}\n", "Request", "Response", "Session"));
         for r in h.iter() {
-            a.out(&format!(
+            a.out(format!(
                 "{:<18} {:<18} {}\n",
                 r.request_type,
                 r.response_type.unwrap_or("(none)"),
                 if r.requires_session { "yes" } else { "no" }
             ));
         }
-        a.out(&format!(
+        a.out(format!(
             "{} handlers; pools {}\n",
             h.len(),
             if is_loaded() { "running" } else { "not created" }
@@ -348,47 +357,47 @@ mod devtest {
             return CliResult::ShowUsage;
         }
         let method = arg_or_empty(&a.argv[4]);
-        let Ok(code) = a.argv[5].parse::<i32>() else {
+        let Ok(code) = crate::util::parse::<i32>(&a.argv[5]) else {
             return CliResult::ShowUsage;
         };
-        let mut out = String::from("previous contents");
-        let detail = a.argv[6..].join(" ");
-        let json = match a.argv[3].to_ascii_lowercase().as_str() {
-            "xml" => {
+        let mut out = b"previous contents".to_vec();
+        let detail = a.argv[6..].join(&b" "[..]);
+        let json = match a.argv[3].to_ascii_lowercase().as_slice() {
+            b"xml" => {
                 error_response_xml(&mut out, method, code);
                 false
             }
-            "json" => {
+            b"json" => {
                 error_response_json(&mut out, method, code, &detail);
                 true
             }
             _ => return CliResult::ShowUsage,
         };
-        a.out(&format!("{} bytes: {:?}\n", out.len(), out));
+        a.out(bformat!("{} bytes: {:?}\n", out.len(), out));
         if json {
             // Build the same document the original way (ast_json_pack and
             // ast_json_dump_string, i.e., jansson) and compare.
-            let reference = jansson_error_doc(method_or_na(method), code, &format!(
-                "{}: {} ",
-                dpma_proto::errors::request_error_text(code),
-                detail
-            ));
+            let reference = jansson_error_doc(
+                method_or_na(method),
+                code,
+                &bformat!("{}: {} ", dpma_proto::errors::request_error_text(code), detail),
+            );
             match reference {
                 Some(r) if r == out => a.out("Identical to Asterisk's ast_json_pack/ast_json_dump_string output\n"),
-                Some(r) => a.out(&format!("DIFFERS from Asterisk's output: {:?}\n", r)),
+                Some(r) => a.out(bformat!("DIFFERS from Asterisk's output: {:?}\n", r)),
                 None => a.out("Asterisk could not build the reference document\n"),
             }
         }
         CliResult::Success
     }
 
-    fn jansson_error_doc(method: &str, code: i32, message: &str) -> Option<String> {
+    fn jansson_error_doc(method: &[u8], code: i32, message: &[u8]) -> Option<Vec<u8>> {
         use dpma_ast::json::{ast_json_pack, ast_json_unref, dump_string};
         use std::os::raw::c_int;
-        let c = dpma_ast::cstr;
+        let c = |s: &str| dpma_ast::cstr(s);
         let (fmt, response, m, errors, error, code_k, message_k) =
             (c("{s: {s: s, s: {s: {s: i, s: s}}}}"), c("response"), c("method"), c("errors"), c("error"), c("code"), c("message"));
-        let (mv, msgv) = (c(method), c(message));
+        let (mv, msgv) = (dpma_ast::cstr(method), dpma_ast::cstr(message));
         unsafe {
             let j = ast_json_pack(
                 fmt.as_ptr(),
@@ -416,14 +425,14 @@ mod devtest {
         if a.argc() != 4 {
             return CliResult::ShowUsage;
         }
-        let Ok(ms) = a.argv[3].parse::<u64>() else {
+        let Ok(ms) = crate::util::parse::<u64>(&a.argv[3]) else {
             return CliResult::ShowUsage;
         };
         let res = push_extended(Box::new(move || {
             std::thread::sleep(Duration::from_millis(ms));
             dpma_log!("dpmadev extended task finished after {} ms", ms);
         }));
-        a.out(&format!("push_extended: {}\n", if res.is_ok() { "queued" } else { "failed" }));
+        a.out(format!("push_extended: {}\n", if res.is_ok() { "queued" } else { "failed" }));
         CliResult::Success
     }
 

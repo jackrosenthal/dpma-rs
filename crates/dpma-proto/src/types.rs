@@ -32,10 +32,11 @@ pub const REQUESTS: &[(&str, &str, bool)] = &[
 
 /// The response type that answers `request` (case insensitive), as used by
 /// `phone_msg_send_timeout`.
-pub fn response_type_for(request: &str) -> Option<&'static str> {
+pub fn response_type_for(request: impl AsRef<[u8]>) -> Option<&'static str> {
+    let request = request.as_ref();
     REQUESTS
         .iter()
-        .find(|(r, _, _)| r.eq_ignore_ascii_case(request))
+        .find(|(r, _, _)| dpma_bytes::eq_ic(r.as_bytes(), request))
         .map(|(_, resp, _)| *resp)
 }
 

@@ -10,12 +10,12 @@
 
 use crate::config::auth;
 use crate::exports::config_api::{self as c, text, DpmaConfig};
+use dpma_ast::bformat;
 use dpma_ast::cli::{CliArgs, CliCommand, CliResult};
-use std::ffi::CStr;
 use std::os::raw::c_char;
 
 /// `value`, or `<Not Set>` when empty.
-fn or_not_set(value: String) -> String {
+fn or_not_set(value: Vec<u8>) -> Vec<u8> {
     if value.is_empty() {
         "<Not Set>".into()
     } else {
@@ -47,36 +47,36 @@ fn cli_show_settings(a: &CliArgs) -> CliResult {
         // would yield their defaults for an empty field.
         let defaulted = |get: unsafe extern "C" fn(*mut DpmaConfig) -> *const c_char, default: &str| {
             if cfg.is_null() {
-                default.to_string()
+                default.as_bytes().to_vec()
             } else {
-                CStr::from_ptr(get(cfg)).to_string_lossy().into_owned()
+                dpma_ast::from_ptr(get(cfg)).unwrap_or_default()
             }
         };
         a.out("---- Digium Phone Module Global Settings ---- \n");
-        a.out(&format!("Server UUID: {}\n", or_not_set(text(cfg, |p| c::dpma_config_server_uuid(p)))));
+        a.out(bformat!("Server UUID: {}\n", or_not_set(text(cfg, |p| c::dpma_config_server_uuid(p)))));
         let pin_set = !text(cfg, |p| c::dpma_config_password(p)).is_empty();
-        a.out(&format!("GlobalPin: {}\n", if pin_set { "<Set>" } else { "<Not Set>" }));
+        a.out(bformat!("GlobalPin: {}\n", if pin_set { "<Set>" } else { "<Not Set>" }));
         let discovery = c::dpma_config_enable_discovery(cfg) != 0;
-        a.out(&format!("Service Discovery: {}\n", if discovery { "Enabled" } else { "Disabled" }));
-        a.out(&format!(
+        a.out(bformat!("Service Discovery: {}\n", if discovery { "Enabled" } else { "Disabled" }));
+        a.out(bformat!(
             "Service Disc. Name: {}\n",
             defaulted(c::dpma_config_service_name, crate::config::DEFAULT_SERVICE_NAME)
         ));
-        a.out(&format!("Service Disc. Addr: {}\n", or_not_set(text(cfg, |p| c::dpma_config_mdns_addr(p)))));
-        a.out(&format!("Service Disc. Port: {}\n", defaulted(c::dpma_config_mdns_port, crate::config::DEFAULT_PORT)));
+        a.out(bformat!("Service Disc. Addr: {}\n", or_not_set(text(cfg, |p| c::dpma_config_mdns_addr(p)))));
+        a.out(bformat!("Service Disc. Port: {}\n", defaulted(c::dpma_config_mdns_port, crate::config::DEFAULT_PORT)));
         let userlist = if flags & auth::USERLIST_GLOBALPIN != 0 { "globalpin" } else { "disabled" };
-        a.out(&format!("Userlist Authentication: {}\n", userlist));
-        a.out(&format!("Config Authentication: {}\n", config_auth_text(flags)));
-        a.out(&format!(
+        a.out(bformat!("Userlist Authentication: {}\n", userlist));
+        a.out(bformat!("Config Authentication: {}\n", config_auth_text(flags)));
+        a.out(bformat!(
             "Firmware Package Directory: {}\n",
             or_not_set(text(cfg, |p| c::dpma_config_firmware_package_dir(p)))
         ));
-        a.out(&format!("File Directory: {}\n", CStr::from_ptr(c::dpma_config_file_dir(cfg)).to_string_lossy()));
-        a.out(&format!(
+        a.out(bformat!("File Directory: {}\n", dpma_ast::from_ptr(c::dpma_config_file_dir(cfg)).unwrap_or_default()));
+        a.out(bformat!(
             "PJSIP message context: {}\n",
             defaulted(c::dpma_config_pjsip_message_context, crate::config::DEFAULT_PJSIP_MESSAGE_CONTEXT)
         ));
-        a.out(&format!("Message Delay: {} ms\n", c::dpma_config_delay(cfg) as u32));
+        a.out(bformat!("Message Delay: {} ms\n", c::dpma_config_delay(cfg) as u32));
         c::dpma_config_unref(cfg);
     }
     CliResult::Success
@@ -86,7 +86,7 @@ fn cli_show_settings(a: &CliArgs) -> CliResult {
 /// version, plan section 8, item 5).  Like `show settings`, it takes any
 /// number of arguments.
 fn cli_show_version(a: &CliArgs) -> CliResult {
-    a.out(&format!("dpma-rs version {}\n", crate::VERSION));
+    a.out(bformat!("dpma-rs version {}\n", crate::VERSION));
     CliResult::Success
 }
 

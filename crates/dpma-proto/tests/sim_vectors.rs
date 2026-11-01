@@ -59,7 +59,7 @@ fn simulator_vectors() {
         assert_eq!(h["X-Digium-AppServer-Message-Sequence"].as_str().map(str::to_string), c.sequence.map(|n| n.to_string()));
         assert_eq!(h.get("X-Digium-AppServer-Message-Finished").and_then(Value::as_str) == Some("1"), c.finished);
     }
-    let bodies: Vec<&str> = frames.iter().map(|f| s(&f["body"])).collect();
+    let bodies: Vec<&[u8]> = frames.iter().map(|f| s(&f["body"]).as_bytes()).collect();
     let plain = framing::decrypt_chunks(&bodies, &password, s(&v["salt_hex"])).unwrap();
     let expected: Vec<u8> = chunks.iter().flat_map(|c| c.plain.clone()).collect();
     assert_eq!(plain, expected);
