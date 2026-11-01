@@ -66,6 +66,20 @@ pub fn ast_false(s: &str) -> bool {
 
 extern "C" {
     fn ast_random() -> std::os::raw::c_long;
+    fn ast_register_atexit(func: extern "C" fn()) -> std::os::raw::c_int;
+    fn ast_unregister_atexit(func: extern "C" fn());
+}
+
+/// `ast_register_atexit(func)`: run `func` when Asterisk exits, also on a
+/// fast shutdown (`core stop now`) that does not unload modules.  A module
+/// must remove it with `unregister_atexit` when it unloads.
+pub fn register_atexit(func: extern "C" fn()) -> i32 {
+    unsafe { ast_register_atexit(func) }
+}
+
+/// `ast_unregister_atexit(func)`.
+pub fn unregister_atexit(func: extern "C" fn()) {
+    unsafe { ast_unregister_atexit(func) }
 }
 
 /// `ast_random()`: Asterisk's thread-safe `random()`.

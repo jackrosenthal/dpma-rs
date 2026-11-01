@@ -7,9 +7,16 @@ Registers as a PJSIP endpoint (digest auth), then answers (or, with
     registered
     invite X-Event-Name=<value or ->
     answered | rejected
+    dtmf <key>                      (with --dtmf, sent as SIP INFO)
+    info X-Event-Name=<value or -> body=<body>
     bye
 
 Usage: vm_uas.py <host> <port> <user> <password> <seconds> [--reject]
+                 [--dtmf KEYS]
+
+--dtmf sends each key of KEYS in the answered call as an INFO
+(application/dtmf-relay), the first 0.5 s after the ACK and the others
+0.5 s apart.
 """
 import hashlib
 import random
@@ -20,6 +27,7 @@ import time
 
 host, port, user, password, secs = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], float(sys.argv[5])
 reject = "--reject" in sys.argv[6:]
+dtmf = sys.argv[sys.argv.index("--dtmf") + 1] if "--dtmf" in sys.argv[6:] else ""
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.bind(("127.0.0.1", 0))
 s.settimeout(0.3)
@@ -79,11 +87,28 @@ def authorization(challenge):
             + (f', opaque="{params["opaque"]}"' if "opaque" in params else ""))
 
 
+def send_dtmf(dialog, key, cseq):
+    """An in-dialog INFO with one DTMF key (application/dtmf-relay)."""
+    body = "Signal=%s\r\nDuration=250\r\n" % key
+    lines = [f"INFO {dialog['target']} SIP/2.0",
+             f"Via: SIP/2.0/UDP 127.0.0.1:{lport};branch=z9hG4bK{random.getrandbits(48):x};rport",
+             "Max-Forwards: 70", f"From: {dialog['local']}", f"To: {dialog['remote']}",
+             f"Call-ID: {dialog['callid']}", f"CSeq: {cseq} INFO", f"Contact: <sip:{user}@127.0.0.1:{lport}>",
+             "Content-Type: application/dtmf-relay", f"Content-Length: {len(body)}", "", body]
+    send("\r\n".join(lines))
+
+
 cseq = 1
 expires = 120
 register(cseq, expires)
 end = time.time() + secs
+dialog, pending, info_cseq = None, [], 100
 while time.time() < end:
+    while pending and pending[0][0] <= time.time() and dialog:
+        _, key = pending.pop(0)
+        info_cseq += 1
+        send_dtmf(dialog, key, info_cseq)
+        say("dtmf %s" % key)
     try:
         data = s.recv(65535).decode(errors="replace")
     except socket.timeout:
@@ -108,10 +133,22 @@ while time.time() < end:
                    "m=audio 40000 RTP/AVP 0\r\na=rtpmap:0 PCMU/8000\r\n")
             reply(data, 200, "OK", sdp, ["Content-Type: application/sdp"])
             say("answered")
+            to = header(data, "To")
+            contact = re.search(r"<([^>]*)>", header(data, "Contact") or "")
+            dialog = {"callid": header(data, "Call-ID"), "remote": header(data, "From"),
+                      "local": to if ";tag=" in to else to + ";tag=uas" + tag,
+                      "target": contact.group(1) if contact else f"sip:{host}:{port}"}
+    elif first.startswith("ACK"):
+        if dtmf and dialog and not pending:
+            pending = [(time.time() + 0.5 * (i + 1), k) for i, k in enumerate(dtmf)]
     elif first.startswith("BYE"):
         reply(data, 200, "OK")
         say("bye")
-    elif first.startswith(("OPTIONS", "NOTIFY", "INFO")):
+    elif first.startswith("INFO"):
+        body = data.split("\r\n\r\n", 1)[1] if "\r\n\r\n" in data else ""
+        say("info X-Event-Name=%s body=%s" % (header(data, "X-Event-Name") or "-", body))
+        reply(data, 200, "OK")
+    elif first.startswith(("OPTIONS", "NOTIFY")):
         reply(data, 200, "OK")
 # Unregister so the next test starts without a contact.
 if expires:

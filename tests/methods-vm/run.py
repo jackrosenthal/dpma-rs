@@ -681,9 +681,9 @@ def test_remove():
     same("remove: Friends message gone", f[-1] in all_ids("default/1001")["Friends"], False)
 
 
-def run_uas(seconds, reject=False):
+def run_uas(seconds, reject=False, dtmf=""):
     args = [sys.executable, os.path.join(HERE, "vm_uas.py"), "127.0.0.1", str(SIP_PORT), "1001", "secret1001",
-            str(seconds)] + (["--reject"] if reject else [])
+            str(seconds)] + (["--reject"] if reject else []) + (["--dtmf", dtmf] if dtmf else [])
     p = subprocess.Popen(args, stdout=subprocess.PIPE, text=True)
     line = p.stdout.readline().strip()
     return p, line
@@ -692,16 +692,27 @@ def run_uas(seconds, reject=False):
 def test_play():
     call("vmphone", "getList", {"account_id": "1001", "folder": "INBOX"})
     m = [x for x in inbox_ids() if x[2] == "INBOX"][0]
-    p, first = run_uas(6)
+    cli("core set verbose 3")  # for file.c's "Playing" line
+    p, first = run_uas(6, dtmf="#*")
     same("UAS registered", first, "registered")
     mark = log_mark()
     expect_ok("play", "vmphone", "play", {"account_id": "1001", "message_id": m[0]}, {"success": {}})
     out = p.communicate()[0].split("\n")
+    cli("core set verbose 0")
     same("play: INVITE carries the event header", "invite X-Event-Name=digium.incomingCall.voicemail" in out, True)
     same("play: answered, then hung up", ["answered" in out, "bye" in out], [True, True])
     log = log_since(mark)
-    same("play: runs DigiumVoicemailPlayback on answer", "Could not find application (DigiumVoicemailPlayback)"
-         in log, True)
+    # DigiumVoicemailPlayback (P14) plays the message with # and * as fast
+    # forward and rewind, and reports each new position with an INFO.
+    same("play: DigiumVoicemailPlayback runs on answer",
+         "Could not find application (DigiumVoicemailPlayback)" in log, False)
+    same("play: plays the message", "Playing '%s/default/1001/INBOX/msg" % SPOOL in log, True)
+    keys = [x for x in out if x.startswith(("dtmf ", "info "))]
+    same("play: fast forward and rewind keys sent", [x for x in keys if x.startswith("dtmf ")], ["dtmf #", "dtmf *"])
+    infos = [x for x in keys if x.startswith("info ")]
+    same("play: a location INFO for each key",
+         [re.fullmatch(r"info X-Event-Name=digium\.voicemail\.play\.location\.change body=\{'location':\d+\}", x)
+          is not None for x in infos], [True, True])
 
     p, first = run_uas(6, reject=True)
     mark = log_mark()

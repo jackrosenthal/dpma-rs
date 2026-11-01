@@ -19,6 +19,7 @@ devtest = []
 dpma-ast.workspace = true
 dpma-proto.workspace = true
 libc.workspace = true
+mdns-sd = { version = "0.21.6", default-features = false }
 openssl.workspace = true
 serde_json.workspace = true
 
