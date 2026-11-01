@@ -107,11 +107,15 @@ pub fn handle_handshake(tx: Arc<Transaction>) -> i32 {
         prune_session_by_mac(mac);
     }
 
+    // Deviation (port plan section 8, item 12): Asterisk 24 strips the
+    // trailing CR/LF of every MESSAGE body chunk, so restore the line
+    // breaks lost at PEM boundaries before the certificates are read.
+    let client_cert = dpma_proto::cert::restore_pem_newlines(&tx.body);
     let Some(session) = alloc(&NewSession {
         mac: mac.as_deref(),
         contact: &contact,
         response_uri: &tx.response_uri,
-        client_cert: &tx.body,
+        client_cert: &client_cert,
         id: None,
         user_agent: user_agent.as_deref(),
         origination_network: origination_network.as_deref(),

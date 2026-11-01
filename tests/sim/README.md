@@ -107,9 +107,11 @@ The simulator sends to `sip:proxy@<server>:<port>` (what real phones use as
 with 200 OK.  The server replies to the address the request came from
 (`PJSIP_RECVADDR`), so replies arrive on the same socket; over TCP they come
 back on the same connection.  In TCP mode the simulator also listens for
-UDP on its port, as phones do: the server sends its "Session Timeout"
-reply (MAC or contact mismatch, `phone_msg_send_timeout`) to the bare
-Response-URI, without `;transport=tcp`, so it arrives over UDP.
+UDP on its port, as phones do: the original server sends its "Session
+Timeout" reply (MAC or contact mismatch, `phone_msg_send_timeout`) to the
+bare Response-URI, without `;transport=tcp`, so it arrives over UDP.
+dpma-rs sends it over TCP (port plan section 8, item 11); the `transport`
+condition tells the two apart.
 
 Global options (before the command):
 
@@ -155,7 +157,10 @@ Commands:
 | `selftest [--vectors]` | Nothing; crypto, framing, PKI, and an in-process protocol round trip |
 
 Request commands also take `--header 'Name: Value'`, `--timeout`,
-`--chunk-size`, and `--no-wait`.  Exit status: 0 when the expected response
+`--chunk-size`, `--no-wait`, and `--pem-cuts` (plaintext chunks end right
+before and right after every PEM BEGIN and END line, line break included,
+so the server loses exactly those line breaks; for example, `handshake
+--pem-cuts`).  Exit status: 0 when the expected response
 type arrives without an error (`raw`: any reply), 1 otherwise, 2 on setup
 errors.
 
@@ -210,14 +215,15 @@ Conditions are `KEY=VALUE`, `KEY!=VALUE`, `KEY~REGEX`, `KEY?` (present), or
 | `header:NAME` | A header of the first chunk; `X-Digium-AppServer-` may be omitted |
 | `field:NAME` | A decrypted header (`Password`, `Config-Token`) |
 | `chunks` | Number of chunks of the reply |
+| `transport` | Transport(s) the reply's chunks arrived on: `udp`, `tcp`, or `tcp,udp` |
 | `encrypted` | `yes` or `no` |
 | `appserver` | `ok`, `fail`, or `none` (handshake) |
 | `status` | SIP status of every chunk sent (`status=202`) |
 | `session` | `set` or `none` (the simulator's state) |
 | `problems` | Decoding problems, or `none` |
 
-Variables: `session`, `token`, `mac`, `contact`, `id` (last transaction
-id), `body`, `payload`, `error`, `type`, `ami.KEY` (last AMI message),
+Variables: `session`, `token`, `mac`, `contact`, `transport` (the
+simulator's, `udp` or `tcp`), `id` (last transaction id), `body`, `payload`, `error`, `type`, `ami.KEY` (last AMI message),
 `env.NAME`, and anything set with `set` or `capture`.
 
 A script stops at the first failing line (`--keep-going` runs to the end)
@@ -292,9 +298,9 @@ Phone to server:
   sends (one CBC stream, each chunk's ciphertext base64 encoded on its own);
   the server cannot reassemble that whenever a non-final chunk's ciphertext
   length is not a multiple of 3.
-- Plaintext chunks never end in CR or LF (except the last):
-  res_pjsip_messaging strips trailing CR/LF from every MESSAGE body, so a
-  line break at a chunk boundary would be lost.  It also keeps at most 1023
+- Plaintext chunks never end in CR or LF (except the last, and with
+  `--pem-cuts`): res_pjsip_messaging strips trailing CR/LF from every
+  MESSAGE body, so a line break at a chunk boundary would be lost.  It also keeps at most 1023
   bytes of a body, so keep `--chunk-size` at or below 1022 bytes of wire body.
 
 Server to phone:
@@ -324,7 +330,7 @@ DPMA_SLOT=<n> dev/sim/scripts/session-all.sh
 
 | Script | Checks |
 |---|---|
-| `session.sim` | Handshake in both forms and the rejected bundles, encrypted Ping, Echo, a multi-chunk request, unknown session (-398 HandshakeResponse), MAC and contact mismatch (Session Timeout), an unencrypted AsteriskRequest dropped, the CLI and AMI, a module reload, pruning the old session on a new handshake |
+| `session.sim` | Handshake in both forms and the rejected bundles, handshakes whose chunks end at PEM BEGIN and END lines, encrypted Ping, Echo, a multi-chunk request, unknown session (-398 HandshakeResponse), MAC and contact mismatch (Session Timeout, over the simulator's transport), an unencrypted AsteriskRequest dropped, the CLI and AMI, a module reload, pruning the old session on a new handshake |
 | `session-chunks.sim` | Multi-chunk requests (encrypted and plaintext) and replies (an encrypted 2000-byte event, `digium.assignment.update`, the HandshakeResponse); `EVENT_CHUNKS` is 5 over UDP, 3 over TCP |
 | `session-output.sim` | `digium_phones show sessions` and `DPMAShowPhones` field by field, with each flag |
 | `session-prune.sim` | Idle pruning: unauthenticated sessions after 119 s, authenticated but inactive ones after 59 s, never authenticated active ones |

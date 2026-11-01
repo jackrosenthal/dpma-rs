@@ -205,6 +205,50 @@ fn serial_of(cert: &X509) -> Option<i64> {
     Some(s.parse::<i64>().unwrap_or(if s.starts_with('-') { i64::MIN } else { i64::MAX }))
 }
 
+/// Restore the line breaks at PEM boundaries that a Handshake body lost
+/// on the way (deviation, port plan section 8, item 12).
+///
+/// Asterisk 24's res_pjsip_messaging strips trailing CR and LF from every
+/// MESSAGE body, so when a phone's chunk ends right after a BEGIN or END
+/// line, or right before one, the reassembled body has, e.g.,
+/// `-----BEGIN CERTIFICATE-----MIIB...`, `...==-----END CERTIFICATE-----`,
+/// or `-----END CERTIFICATE----------BEGIN CERTIFICATE-----`, which
+/// OpenSSL's PEM reader does not accept.  This puts a line break before
+/// every `-----BEGIN ` and `-----END ` marker line that does not start the
+/// text or a line, and after every such line that is not followed by one
+/// or by the end of the text.  Well-formed PEM text is returned unchanged.
+pub fn restore_pem_newlines(pem: &str) -> String {
+    const DASHES: &str = "-----";
+    let mut out = String::with_capacity(pem.len() + 8);
+    let mut rest = pem;
+    loop {
+        let start = [rest.find("-----BEGIN "), rest.find("-----END ")].into_iter().flatten().min();
+        let Some(start) = start else {
+            out.push_str(rest);
+            return out;
+        };
+        out.push_str(&rest[..start]);
+        let at = &rest[start..];
+        let label_start = if at.starts_with("-----BEGIN ") { 11 } else { 9 };
+        let label_len = at[label_start..].find(['-', '\r', '\n']).unwrap_or(at.len() - label_start);
+        let end = label_start + label_len + DASHES.len();
+        if !at[label_start + label_len..].starts_with(DASHES) {
+            // Not a marker line: keep the dashes and look further on.
+            out.push_str(DASHES);
+            rest = &at[DASHES.len()..];
+            continue;
+        }
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(&at[..end]);
+        rest = &at[end..];
+        if !rest.is_empty() && !rest.starts_with('\n') && !rest.starts_with("\r\n") {
+            out.push('\n');
+        }
+    }
+}
+
 /// Verify the PEM certificate(s) a phone sent in its Handshake body
 /// (`session_verify_cert`, FUN_00148230), logging as the original does.
 ///
@@ -482,6 +526,42 @@ mod tests {
         // Text around and between the PEM blocks is skipped.
         let body = format!("garbage\n{}\nmore\n{}{}trailer", pem(&[&p.legacy.cert]), pem(&[&p.inter.cert]), pem(&[&p.phone.cert]));
         assert!(verify_client_chain(&store(&p), &body, &CLIENT).is_ok());
+    }
+
+    #[test]
+    fn pem_newlines_restored() {
+        let p = pki();
+        // Well-formed text (LF or CRLF) and text without markers are
+        // unchanged.
+        for body in [pem(&[&p.legacy.cert]), pem(&[&p.legacy.cert, &p.inter.cert, &p.phone.cert])] {
+            assert_eq!(restore_pem_newlines(&body), body);
+            let crlf = body.replace('\n', "\r\n");
+            assert_eq!(restore_pem_newlines(&crlf), crlf);
+        }
+        for s in ["", "hello", "-----", "a-----b", "-----BEGIN", "-----BEGIN CERT", "x-----BEGIN CERT\n-----", "-----END-----"] {
+            assert_eq!(restore_pem_newlines(s), s);
+        }
+        // Each kind of lost line break: after a BEGIN line, before an END
+        // line, and between an END line and the next BEGIN line.
+        assert_eq!(
+            restore_pem_newlines("-----BEGIN CERTIFICATE-----AAAA\nBBBB-----END CERTIFICATE-----"),
+            "-----BEGIN CERTIFICATE-----\nAAAA\nBBBB\n-----END CERTIFICATE-----"
+        );
+        assert_eq!(
+            restore_pem_newlines("-----END A-----\r\n-----BEGIN B----------END B----------BEGIN C-----x"),
+            "-----END A-----\r\n-----BEGIN B-----\n-----END B-----\n-----BEGIN C-----\nx"
+        );
+        assert_eq!(restore_pem_newlines("junk-----BEGIN A-----"), "junk\n-----BEGIN A-----");
+        // Every line break at a PEM boundary lost (chunks ending right
+        // before and after each BEGIN and END line): both forms verify
+        // again.
+        for body in [pem(&[&p.legacy.cert]), pem(&[&p.legacy.cert, &p.inter.cert, &p.phone.cert])] {
+            let broken = body.replace("-----\n", "-----").replace("\n-----", "-----");
+            assert!(verify_client_chain(&store(&p), &broken, &CLIENT).is_err());
+            let fixed = restore_pem_newlines(&broken);
+            assert_eq!(fixed, body.trim_end_matches('\n'));
+            assert!(verify_client_chain(&store(&p), &fixed, &CLIENT).is_ok());
+        }
     }
 
     #[test]

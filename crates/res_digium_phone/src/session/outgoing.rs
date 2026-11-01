@@ -261,8 +261,13 @@ pub fn send_and_destroy(tx: &Arc<Transaction>) {
 
 /// `phone_msg_send_timeout` (FUN_0014e7e0): answer `msg`, whose session
 /// failed validation, with "Session Timeout" (-398) in the response type
-/// of its request type.  The reply goes to the raw Response-URI (without
-/// the transport the transaction's URI gets).
+/// of its request type.
+///
+/// Deviation (port plan section 8, item 11): the reply goes over the
+/// transport of the request it answers, `;transport=<PJSIP_TRANSPORT>`
+/// appended to the Response-URI as for a transaction's replies.  The
+/// original uses the raw Response-URI, so over TCP it answers over UDP.
+/// The URI is not truncated (the original keeps it in a string field).
 pub fn send_timeout(msg: &Msg, session: &Arc<Session>) -> Result<(), ()> {
     let uri = msg.get_var(h::RESPONSE_URI).unwrap_or_default();
     let full_contact = msg.get_var(h::RESPONSE_FULLCONTACT).unwrap_or_default();
@@ -274,6 +279,7 @@ pub fn send_timeout(msg: &Msg, session: &Arc<Session>) -> Result<(), ()> {
     let Some(response_type) = dpma_proto::types::response_type_for(&request_type) else {
         return Err(());
     };
+    let uri = framing::response_uri(&uri, msg.get_var(h::PJSIP_TRANSPORT).as_deref(), usize::MAX);
     let out = Outgoing {
         error: dpma_proto::errors::msg::SESSION_TIMEOUT,
         response_uri: uri,

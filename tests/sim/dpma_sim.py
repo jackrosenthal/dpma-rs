@@ -287,17 +287,37 @@ def split_plain(data, size):
     return out or [b""]
 
 
+PEM_MARKER_LINE = re.compile(rb"-----(?:BEGIN|END) [^\r\n-]*-----(?:\r?\n)?")
+
+
+def pem_segments(data):
+    """Cut `data` before and after every PEM BEGIN and END line (its line
+    break included).  Chunks cut there end right after a BEGIN or END line
+    or right before one, so res_pjsip_messaging's CR/LF stripping removes
+    exactly the line breaks at the PEM boundaries (dpma-rs restores them,
+    port plan section 8, item 12)."""
+    cuts = {0, len(data)}
+    for m in PEM_MARKER_LINE.finditer(data):
+        cuts.update((m.start(), m.end()))
+    cuts = sorted(cuts)
+    return [data[a:b] for a, b in zip(cuts, cuts[1:])]
+
+
 def asterisk_print_body(body):
     """What res_pjsip_messaging makes of a MESSAGE body: trailing CR/LF
     removed, at most 1023 bytes (MAX_BODY_SIZE)."""
     return body[:1023].rstrip(b"\r\n")
 
 
-def frame_request_body(body, size, password=None, salt=None, style="split"):
+def frame_request_body(body, size, password=None, salt=None, style="split",
+                       pem_cuts=False):
     """Wire bodies for a phone-to-server request.
 
     Plaintext: the body split into pieces of at most `size` bytes, never
-    ending a piece (but the last) in CR or LF (see split_plain).
+    ending a piece (but the last) in CR or LF (see split_plain).  With
+    `pem_cuts`, pieces also end right before and right after every PEM
+    BEGIN and END line, line break included (see pem_segments), so the
+    server loses those line breaks.
 
     Encrypted, style "split" (default): the whole body is encrypted as one
     CBC stream, base64 encoded, and the text split into pieces of `size`
@@ -314,6 +334,9 @@ def frame_request_body(body, size, password=None, salt=None, style="split"):
     if size < 1:
         raise SimError("chunk size must be positive")
     if password is None:
+        if pem_cuts:
+            return [piece for seg in pem_segments(body)
+                    for piece in split_plain(seg, size)] or [b""]
         return split_plain(body, size)
     if not body:
         return [b""]
@@ -388,6 +411,7 @@ class SipMessage:
         self.headers = headers          # list of (name, value)
         self.body = body
         self.source = source            # (host, port) it came from
+        self.transport = None           # "udp" or "tcp" (incoming messages)
         self.received = time.time()
         parts = first_line.split(" ", 2)
         if first_line.startswith("SIP/2.0 "):
@@ -492,10 +516,12 @@ class SipEndpoint:
             s.settimeout(None)
             self._sock = s
             self._thread = threading.Thread(target=self._tcp_loop, daemon=True)
-            # Also listen for UDP on the same port, as phones do: the
-            # server answers a session that fails validation ("Session
-            # Timeout", phone_msg_send_timeout) at the bare Response-URI,
-            # without ";transport=tcp", i.e., over UDP.
+            # Also listen for UDP on the same port, as phones do.  The
+            # original server answers a session that fails validation
+            # ("Session Timeout", phone_msg_send_timeout) at the bare
+            # Response-URI, without ";transport=tcp", i.e., over UDP;
+            # dpma-rs answers over TCP (the "transport" condition tells
+            # them apart).
             try:
                 u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 u.bind(s.getsockname())
@@ -641,6 +667,7 @@ class SipEndpoint:
         except ValueError as e:
             self.log(1, "--- unparsable SIP data from %s: %s" % (addr, e))
             return
+        msg.transport = "udp" if reply is not None or self.transport == "udp" else "tcp"
         self.log(2, "<<< SIP from %s:%d\n%s" % (addr + (msg.text(),)))
         via = msg.get("Via") or ""
         m = re.search(r"branch=([^;,\s]+)", via)
@@ -758,6 +785,11 @@ class Reply:
         self.problems = []
         self.appserver_ok = None
         self.appserver_info = None
+
+    @property
+    def transports(self):
+        """The transports the chunks arrived on, e.g., "tcp" or "tcp,udp"."""
+        return ",".join(sorted({p.transport for p in self.parts if p.transport})) or None
 
     @property
     def type(self):
@@ -1104,11 +1136,12 @@ class Phone:
     def request(self, rtype, body=b"", encrypt=None, session=None, username=None,
                 password=None, config_password=None, config_token=None, headers=(),
                 wait=True, timeout=None, chunk_size=None, chunk_style=None, txid=None,
-                mac=None, contact=None):
+                mac=None, contact=None, pem_cuts=False):
         """Send one request (in as many chunks as needed) and, unless `wait`
         is false, wait for the reply with the same transaction id.  `mac`
         and `contact` override the phone's MAC header and Contact URI for
-        this request only."""
+        this request only.  `pem_cuts` ends plaintext chunks at PEM
+        BEGIN and END lines (see frame_request_body)."""
         if isinstance(body, str):
             body = body.encode()
         needs_session = rtype.lower() not in NO_SESSION_TYPES
@@ -1141,7 +1174,7 @@ class Phone:
         base += list(headers)
 
         chunks = frame_request_body(body, chunk_size or self.chunk_size, pw, salt,
-                                    chunk_style or self.opts.chunk_style)
+                                    chunk_style or self.opts.chunk_style, pem_cuts)
         ex.chunks = len(chunks)
         with self._lock:
             self._waiting[txid] = ex
@@ -1634,6 +1667,13 @@ def selftest(out=sys.stdout, pki_dir=DEFAULT_PKI, show_vectors=False):
             break
     else:
         check("plaintext chunks survive print_body's CR/LF stripping", True)
+    pem = (b"-----BEGIN CERTIFICATE-----\n" + b"QUJD" * 16 + b"\n" + b"REVG" * 5 + b"\n"
+           b"-----END CERTIFICATE-----\n") * 2
+    pieces = frame_request_body(pem, 50, pem_cuts=True)
+    check("PEM cuts: chunks end at BEGIN and END lines, at most the size",
+          b"".join(pieces) == pem and all(len(p) <= 50 for p in pieces)
+          and b"".join(asterisk_print_body(p) for p in pieces) == pem.replace(
+              b"-----\n", b"-----").replace(b"\n-----", b"-----"))
 
     # Server-to-phone framing, emulating phone_msg_outgoing_send, against
     # this simulator's reassembly (chunks delivered in random order).
@@ -1823,6 +1863,9 @@ def add_request_options(p):
                    help="extra header for every chunk (repeatable)")
     p.add_argument("--chunk-size", dest="cmd_chunk_size", type=int, metavar="BYTES",
                    help="max body bytes per MESSAGE for this request")
+    p.add_argument("--pem-cuts", action="store_true",
+                   help="end plaintext chunks right before and after every PEM BEGIN and "
+                        "END line, so the server loses those line breaks")
 
 
 class ScriptParser(argparse.ArgumentParser):
@@ -2022,6 +2065,8 @@ def run_request_command(phone, a):
         kw["timeout"] = a.cmd_timeout
     if a.cmd_chunk_size:
         kw["chunk_size"] = a.cmd_chunk_size
+    if a.pem_cuts:
+        kw["pem_cuts"] = True
     c = a.command
     if c not in ("handshake", "echo") and not (c == "raw" and (
             a.type.lower() in NO_SESSION_TYPES or a.session is not None)):
@@ -2128,6 +2173,7 @@ class Script:
             return os.environ.get(name[4:])
         return {
             "session": p.session, "token": p.token, "mac": p.mac, "contact": p.contact_uri,
+            "transport": p.opts.transport,
             "id": self.last.id if self.last else None,
             "body": r.body.decode("utf-8", "replace") if r else None,
             "payload": r.payload.decode("utf-8", "replace") if r else None,
@@ -2287,6 +2333,8 @@ class Script:
             have = r.error if r.error is not None else "none"
         elif key == "chunks":
             have = str(len(r.parts))
+        elif key == "transport":
+            have = r.transports
         elif key == "encrypted":
             have = "yes" if r.encrypted else "no"
         elif key == "appserver":

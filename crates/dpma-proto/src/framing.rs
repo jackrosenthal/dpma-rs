@@ -191,7 +191,7 @@ pub fn transaction_key(id: &str, mac: Option<&str>) -> String {
 /// Where replies go: `"%s%s%s"` of `X-Digium-AppServer-Response-URI`,
 /// `";transport="` when `PJSIP_TRANSPORT` is present (even if empty), and
 /// its value, in a buffer of `size` bytes ([`RESPONSE_URI_BUF`] or
-/// [`HANDSHAKE_REQUIRED_URI_BUF`]).
+/// [`HANDSHAKE_REQUIRED_URI_BUF`]; `usize::MAX` for no limit).
 pub fn response_uri(uri: &str, transport: Option<&str>, size: usize) -> String {
     let s = match transport {
         Some(t) => format!("{};transport={}", uri, t),
@@ -517,5 +517,6 @@ mod tests {
         let long = format!("pjsip:{}", "a".repeat(100));
         assert_eq!(response_uri(&long, None, RESPONSE_URI_BUF).len(), 78);
         assert_eq!(response_uri(&long, None, HANDSHAKE_REQUIRED_URI_BUF).len(), 79);
+        assert_eq!(response_uri(&long, Some("tcp"), usize::MAX), format!("{};transport=tcp", long));
     }
 }
