@@ -1,0 +1,86 @@
+# Session layer checks (package P7), written from the decompile; adjust
+# where the decompile proves it wrong.  Needs the module with sessions, the
+# test PKI (dev/sim/mkpki.py), and the test configuration
+# (dev/sim/install-conf.sh).
+#
+#   DPMA_SLOT=<n> dev/sim/dpma_sim.py script dev/sim/scripts/session.sim
+#   DPMA_SLOT=<n> dev/sim/dpma_sim.py --transport tcp script dev/sim/scripts/session.sim
+
+# Chain form: Handshake-Version 1, unencrypted, the AppServer certificate
+# in the body (about 1.3 KB: 3 chunks of 615 bytes over UDP, 2 of 900 over
+# TCP).
+handshake --bundle chain
+expect type=HandshakeResponse error=none encrypted=no appserver=ok chunks~^[23]$
+expect header:Handshake-Version=1 header:Session? header:Password?
+expect header:Token-Auth-Requirements? header:Userlist-Auth-Requirements?
+
+# Encrypted Ping: PingResponse with the body "empty body".
+ping
+expect type=PingResponse error=none encrypted=yes body="empty body"
+
+# Echo: answered directly, unencrypted, Error-ID 0, body echoed.
+echo "plain echo"
+expect type=EchoResponse error=0 encrypted=no body="plain echo"
+
+# An encrypted request in many chunks (the Ping handler ignores the body).
+raw PingRequest --body "0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz" --chunk-size 64
+expect type=PingResponse error=none encrypted=yes
+
+# Unknown session: a HandshakeResponse with Error-ID -398 (no body), so
+# the phone handshakes again.
+raw PingRequest --session 999999999 --encrypt no
+expect type=HandshakeResponse error=-398
+
+# MAC or contact mismatch: "Session Timeout" (-398) in the request's own
+# response type, encrypted, prefixed "Command: ".
+raw PingRequest --mac 000fd3999999
+expect type=PingResponse error=-398 encrypted=yes payload~"Session Timeout"
+raw PingRequest --contact sip:000fd3000001@127.0.0.1:9
+expect type=PingResponse error=-398
+
+# An unencrypted AsteriskRequest with a body is dropped.
+try raw AsteriskRequest --encrypt no --body "X-Digium-AppServer-Digest-Auth=a:b" --timeout 2
+expect reply=none
+
+# The session in the CLI and AMI.
+cli digium_phones show sessions
+expect-ami Output~${session} Output~${mac}
+ami DPMAShowPhones
+expect-ami Response=Success EventList~Complete
+
+# Sessions survive a module reload (AstDB).
+cli module reload res_digium_phone.so
+sleep 1
+ping
+expect type=PingResponse error=none
+
+# A new handshake prunes the phone's old session.
+capture old session
+handshake --bundle legacy
+expect type=HandshakeResponse header:Handshake-Version! appserver=ok
+raw PingRequest --session ${old} --encrypt no
+expect type=HandshakeResponse error=-398
+ping
+expect type=PingResponse
+
+# Accepted: expired certificates (errors 9 and 10 are ignored) and a
+# 512-bit SHA-1 legacy certificate.
+handshake --bundle chain-expired
+handshake --bundle legacy-expired
+handshake --bundle weak
+
+# Rejected: untrusted CA, two or four certificates.  No reply at all, and
+# an auth incident ("invalid credentials") for 127.0.0.1.
+try handshake --bundle rogue --timeout 2
+expect reply=none
+try handshake --bundle two --timeout 2
+expect reply=none
+try handshake --bundle four --timeout 2
+expect reply=none
+ami DPMAShowIncidents
+expect-ami Response=Success EventList~Complete
+
+# Leave a working session behind.
+handshake
+ping
+expect type=PingResponse
