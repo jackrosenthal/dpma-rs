@@ -77,6 +77,44 @@ impl Module {
         &mut self.build
     }
 
+    /// Add the pjproject headers and defines that Asterisk's PJSIP headers
+    /// (`asterisk/res_pjsip.h`, ...) need, for glue in the PJSIP helper
+    /// modules.  The headers come from `$PJPROJECT_DIR`: either a pjproject
+    /// source tree (its `pjlib/include`, `pjlib-util/include`,
+    /// `pjnath/include`, `pjmedia/include`, and `pjsip/include` are added)
+    /// or a single directory holding installed headers (`pjsip.h`, ...).
+    /// The default is the pjproject bundled with the Asterisk source tree
+    /// in `dev/asterisk-24-src` (`PJPROJECT_INCLUDE` in its `makeopts` has
+    /// the same defines).
+    pub fn pjproject(mut self) -> Module {
+        println!("cargo:rerun-if-env-changed=PJPROJECT_DIR");
+        let dir = match std::env::var("PJPROJECT_DIR") {
+            Ok(d) if !d.is_empty() => PathBuf::from(d),
+            _ => PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
+                .join("../../dev/asterisk-24-src/third-party/pjproject/source"),
+        };
+        let subdirs = ["pjlib", "pjlib-util", "pjnath", "pjmedia", "pjsip"];
+        if dir.join("pjlib/include").is_dir() {
+            for s in subdirs {
+                self.build.include(dir.join(s).join("include"));
+            }
+        } else {
+            if !dir.join("pjsip.h").exists() {
+                println!("cargo:warning=pjproject headers not found in {} (set PJPROJECT_DIR)", dir.display());
+            }
+            self.build.include(&dir);
+        }
+        self.build
+            .define("PJ_AUTOCONF", "1")
+            .define("PJ_HAS_LINUX_EPOLL", "1")
+            .define("PJ_IS_BIG_ENDIAN", "0")
+            .define("PJ_IS_LITTLE_ENDIAN", "1")
+            .define("PJMEDIA_HAS_SRTP", "0")
+            // Asterisk's PJSIP headers have const-qualified return types.
+            .flag_if_supported("-Wno-ignored-qualifiers");
+        self
+    }
+
     /// Compile the glue into a static library linked whole into the module.
     pub fn compile(self) {
         self.build.compile(&format!("dpma_glue_{}", self.name));

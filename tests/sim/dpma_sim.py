@@ -847,6 +847,7 @@ class Options:
         self.transport = "udp"
         self.mac = DEFAULT_MAC
         self.user_agent = DEFAULT_UA
+        self.digium_ua_header = True
         self.contact = None
         self.origination_network = None
         self.form = "chain"
@@ -1098,6 +1099,9 @@ class Phone:
         common = [("Contact", "<%s>" % (contact or self.contact_uri)),
                   ("User-Agent", self.opts.user_agent),
                   ("Content-Type", "text/plain")]
+        if self.opts.digium_ua_header:
+            # Phones send it; the PJSIP helper identifies them by it.
+            common.insert(2, ("X-Digium-User-Agent", self.opts.user_agent))
         from_uri = "sip:%s@%s" % (self.mac, self.sip.local_addr[0])
         for i, chunk in enumerate(chunks):
             hdrs = common + base + [(H_SEQUENCE, str(i))]
@@ -1728,6 +1732,9 @@ def build_parser(script=False):
         g = ap.add_argument_group("phone")
         g.add_argument("--mac", default=DEFAULT_MAC, help="default %(default)s")
         g.add_argument("--user-agent", default=DEFAULT_UA, help="default %(default)r")
+        g.add_argument("--no-digium-ua-header", action="store_true",
+                       help="do not send X-Digium-User-Agent (by which the PJSIP helper "
+                            "res_pjsip_endpoint_identifier_dpma identifies phones)")
         g.add_argument("--contact", help="Contact URI (default sip:<mac>@<local address>)")
         g.add_argument("--origination-network", help="send X-Origination-Network")
         g.add_argument("--form", choices=("legacy", "chain"), default="chain",
@@ -1870,7 +1877,8 @@ def options_from_args(a):
     return Options(
         slot=a.slot, server=a.server, local_host=a.local_host, local_port=a.local_port,
         transport=a.transport, mac=a.mac.replace(":", "").lower(),
-        user_agent=a.user_agent, contact=a.contact, origination_network=a.origination_network,
+        user_agent=a.user_agent, digium_ua_header=not a.no_digium_ua_header,
+        contact=a.contact, origination_network=a.origination_network,
         form=a.form, bundle=a.bundle, pki=a.pki, appserver_check=not a.no_appserver_check,
         chunk_size=a.chunk_size, chunk_style=a.chunk_style, chunk_delay=a.chunk_delay,
         timeout=a.timeout, plain=a.plain, verbose=a.verbose,

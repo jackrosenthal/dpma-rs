@@ -23,15 +23,15 @@ static int unload_module(void)
 	return dpma_dlg_rust_unload();
 }
 
+/*
+ * The original requires "res_pjsip,res_digium_phone"; it also calls into
+ * res_pjsip_pubsub (the body supplement registry), which is declared here
+ * as well.
+ */
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "PJSIP Dialog-Info Digium supplement",
-	.support_level = AST_MODULE_SUPPORT_EXTENDED,
+	.support_level = AST_MODULE_SUPPORT_CORE,
 	.load = load_module,
 	.unload = unload_module,
-	.load_pri = AST_MODPRI_DEFAULT,
-	/*
-	 * The implementation must declare .requires = "res_pjsip,res_digium_phone"
-	 * (as the original does).  The skeleton declares no dependencies: a
-	 * declined module keeps references on the modules it requires, which
-	 * would prevent res_digium_phone from being unloaded.
-	 */
+	.load_pri = AST_MODPRI_CHANNEL_DEPEND,
+	.requires = "res_pjsip,res_pjsip_pubsub,res_digium_phone",
 );

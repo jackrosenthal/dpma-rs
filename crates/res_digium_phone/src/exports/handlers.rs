@@ -251,8 +251,9 @@ pub unsafe fn info_send(chan: *mut AstChannel, headers: &[(&str, &str)], content
 }
 
 /// Rust-side `dpma_process_config_handlers` with the lines container
-/// (`phone_users_process_phone_config`, between the sip.conf lines and
-/// the res_digium_phone.conf line sections).  The line and phone objects
+/// (`phone_users_process_phone_config`, between the phones and the
+/// res_digium_phone.conf line sections; the original also reads sip.conf
+/// and users.conf `hassip` lines before it).  The line and phone objects
 /// are brought in step with the registry first.  Must be called without
 /// the registry lock: the handlers call back into the exported API.
 pub fn process_config_handlers() {

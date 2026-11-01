@@ -20,6 +20,18 @@
 //! lock, never the other way round, and no ao2 lock is ever taken while
 //! holding the registry lock (C callers hold line locks while calling
 //! back into the exports).
+//!
+//! Line locks: C callers (the PJSIP helper's sorcery observers, on their
+//! own threads) update a line with several export calls while holding the
+//! line object's ao2 lock, as the original module's own code does.  Code
+//! that reads or writes lines where the original takes the line's lock
+//! takes it too, through `lock_lines`, `lock_phone_lines`, or
+//! `lock_all_lines`, so it never sees a line half updated.  Rules: take
+//! line locks before the registry lock (never while holding it), find
+//! every object before locking any (a thread holding line locks must not
+//! wait for the lines container's lock: `ao2_callback` holds it while the
+//! helper's callback locks lines), and lock in address order (the guards
+//! do both).
 
 use crate::users::{self, Line};
 use dpma_ast::ao2::{self, Container};
@@ -209,31 +221,6 @@ impl LineObj {
         Some(r)
     }
 
-    /// Like `with_line`, also handing `f` the registry (write locked) for
-    /// changes to other lines.  A linked line is worked on as a copy that
-    /// replaces the registry's afterwards.
-    pub fn with_line_reg<R>(&self, f: impl FnOnce(&mut Line, Option<&mut users::Registry>) -> R) -> Option<R> {
-        let mut st = lock(&self.state);
-        let mut g = users::write();
-        let reg = g.as_mut();
-        let (r, auth) = if let Some(l) = st.detached.as_mut() {
-            let r = f(l, reg);
-            (r, l.pjsip_auth.clone())
-        } else {
-            let reg = reg?;
-            let mut copy = reg.lines.get(&self.key)?.clone();
-            let r = f(&mut copy, Some(&mut *reg));
-            let auth = copy.pjsip_auth.clone();
-            if let Some(l) = reg.lines.get_mut(&self.key) {
-                *l = copy;
-            }
-            (r, auth)
-        };
-        drop(g);
-        self.refresh_auth(&mut st, &auth);
-        Some(r)
-    }
-
     /// Whether the object is the registry's line.
     pub fn is_linked(&self) -> bool {
         lock(&self.state).detached.is_none()
@@ -342,6 +329,75 @@ pub fn sync(swept: Vec<Line>) {
             }
         }
     }
+}
+
+/// Line objects locked by `lock_lines`, `lock_phone_lines`, or
+/// `lock_all_lines` (each with a reference); unlocked and released when
+/// dropped.
+pub struct LineLocks(Vec<*mut c_void>);
+
+impl Drop for LineLocks {
+    fn drop(&mut self) {
+        for &o in self.0.iter().rev() {
+            unsafe {
+                ao2::unlock(o);
+                ao2::cleanup(o);
+            }
+        }
+    }
+}
+
+/// Lock `objs` (each with a reference, duplicates allowed) in address
+/// order.
+fn lock_objects(mut objs: Vec<*mut c_void>) -> LineLocks {
+    objs.sort_unstable_by_key(|&o| o as usize);
+    let mut unique: Vec<*mut c_void> = Vec::with_capacity(objs.len());
+    for o in objs {
+        if unique.last() == Some(&o) {
+            unsafe { ao2::cleanup(o) };
+        } else {
+            unique.push(o);
+        }
+    }
+    for &o in &unique {
+        unsafe { ao2::lock(o) };
+    }
+    LineLocks(unique)
+}
+
+/// Lock the objects of the lines named `names` (those that have one) for a
+/// consistent read or update of those lines; see "Line locks" above.  Must
+/// be called without the registry lock.
+pub fn lock_lines<'a>(names: impl IntoIterator<Item = &'a str>) -> LineLocks {
+    let c = lines_container();
+    let mut objs = Vec::new();
+    if !c.is_null() {
+        for name in names {
+            let key = dpma_ast::cstr(name);
+            let o = unsafe { ao2::find_key(c, key.as_ptr()) };
+            if !o.is_null() {
+                objs.push(o);
+            }
+        }
+    }
+    lock_objects(objs)
+}
+
+/// Lock the objects of every line of `phone` (`lock_lines`).
+pub fn lock_phone_lines(phone: &str) -> LineLocks {
+    let names: Vec<String> = {
+        let g = users::read();
+        g.as_ref()
+            .and_then(|reg| reg.phones.get(phone))
+            .map(|p| p.lines.iter().map(|l| l.name.clone()).collect())
+            .unwrap_or_default()
+    };
+    lock_lines(names.iter().map(String::as_str))
+}
+
+/// Lock every line object (`lock_lines`).
+pub fn lock_all_lines() -> LineLocks {
+    lock_objects(unsafe { ao2::collect(lines_container()) })
 }
 
 /// `phone_line_link`: make a detached line object the registry's line

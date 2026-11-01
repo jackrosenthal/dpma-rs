@@ -34,8 +34,6 @@ fn i32_opt(field: &mut i32, value: &str) -> Res {
 pub struct UserCtx<'a> {
     pub lines: &'a mut NamedMap<Line>,
     pub networks: &'a mut NamedMap<Network>,
-    /// Default context for SIP lines (sip.conf `[general] context`).
-    pub sip_context: &'a str,
 }
 
 /// `set_user_option`.
@@ -180,10 +178,10 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &str, value: 
 fn add_line(ctx: &mut UserCtx, phone: &mut Phone, name: &str, external: bool) {
     let (line, _) = ctx.lines.get_or_insert_with(name, || Line::new(name, external));
     // The original leaves the delete mark alone here, so a line that only a
-    // phone refers to (no [line] section, sip.conf peer, or pjsip endpoint)
-    // survives the first load but disappears on every other reload.  Keep
-    // it consistently instead.
-    line.set_defaults(ctx.sip_context);
+    // phone refers to (no [line] section or pjsip endpoint) survives the
+    // first load but disappears on every other reload.  Keep it
+    // consistently instead.
+    line.set_defaults();
     line.delme = false;
     if phone.lines.len() < MAX_LINES {
         phone.lines.push(PhoneLine { name: truncate(name, 0x80), external });

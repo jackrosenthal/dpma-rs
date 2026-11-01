@@ -412,7 +412,7 @@ pub struct Line {
     pub registration_max_retries: i32,
     pub transport: Transport,
     pub secondary_server_transport: Transport,
-    /// `register=no`, or a static `host` from sip.conf.
+    /// `register=no`, or a static `host`.
     pub no_register: bool,
 
     pub delme: bool,
@@ -424,9 +424,11 @@ impl Line {
     }
 
     /// `set_line_defaults`: applied whenever a phone (re)claims the line.
-    pub fn set_defaults(&mut self, sip_context: &str) {
+    /// The context is "default" (the original uses sip.conf's `[general]`
+    /// `context` when there is one; chan_sip is not supported).
+    pub fn set_defaults(&mut self) {
         self.exten.clear();
-        self.context = sip_context.to_string();
+        self.context = "default".to_string();
         for f in [
             &mut self.first_name,
             &mut self.last_name,

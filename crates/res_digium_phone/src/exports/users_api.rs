@@ -127,17 +127,34 @@ pub unsafe extern "C" fn phone_users_set_line_option(opt: *const c_char, val: *c
 }
 
 /// `void phone_users_process_line(struct phone_line *)` (H): apply the
-/// settings of the line's own sections in voicemail.conf, users.conf,
-/// sip.conf, and res_digium_phone.conf again (`process_line_dp`).  The
-/// line object is locked while they are applied.
+/// settings of the line's own sections in voicemail.conf, users.conf
+/// (app_voicemail), and res_digium_phone.conf again (`process_line_dp`).
+/// As in the original, each mailbox is set with its line looked up by name
+/// and locked (`set_mailbox`), and the res_digium_phone.conf sections are
+/// applied with this line locked; no two line locks are held at once.
 #[no_mangle]
 pub unsafe extern "C" fn phone_users_process_line(line: *mut LineObj) {
     if line.is_null() {
         return;
     }
+    let name = (*line).key().to_string();
+    let mailboxes = dpma_ast::guard(Vec::new(), || users::load::line_mailboxes(&name));
+    for (target, mailbox) in mailboxes {
+        let t = dpma_ast::cstr(&target);
+        let obj = phone_line_find(t.as_ptr());
+        if obj.is_null() {
+            continue;
+        }
+        ao2::lock(obj as *mut c_void);
+        dpma_ast::guard((), || {
+            (*obj).with_line(|l| options::set_line_option(l, "mailbox", &mailbox));
+        });
+        ao2::unlock(obj as *mut c_void);
+        ao2::cleanup(obj as *mut c_void);
+    }
     ao2::lock(line as *mut c_void);
     dpma_ast::guard((), || {
-        (*line).with_line_reg(users::load::process_line);
+        (*line).with_line(users::load::apply_line_sections);
     });
     ao2::unlock(line as *mut c_void);
 }
@@ -280,6 +297,8 @@ pub unsafe extern "C" fn phone_user_token_set_last_info(
     let session = (!session.is_null()).then(|| opt_str(session).into_owned());
     let mac = (!mac.is_null()).then(|| opt_str(mac).into_owned());
     dpma_ast::guard((), || {
+        #[cfg(feature = "devtest")]
+        super::devtest::record_last_info(&name, &uri, session.as_deref(), mac.as_deref(), (*user).is_linked());
         if (*user).is_linked() {
             users::runtime::set_last_info(&name, &uri, session.as_deref(), mac.as_deref());
         }

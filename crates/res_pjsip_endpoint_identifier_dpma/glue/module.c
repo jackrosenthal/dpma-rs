@@ -13,9 +13,11 @@
 extern int dpma_eid_rust_load(void);
 extern int dpma_eid_rust_unload(void);
 
+/* The Rust side returns the AST_MODULE_LOAD_* result itself: the original
+ * fails with AST_MODULE_LOAD_FAILURE (-1). */
 static int load_module(void)
 {
-	return dpma_eid_rust_load() ? AST_MODULE_LOAD_DECLINE : AST_MODULE_LOAD_SUCCESS;
+	return dpma_eid_rust_load();
 }
 
 static int unload_module(void)
@@ -28,10 +30,5 @@ AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "DPMA PJSIP Support",
 	.load = load_module,
 	.unload = unload_module,
 	.load_pri = AST_MODPRI_DEFAULT,
-	/*
-	 * The implementation must declare .requires = "res_pjsip,res_digium_phone"
-	 * (as the original does).  The skeleton declares no dependencies: a
-	 * declined module keeps references on the modules it requires, which
-	 * would prevent res_digium_phone from being unloaded.
-	 */
+	.requires = "res_pjsip,res_digium_phone",
 );
