@@ -1,0 +1,32 @@
+# Session layer (package P7): `digium_phones show sessions` and
+# `DPMAShowPhones` in the original's formats (handle_cli_show_sessions
+# FUN_00148e40, action_dpma_show_phones FUN_001500d0).  Needs a devtest
+# build (dpmadev session mark) and the setup of session.sim.
+#
+#   DPMA_SLOT=<n> dev/sim/dpma_sim.py script dev/sim/scripts/session-output.sim
+
+handshake
+expect type=HandshakeResponse
+
+cli digium_phones show sessions
+expect-ami 'Output~(?m)^---- Digium Phone Module Active Sessions ---- ?$'
+expect-ami 'Output~(?m)^SessionID:${session} *SecondsAlive:[0-9]+ +SecondsLastActivity:[0-9]+ +URI:pjsip:127\.0\.0\.1:[0-9]+;transport=(udp|tcp) +Auth:No  Inactive:No  Configured: No  MAC:${mac}$'
+expect-ami 'Output~(?m)^--- Total active sessions:[0-9]+ ---$'
+
+ami DPMAShowPhones ActionID=p7-output
+expect-ami Response=Success EventList~start 'Message=DPMA phone list will follow'
+expect-ami 'Event~DPMAShowPhonesList' 'SessionID~(?m)^${session}$' 'Contact~(?m)^${contact}$'
+expect-ami 'URI~pjsip:127\.0\.0\.1:[0-9]+;transport=' 'Auth~(?m)^0$' 'Inactive~(?m)^0$' 'Configured~(?m)^0$'
+expect-ami 'MAC~(?m)^${mac}$' 'UserAgent~Digium D65' 'SecondsAlive~[0-9]' 'SecondsLastActivity~[0-9]'
+expect-ami 'Event~DPMAShowPhonesComplete' 'EventList~Complete' 'ListItems~[0-9]+'
+
+# Flags: authenticated, then inactive, then configured.
+cli dpmadev session mark ${session} authenticated
+cli digium_phones show sessions
+expect-ami 'Output~(?m)^SessionID:${session} .* Auth:Yes Inactive:No  Configured: No  MAC:${mac}$'
+cli dpmadev session mark ${session} configured
+cli dpmadev session mark ${session} inactive
+cli digium_phones show sessions
+expect-ami 'Output~(?m)^SessionID:${session} .* Auth:Yes Inactive:Yes Configured: Yes MAC:${mac}$'
+ami DPMAShowPhones
+expect-ami 'Auth~(?m)^1$' 'Inactive~(?m)^1$' 'Configured~(?m)^1$'

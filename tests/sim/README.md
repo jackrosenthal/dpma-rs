@@ -10,8 +10,8 @@ Tools for testing res_digium_phone without Digium phones
 | `mkpki.py` | Generates the test PKI and installs the trust material into an instance. |
 | `install-conf.sh` | Installs the test configuration (`conf/`) into an instance. |
 | `conf/` | Test-only pjsip, dialplan, and phone configuration snippets. |
-| `scripts/` | Simulator scripts: `loopback.sim` (works without the module), `session.sim` (for the session layer, package P7). |
-| `vectors.json` | Deterministic crypto and framing vectors for cross-checking `dpma-proto`. |
+| `scripts/` | Simulator scripts: `loopback.sim` (works without the module); for the session layer (package P7) `session.sim`, `session-chunks.sim`, `session-output.sim`, `session-prune.sim`, `session-reassembly.py`, `session-restart.sh` (restarts Asterisk), and `session-all.sh`, which runs them all over UDP and TCP. |
+| `vectors.json` | Deterministic crypto and framing vectors for cross-checking `dpma-proto` (its `tests/sim_vectors.rs` checks them; `selftest` checks the simulator against dpma-proto's `tests/fixtures/proto_vectors.json`). |
 
 Everything is written from the decompile (the phone side of
 `phone_message.c`, `phone_crypto.c`, and `phone_request.c`), independently
@@ -102,7 +102,10 @@ The simulator sends to `sip:proxy@<server>:<port>` (what real phones use as
 `config_server_url`) from one socket, and answers every MESSAGE it receives
 with 200 OK.  The server replies to the address the request came from
 (`PJSIP_RECVADDR`), so replies arrive on the same socket; over TCP they come
-back on the same connection.
+back on the same connection.  In TCP mode the simulator also listens for
+UDP on its port, as phones do: the server sends its "Session Timeout"
+reply (MAC or contact mismatch, `phone_msg_send_timeout`) to the bare
+Response-URI, without `;transport=tcp`, so it arrives over UDP.
 
 Global options (before the command):
 
@@ -304,6 +307,25 @@ Server to phone:
 - Events and error replies have `Command: ` at the start of every chunk's
   plaintext (inside the encryption); `payload` removes them.
 
+## Session layer acceptance (package P7)
+
+With a devtest build installed and running in the instance (the scripts
+use `dpmadev session ...` to change flags, backdate activity, and send
+events):
+
+```
+DPMA_SLOT=<n> dev/sim/scripts/session-all.sh
+```
+
+| Script | Checks |
+|---|---|
+| `session.sim` | Handshake in both forms and the rejected bundles, encrypted Ping, Echo, a multi-chunk request, unknown session (-398 HandshakeResponse), MAC and contact mismatch (Session Timeout), an unencrypted AsteriskRequest dropped, the CLI and AMI, a module reload, pruning the old session on a new handshake |
+| `session-chunks.sim` | Multi-chunk requests (encrypted and plaintext) and replies (an encrypted 2000-byte event, `digium.assignment.update`, the HandshakeResponse); `EVENT_CHUNKS` is 5 over UDP, 3 over TCP |
+| `session-output.sim` | `digium_phones show sessions` and `DPMAShowPhones` field by field, with each flag |
+| `session-prune.sim` | Idle pruning: unauthenticated sessions after 119 s, authenticated but inactive ones after 59 s, never authenticated active ones |
+| `session-reassembly.py` | Incoming chunks out of order, transactions keyed by ID and MAC, incomplete transactions dropped after 40 s (takes about 50 s) |
+| `session-restart.sh` | AstDB persistence across two Asterisk restarts (restored authenticated and inactive, same common password, expiry at 59 s), an undecryptable entry dropped, `DPMAShowPhones` user details, and the `message_delay` pause |
+
 ## Self-test
 
 `dpma_sim.py selftest` needs no server: known-answer key, IV, and
@@ -314,5 +336,8 @@ emulated from `phone_msg_outgoing_send` and `incoming_check_finalize`), the
 CR/LF rule, RSA common passwords with every bundle key, the AppServer
 check, an in-process protocol round trip over UDP sockets (both handshake
 forms, encrypted requests and replies in many chunks, tokens, events,
-unknown session, rejected certificate), and `vectors.json`.
+unknown session, rejected certificate), `vectors.json`, and dpma-proto's
+`crates/dpma-proto/tests/fixtures/proto_vectors.json` (key and IV, header
+fields, `set_hex`, `ast_base64decode`, chunking, both directions of
+encrypted framing, the RSA common password, and error bodies).
 `selftest --vectors` prints the vectors.

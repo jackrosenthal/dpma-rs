@@ -63,3 +63,12 @@ pub fn ast_false(s: &str) -> bool {
         "no" | "false" | "n" | "f" | "0" | "off"
     )
 }
+
+extern "C" {
+    fn ast_random() -> std::os::raw::c_long;
+}
+
+/// `ast_random()`: Asterisk's thread-safe `random()`.
+pub fn random() -> std::os::raw::c_long {
+    unsafe { ast_random() }
+}

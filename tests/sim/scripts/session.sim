@@ -1,7 +1,8 @@
-# Session layer checks (package P7), written from the decompile; adjust
-# where the decompile proves it wrong.  Needs the module with sessions, the
-# test PKI (dev/sim/mkpki.py), and the test configuration
-# (dev/sim/install-conf.sh).
+# Session layer checks (package P7), written from the decompile and passed
+# by the P7 implementation over UDP and TCP.  Needs the module with
+# sessions, the test PKI (dev/sim/mkpki.py), and the test configuration
+# (dev/sim/install-conf.sh).  Over TCP the Session Timeout replies arrive
+# over UDP (see README.md).
 #
 #   DPMA_SLOT=<n> dev/sim/dpma_sim.py script dev/sim/scripts/session.sim
 #   DPMA_SLOT=<n> dev/sim/dpma_sim.py --transport tcp script dev/sim/scripts/session.sim

@@ -1,42 +1,359 @@
 //! Outgoing messages: `phone_msg_outgoing_send` (FUN_0014c6b0),
 //! `phone_msg_send_and_destroy` (FUN_0014e590), `phone_msg_send_timeout`
 //! (FUN_0014e7e0), `phone_msg_send_event` (FUN_0014e030), and the
-//! handshake error reply (FUN_0014bf10).
+//! handshake error reply (`phone_msg_outgoing_send_handshake_error`,
+//! FUN_0014bf10).
+//!
+//! Every message but a HandshakeResponse is encrypted with the session's
+//! common password and a fresh salt; the body is split into chunks (see
+//! `dpma_proto::framing`), each sent as its own `ast_msg` through the
+//! `digium_phone_module` extension, `message_delay` ms apart.  The
+//! session's lock is held for the whole send.
 //!
 //! Owner: P7 "session" (wave 2).
 
-use super::{Outgoing, Session, Transaction};
+use super::{now, Outgoing, Session, Transaction};
+use crate::transport;
 use dpma_ast::msg::Msg;
+use dpma_ast::{dpma_debug, dpma_log};
+use dpma_proto::crypto::{self, Encryptor, SALT_LEN};
+use dpma_proto::{framing, headers as h};
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 
-/// Send `out` to the phone of `session` (chunking, encryption, headers).
-pub fn send(_out: &Outgoing, _session: &Arc<Session>) -> Result<(), ()> {
-    Err(())
+/// The request id counter (0x5e8060): 1..100000, advanced once per send.
+static COUNTER: AtomicI32 = AtomicI32::new(0);
+
+fn next_counter() -> i32 {
+    let mut cur = COUNTER.load(Ordering::Relaxed);
+    loop {
+        let next = if cur + 1 > 100000 { 1 } else { cur + 1 };
+        match COUNTER.compare_exchange_weak(cur, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return next,
+            Err(c) => cur = c,
+        }
+    }
 }
 
-/// Send the transaction's outgoing message with its session, then free it.
-pub fn send_and_destroy(_tx: &Arc<Transaction>) {}
-
-/// Reply "Session Timeout" (-398) to a message whose session failed
-/// validation.
-pub fn send_timeout(_msg: &Msg) -> Result<(), ()> {
-    Err(())
+/// Encrypt a header field with the message's salt
+/// (`send_encrypt_hdr_helper`, 0x515-byte buffer).
+fn encrypt_header(plain: &str, password: &[u8], salt: &[u8; SALT_LEN]) -> String {
+    super::persist::encrypt_helper(plain.as_bytes(), password, salt, crypto::CIPHERTEXT_B64_BUF)
 }
 
-/// Send an event (`X-Event-Name`) with `body` to the session's phone.
-/// The error text matches the original's error buffer.
-pub fn send_event(_session: &Arc<Session>, _event: &str, _body: &str) -> Result<(), String> {
-    Err("Memory allocation error".into())
+/// Send `out` to the phone of `session` (or log that there is none), as
+/// `phone_msg_outgoing_send` does when called with a NULL session.
+pub fn send_maybe(out: &Outgoing, session: Option<&Arc<Session>>) -> Result<(), ()> {
+    match session {
+        Some(s) => send(out, s),
+        None => {
+            if message_type(out).is_some() {
+                dpma_log!("Outgoing message not sent due to missing session");
+            } else {
+                dpma_log!("Outgoing message is not request, response, or event type");
+            }
+            dpma_log!("error sending phone msg, session id {}", "NULL");
+            Err(())
+        }
+    }
 }
 
-/// FUN_0014bf10: reply `HandshakeResponse` with Error-ID -398 to a
-/// message for an unknown session.
+/// The type the original logs: the response type, else the request type,
+/// else the event name, else "Error" for an error reply.
+fn message_type(out: &Outgoing) -> Option<&str> {
+    [&out.response_type, &out.request_type, &out.event_name]
+        .into_iter()
+        .find(|t| !t.is_empty())
+        .map(|t| t.as_str())
+        .or((out.error != 0).then_some("Error"))
+}
+
+/// `phone_msg_outgoing_send` (FUN_0014c6b0): send `out` to the phone of
+/// `session`: chunking, encryption, and headers.
+pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
+    let Some(type_name) = message_type(out) else {
+        dpma_log!("Outgoing message is not request, response, or event type");
+        dpma_log!("error sending phone msg, session id {}", session.id);
+        return Err(());
+    };
+    let mut st = session.lock();
+    let counter = next_counter();
+
+    let handshake = out.response_type.eq_ignore_ascii_case("HandshakeResponse");
+    let (encrypted, handshake_version, salt) = if handshake {
+        (false, (st.intermediate_serial != 0).then_some("1"), None)
+    } else {
+        // FUN_00151840 logs its own failure; the salt is used regardless.
+        (true, None, Some(crypto::new_salt().unwrap_or([0; SALT_LEN])))
+    };
+    let salt_hex = salt.as_ref().map(crypto::salt_to_hex).unwrap_or_default();
+
+    let mut body = out.body.clone();
+    let error_id = if out.error != 0 {
+        body.extend_from_slice(framing::error_body(out.error).as_bytes());
+        out.error.to_string()
+    } else {
+        String::new()
+    };
+    let limit = framing::chunk_limit(encrypted, framing::is_tcp(&out.response_uri));
+    if body.is_empty() {
+        body.extend_from_slice(framing::EMPTY_BODY.as_bytes());
+    }
+
+    // Header fields encrypted with this message's salt (encrypted messages
+    // only).
+    let (enc_password, enc_token) = match salt.as_ref() {
+        Some(salt) => (
+            (!out.encrypted_password.is_empty())
+                .then(|| encrypt_header(&out.encrypted_password, &st.common_password, salt)),
+            (!out.config_token.is_empty()).then(|| encrypt_header(&out.config_token, &st.common_password, salt)),
+        ),
+        None => (None, None),
+    };
+
+    if error_id.is_empty() {
+        dpma_debug!(3, "Sending to {} '{}' body length {}", out.response_uri, type_name, body.len());
+    } else {
+        dpma_debug!(3, "Sending to {} '{}' ERROR={} body length {}", out.response_uri, type_name, out.error, body.len());
+    }
+
+    let prefix = if !out.event_name.is_empty() || !error_id.is_empty() { framing::COMMAND_PREFIX } else { "" };
+    let chunks = framing::split(&body, prefix, limit, handshake);
+    let mut encryptor = match salt.as_ref() {
+        Some(salt) => match Encryptor::new(&st.common_password, salt) {
+            Ok(e) => Some(e),
+            Err(_) => {
+                dpma_log!("Call to init_encryption failed");
+                None
+            }
+        },
+        None => None,
+    };
+    let delay = crate::config::get().message_delay;
+
+    let n = chunks.len();
+    for (i, chunk) in chunks.iter().enumerate() {
+        let last = i + 1 == n;
+        let Some(m) = transport::new_outgoing(&out.response_uri) else {
+            dpma_log!("error sending phone msg, session id {}", session.id);
+            return Err(());
+        };
+        let mut ok = m.set_exten(transport::SEND_EXTEN);
+        let mut set = |name: &str, value: &str| ok &= m.set_var(name, value);
+        if !out.response_type.is_empty() {
+            set(h::RESPONSE_TYPE, &out.response_type);
+        } else if !out.request_type.is_empty() {
+            set(h::REQUEST_TYPE, &out.request_type);
+        }
+        if let Some(v) = handshake_version {
+            set(h::HANDSHAKE_VERSION, v);
+        }
+        for (name, value) in [
+            (h::USERNAME, &out.username),
+            (h::RESPONSE_URI, &out.response_uri),
+            (h::RESPONSE_FULLCONTACT, &out.full_contact),
+            (h::TOKEN_AUTH_REQUIREMENTS, &out.token_auth_requirements),
+            (h::USERLIST_AUTH_REQUIREMENTS, &out.userlist_auth_requirements),
+            (h::PASSWORD, &out.password),
+            (h::EVENT_NAME, &out.event_name),
+            (h::SESSION, &session.id),
+            (h::ORIGINATION_NETWORK, &st.origination_network),
+            (h::HTTP_STATUS, &out.http_status),
+            (h::MD5, &out.md5),
+            (h::ERROR_ID, &error_id),
+        ] {
+            if !value.is_empty() {
+                set(name, value);
+            }
+        }
+        if let Some(v) = &enc_password {
+            set(h::PASSWORD, v);
+        }
+        if let Some(v) = &enc_token {
+            set(h::CONFIG_TOKEN, v);
+        }
+
+        // The body: plaintext, or this chunk's part of the CBC stream (the
+        // last one with the padding), base64 encoded on its own.
+        if encrypted {
+            let text = match encryptor.as_mut().map(|e| e.update(&chunk.plain)) {
+                Some(Ok(mut c)) => {
+                    if !last {
+                        crypto::base64_encode_max(&c, crypto::CIPHERTEXT_B64_BUF)
+                    } else if let Some(Ok(f)) = encryptor.take().map(Encryptor::finish) {
+                        c.extend(f);
+                        crypto::base64_encode_max(&c, crypto::CIPHERTEXT_B64_BUF)
+                    } else {
+                        dpma_log!("Call to encrypt_final returned failure");
+                        String::new()
+                    }
+                }
+                _ => {
+                    dpma_log!("Call to encrypt_data returned failure");
+                    String::new()
+                }
+            };
+            ok &= m.set_body(&text);
+        } else {
+            ok &= m.set_body_bytes(&chunk.plain);
+        }
+        if !salt_hex.is_empty() {
+            ok &= m.set_var(h::MESSAGE_SALT, &salt_hex);
+        }
+        if let Some(seq) = chunk.sequence {
+            m.set_var(h::MESSAGE_SEQUENCE, &seq.to_string());
+        }
+        if chunk.finished {
+            m.set_var(h::MESSAGE_FINISHED, "1");
+        }
+        if !out.id.is_empty() {
+            m.set_var(h::APPSERVER_ID, &out.id);
+        } else if !out.request_type.is_empty() {
+            m.set_var(h::APPSERVER_ID, &counter.to_string());
+        }
+        if !ok {
+            drop(m);
+            dpma_log!("Outgoing message failure res={}", -1);
+            dpma_log!("error sending phone msg, session id {}", session.id);
+            return Err(());
+        }
+        if transport::write_msg(m).is_err() {
+            dpma_log!("Sending to {} '{}' had failure writing message", out.response_uri, type_name);
+        }
+        if !last {
+            std::thread::sleep(std::time::Duration::from_millis(u64::from(delay)));
+        }
+    }
+    st.last_activity = now();
+    Ok(())
+}
+
+/// `phone_msg_send_and_destroy` (FUN_0014e590): apply the transaction's
+/// configured / unconfigured requests to the session (saving it when that
+/// changes it), then send the transaction's outgoing message with its
+/// session.
+pub fn send_and_destroy(tx: &Arc<Transaction>) {
+    let Some(session) = tx.session.as_ref() else {
+        dpma_log!("Transaction missing session");
+        return;
+    };
+    let changed = {
+        let mut st = session.lock();
+        let mut changed = false;
+        if tx.configured.load(Ordering::SeqCst) && !st.configured {
+            st.configured = true;
+            changed = true;
+        }
+        if tx.unconfigured.load(Ordering::SeqCst) && st.configured {
+            st.configured = false;
+            changed = true;
+        }
+        changed
+    };
+    if changed {
+        super::persist::update_db_info(session);
+    }
+    let out = tx.outgoing.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(out) = out.as_ref() {
+        let _ = send(out, session);
+    }
+}
+
+/// `phone_msg_send_timeout` (FUN_0014e7e0): answer `msg`, whose session
+/// failed validation, with "Session Timeout" (-398) in the response type
+/// of its request type.  The reply goes to the raw Response-URI (without
+/// the transport the transaction's URI gets).
+pub fn send_timeout(msg: &Msg, session: &Arc<Session>) -> Result<(), ()> {
+    let uri = msg.get_var(h::RESPONSE_URI).unwrap_or_default();
+    let full_contact = msg.get_var(h::RESPONSE_FULLCONTACT).unwrap_or_default();
+    let request_type = msg.get_var(h::REQUEST_TYPE).unwrap_or_default();
+    let id = msg.get_var(h::APPSERVER_ID).unwrap_or_default();
+    if uri.is_empty() || request_type.is_empty() {
+        return Err(());
+    }
+    let Some(response_type) = dpma_proto::types::response_type_for(&request_type) else {
+        return Err(());
+    };
+    let out = Outgoing {
+        error: dpma_proto::errors::msg::SESSION_TIMEOUT,
+        response_uri: uri,
+        full_contact,
+        id,
+        response_type: response_type.to_string(),
+        ..Default::default()
+    };
+    let _ = send(&out, session);
+    Ok(())
+}
+
+/// `phone_msg_send_event` (FUN_0014e030): send an event with `body` to the
+/// session's phone.  `digium.assignment.update` goes out as the original
+/// sends it: no event name, ID `bootReset`, and Error-ID -398.  The error
+/// text matches the original's error buffer.
+pub fn send_event(session: &Arc<Session>, event: &str, body: &str) -> Result<(), String> {
+    let mut out = Outgoing::new();
+    {
+        let st = session.lock();
+        if st.response_uri.is_empty() {
+            dpma_log!("Unable to send event to '{}' with no uri", st.mac);
+            return Err("URI not available to send event".into());
+        }
+        out.response_uri = st.response_uri.clone();
+    }
+    if event == dpma_proto::types::events::ASSIGNMENT_UPDATE {
+        out.id = "bootReset".into();
+        out.error = dpma_proto::errors::msg::SESSION_TIMEOUT;
+    } else {
+        out.event_name = event.to_string();
+    }
+    out.append_str(body);
+    let _ = send(&out, session);
+    Ok(())
+}
+
+/// FUN_0014bf10 (`phone_msg_outgoing_send_handshake_error`): reply
+/// `HandshakeResponse` with Error-ID -398, unencrypted and unchunked, to a
+/// message for an unknown session, so the phone handshakes again.
 pub fn send_handshake_required(
-    _id: &str,
-    _response_uri: &str,
-    _session: Option<&Arc<Session>>,
-    _salt: &str,
-    _body: &str,
-    _origination_network: &str,
+    id: &str,
+    response_uri: &str,
+    session: Option<&Arc<Session>>,
+    salt: &str,
+    body: &str,
+    origination_network: &str,
 ) {
+    let Some(m) = transport::new_outgoing(response_uri) else { return };
+    m.set_exten(transport::SEND_EXTEN);
+    m.set_var(h::RESPONSE_TYPE, "HandshakeResponse");
+    m.set_var(h::ERROR_ID, "-398");
+    if !response_uri.is_empty() {
+        m.set_var(h::RESPONSE_URI, response_uri);
+    }
+    if let Some(s) = session {
+        if !s.id.is_empty() {
+            m.set_var(h::SESSION, &s.id);
+        }
+    }
+    if !origination_network.is_empty() {
+        m.set_var(h::ORIGINATION_NETWORK, origination_network);
+    } else if let Some(s) = session {
+        let net = s.lock().origination_network.clone();
+        if !net.is_empty() {
+            m.set_var(h::ORIGINATION_NETWORK, &net);
+        }
+    }
+    if !salt.is_empty() {
+        m.set_var(h::MESSAGE_SALT, salt);
+    }
+    if !body.is_empty() {
+        m.set_body(body);
+    }
+    if !id.is_empty() {
+        m.set_var(h::APPSERVER_ID, id);
+    }
+    if transport::write_msg(m).is_ok() {
+        dpma_debug!(3, "Sending to {} '{}' ERROR={}", response_uri, "HandshakeResponse", "-398");
+    } else {
+        dpma_log!("Sending to {} '{}' ERROR={} had failure writing message", response_uri, "HandshakeResponse", "-398");
+    }
 }

@@ -104,6 +104,26 @@ impl Msg {
         unsafe { from_ptr(ffi::ast_msg_get_body(self.ptr)) }
     }
 
+    /// The body's exact bytes (up to its NUL), without UTF-8 conversion.
+    pub fn body_bytes(&self) -> Option<Vec<u8>> {
+        unsafe {
+            let p = ffi::ast_msg_get_body(self.ptr);
+            if p.is_null() {
+                None
+            } else {
+                Some(std::ffi::CStr::from_ptr(p).to_bytes().to_vec())
+            }
+        }
+    }
+
+    /// Set the body from bytes (`ast_msg_set_body(msg, "%s", body)`): the
+    /// body ends at the first NUL, as it would in C.
+    pub fn set_body_bytes(&self, v: &[u8]) -> bool {
+        let end = v.iter().position(|&b| b == 0).unwrap_or(v.len());
+        let c = std::ffi::CString::new(&v[..end]).unwrap_or_default();
+        unsafe { ffi::dpma_glue_msg_set_body(self.ptr, c.as_ptr()) == 0 }
+    }
+
     /// The message's "to" (for received PJSIP messages, the Request-URI
     /// with a `pjsip:` prefix).
     pub fn to(&self) -> Option<String> {
