@@ -2,7 +2,7 @@
 //! unique id under the channel lock, and the queue member call scan
 //! (glue in `glue/channel.c`).
 //!
-//! Filled in by P10 "methods-calls" (wave 2).
+//! Filled in by P10 "methods-calls" (wave 2); state and answer by P14.
 
 use crate::types::AstChannel;
 use crate::util::{cstr, take_ast_string};
@@ -13,6 +13,27 @@ extern "C" {
     fn dpma_glue_channel_unref(chan: *mut AstChannel);
     fn dpma_glue_channel_name_uniqueid(chan: *mut AstChannel, name: *mut *mut c_char, uniqueid: *mut *mut c_char);
     fn dpma_glue_channel_queue_member_call(interface: *const c_char, created: *mut c_long) -> c_int;
+    fn ast_channel_state(chan: *const AstChannel) -> c_int;
+    fn ast_answer(chan: *mut AstChannel) -> c_int;
+}
+
+/// `AST_STATE_UP`.
+pub const STATE_UP: i32 = 6;
+
+/// `ast_channel_state(chan)` (`enum ast_channel_state`).
+///
+/// # Safety
+/// `chan` must be a live channel.
+pub unsafe fn state(chan: *const AstChannel) -> i32 {
+    ast_channel_state(chan)
+}
+
+/// `ast_answer(chan)`: 0 on success.
+///
+/// # Safety
+/// `chan` must be a live channel the caller is running on.
+pub unsafe fn answer(chan: *mut AstChannel) -> i32 {
+    ast_answer(chan)
 }
 
 /// An owned channel reference, dropped with `ast_channel_unref`.

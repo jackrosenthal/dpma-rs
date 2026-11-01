@@ -1,14 +1,19 @@
 //! Voicemail API (`ast_vm_*`): mailbox snapshots, move, remove, forward,
-//! and folder names.  The calls go to whichever voicemail provider is
+//! playback, and folder names.  The calls go to whichever voicemail provider is
 //! registered (normally app_voicemail); without one they fail, as in C.
 //!
 //! Strings are passed as bytes: the callers work on fixed-size C buffers
 //! and message ids that need not be UTF-8.  A string is cut at its first
 //! NUL byte, as C would see it.  The snapshot walk is in `glue/vm.c`.
 
+use crate::types::AstChannel;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_uint};
 use std::ptr;
+
+/// `ast_vm_msg_play_cb`: plays `playfile` (a path without extension) of a
+/// message `duration` seconds long on `chan`.
+pub type MsgPlayCb = unsafe extern "C" fn(chan: *mut AstChannel, playfile: *const c_char, duration: c_int);
 
 /// Opaque `struct ast_vm_mailbox_snapshot`.
 #[repr(C)]
@@ -59,6 +64,14 @@ extern "C" {
         delete_old: c_int,
     ) -> c_int;
     fn ast_vm_index_to_foldername(id: c_int) -> *const c_char;
+    fn ast_vm_msg_play(
+        chan: *mut AstChannel,
+        mailbox: *const c_char,
+        context: *const c_char,
+        folder: *const c_char,
+        msg_num: *const c_char,
+        cb: Option<MsgPlayCb>,
+    ) -> c_int;
 
     fn dpma_glue_vm_snapshot_total(snapshot: *const RawMailboxSnapshot) -> c_int;
     fn dpma_glue_vm_snapshot_folders(snapshot: *const RawMailboxSnapshot) -> c_int;
@@ -262,4 +275,22 @@ pub fn index_to_foldername(id: i32) -> Option<Vec<u8>> {
             Some(CStr::from_ptr(p).to_bytes().to_vec())
         }
     }
+}
+
+/// `ast_vm_msg_play`: play message `msg_num` (a message id) of `folder`
+/// in `mailbox@context` on `chan`, through `cb`.  Returns 0 on success.
+///
+/// # Safety
+/// `chan` must be a live channel the caller is running on.
+pub unsafe fn msg_play(
+    chan: *mut AstChannel,
+    mailbox: &[u8],
+    context: Option<&[u8]>,
+    folder: &[u8],
+    msg_num: &[u8],
+    cb: MsgPlayCb,
+) -> i32 {
+    let (mailbox, context) = (c_bytes(mailbox), opt_c(context));
+    let (folder, msg_num) = (c_bytes(folder), c_bytes(msg_num));
+    ast_vm_msg_play(chan, mailbox.as_ptr(), opt_ptr(&context), folder.as_ptr(), msg_num.as_ptr(), Some(cb))
 }
