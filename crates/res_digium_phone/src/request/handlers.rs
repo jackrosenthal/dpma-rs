@@ -171,8 +171,12 @@ const NULL_CONTACTS: &str = "<contacts group_name=\"null\" editable=\"0\" />\n";
 /// as it is.  A body without `file://` or a file that cannot be opened is
 /// answered with error -98 (File Not Found).
 ///
-/// The name is not checked: as in the original, `..` reaches files outside
-/// `file_directory`.
+/// Deviation (plan section 8, item 14): a name that could leave
+/// `file_directory` (an absolute path or one with a `..` component) is
+/// answered with the same error as a missing file.  The original opens
+/// `<file_directory>/<name>` whatever the name, so `..` reaches any file
+/// the Asterisk process can read.  Names in subdirectories of
+/// `file_directory` are served as before.
 pub fn handle_file(tx: Arc<Transaction>) -> i32 {
     file_reply(&tx);
     crate::session::send_and_destroy(&tx);
@@ -199,6 +203,11 @@ fn file_reply(tx: &Transaction) {
         append(tx, NULL_CONTACTS.as_bytes());
         return;
     }
+    if escapes_file_dir(&name) {
+        dpma_log!("File request for '{}' outside the file directory refused", name);
+        set_error(tx, errors::msg::FILE_NOT_FOUND);
+        return;
+    }
     let path = config_file_dir(&name);
     if path.is_empty() {
         dpma_log!("File request with null filename");
@@ -222,6 +231,13 @@ fn file_reply(tx: &Transaction) {
             Ok(n) => append(tx, &chunk[..n]),
         }
     }
+}
+
+/// True for a FileRequest name that is absolute or has a `..` component.
+/// (The original joins any name to the file directory with a `/`, so an
+/// absolute name stays inside it there; it is refused all the same.)
+fn escapes_file_dir(name: &str) -> bool {
+    name.starts_with('/') || name.split('/').any(|c| c == "..")
 }
 
 // ---------------------------------------------------------------------------

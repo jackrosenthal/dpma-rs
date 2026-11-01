@@ -20,7 +20,9 @@ Exit status 0 when every check passes.
 
 With "--via phone" (package P12) the methods are called the way phones
 call them instead: encrypted AsteriskRequests from the phone simulator
-(dev/sim; run mkpki.py and install-conf.sh for the instance first), with
+(dev/sim; run mkpki.py for the instance first, and leave out the
+simulator's test identify, "install-conf.sh --remove": it would also catch
+vm_uas.py's REGISTER, and the PJSIP helper identifies the simulator), with
 the phone's name and pin as the credentials.  The reply body must be the
 HTTP wrapper around the same document; return codes are not visible
 that way, and calls for phones that cannot authenticate are skipped.

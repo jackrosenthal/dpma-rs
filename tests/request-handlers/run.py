@@ -254,6 +254,21 @@ def test_file():
         expect("empty body", p.request("FileRequest", ""), "FileResponse", -98)
         # An empty name opens the directory itself, which reads as nothing.
         expect("file:// with no name", p.request("FileRequest", "file://"), "FileResponse", None, b"empty body")
+        # Subdirectories of file_directory are served; names that could
+        # leave it are refused like a missing file (plan section 8, item
+        # 14), although the files exist.  Absolute names are refused too,
+        # although the original looks them up inside file_directory
+        # ("<dir>//p12-small.txt").
+        for fname in ("sub/p12-sub.txt", "./sub/./p12-sub.txt", "..p12-dots.txt", "sub/..p12-dots.txt"):
+            with open(os.path.join(FILES, fname), "rb") as f:
+                expect("file://%s" % fname, p.file(fname), "FileResponse", None, f.read())
+        outside = os.path.join(os.path.dirname(FILES), "p12-outside.txt")
+        for fname in ("../p12-outside.txt", "sub/../../p12-outside.txt", "sub/../p12-small.txt", "..", "sub/..",
+                      outside, "/p12-small.txt", "//etc/hostname"):
+            mark = log_mark()
+            expect("file://%s refused" % fname, p.file(fname), "FileResponse", -98)
+            logged("file://%s refused (log)" % fname, mark,
+                   "File request for '%s' outside the file directory refused\n" % fname)
     finally:
         p.close()
 
@@ -499,6 +514,11 @@ def make_files():
         f.write(bytes(range(256)) * 20 + b"\0end")
     with open(os.path.join(FILES, "p12c-config.xml"), "wb") as f:
         f.write(b"<config>\n<!-- p12c's own configuration file -->\n</config>\n")
+    os.makedirs(os.path.join(FILES, "sub"), exist_ok=True)
+    for name, data in (("sub/p12-sub.txt", b"in a subdirectory\n"), ("..p12-dots.txt", b"two dots\n"),
+                       ("sub/..p12-dots.txt", b"two dots in sub\n"), ("../p12-outside.txt", b"outside\n")):
+        with open(os.path.join(FILES, name), "wb") as f:
+            f.write(data)
 
 
 SECTIONS = {

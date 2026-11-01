@@ -22,9 +22,10 @@ AMI responses and events are compared byte for byte with what the
 original's phone_ami.c and phone_request.c write; replies and events are
 checked as the simulated phone decrypts them.
 
---expiry also checks the 300 s expiry (takes about five minutes): as in the
-original, nothing runs the AMI scheduler, so the request is still queued
-afterwards; "dpmadev ami runq" then expires it.
+--expiry also checks the 300 s expiry (takes about five minutes): the AMI
+scheduler's thread drops a request nobody answers after 300 s (plan
+section 8, item 13; the original never runs its scheduler, so its requests
+never expire).
 
 Exit status 0 when every check passes.
 """
@@ -587,20 +588,23 @@ def check_session_gone(ami, b):
 
 
 def check_expiry(ami, a):
+    pos = log_size()
     ex, key, pt = forward(a, "com.p13.hello", "json", {"expire": 1}, "p13phone:1313")
+    t0 = time.time()
     dpma_message(ami, key, "com.p13.hello", "json", pt, "expiry")
-    print("     waiting 305 s for the expiry to be due ...", flush=True)
-    for _ in range(61):
+    print("     waiting about 300 s for the expiry ...", flush=True)
+    while time.time() - t0 < 290:
         time.sleep(5)
         a.ping()                            # keep the session active
-    check("expiry: nothing runs the scheduler (still queued)", [k for k, *_ in queued()] == [key], repr(queued()))
-    pos = log_size()
-    out = cli("dpmadev ami runq")
-    check("expiry: runq runs it", out.startswith("1 scheduled entries ran"), out)
+    check("expiry: still queued after 290 s", [k for k, *_ in queued()] == [key], repr(queued()))
+    while time.time() - t0 < 320 and queued():
+        time.sleep(1)
+    elapsed = time.time() - t0
+    same("expiry: no longer queued", queued(), [])
+    check("expiry: expired after 300 s", 295 <= elapsed < 320, "%.1f s" % elapsed)
     time.sleep(0.3)
     text = log_since(pos)
     check("expiry: logged", "No response to request (%s), expired." % key in text, text)
-    same("expiry: no longer queued", queued(), [])
     same("expiry: later response fails", ami.action("DPMAMessageResponse", ("RequestID", key), ("Format", "json"),
                                                     ("Response", "x")), resp("Failure"))
     r = reply_of(a, ex, timeout=1)
@@ -613,7 +617,8 @@ def main():
     if "dpmadev ami queue" not in cli("core show help dpmadev ami"):
         sys.exit("needs a devtest build of res_digium_phone running in slot %s" % SLOT)
     ami = RawAmi(AMI_PORT)
-    # Requests left queued by an earlier run never expire; answer them.
+    # Requests left queued by an earlier run expire only after 300 s;
+    # answer them.
     for key, *_ in queued():
         ami.action("DPMAMessageResponse", ("RequestID", key), ("Format", "flush"))
     a = new_phone("000fd3001301")
