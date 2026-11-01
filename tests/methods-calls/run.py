@@ -5,9 +5,10 @@ echo) against a private Asterisk instance.
     DPMA_SLOT=<n> python3 -I dev/tests/methods-calls/run.py [-v] [--via hook|phone|http]
 
 Prerequisites: a devtest build installed in the instance
-(cargo build -p res_digium_phone --features devtest), the test setup
-(dev/tests/methods-calls/setup.sh --original-helper), and Asterisk
-running.  The methods are invoked through "dpmadev method call" (JSON)
+(cargo build && cargo build -p res_digium_phone --features devtest, then
+dev/tools/ast.sh install, which installs the PJSIP helpers too), the test
+setup (dev/tests/methods-calls/setup.sh), and Asterisk running.  The
+methods are invoked through "dpmadev method call" (JSON)
 and "dpmadev calls xml" (XML); the expected documents are the ones the
 original's phone_method_internal_api.c builds.  Recording INFOs and the
 parked call MESSAGE are checked with phone.py registered as 1001 (needs the
@@ -166,6 +167,17 @@ def log_mark():
     return os.path.getsize(os.path.join(INST, "var/log/asterisk/messages.log"))
 
 
+def logged(mark, text, timeout=3.0):
+    """Whether `text` is in messages.log after `mark`.  Asterisk's logger
+    writes from its own thread, so wait up to `timeout` seconds for it."""
+    deadline = time.time() + timeout
+    while text not in messages_since(mark):
+        if time.time() >= deadline:
+            return False
+        time.sleep(0.1)
+    return True
+
+
 Q = "switchvox.users.callQueues."
 NOT_FOUND = "Parameters not found: %s "
 SUCCESS = {"success": {}}
@@ -190,7 +202,7 @@ def queues():
         {"name": "p10support", "account_id": "p10support", "total_members": 0, "loggedin_status": "logged_out"},
         {"name": "p10static", "account_id": "p10static", "loggedin_status": "manager"},
         {"name": "p10ghost", "account_id": "p10ghost", "loggedin_status": "logged_out"}]}}))
-    check("getList: missing application logged", "Failed to find application 'p10-nosuchapp'" in messages_since(mark))
+    check("getList: missing application logged", logged(mark, "Failed to find application 'p10-nosuchapp'"))
     expect("getList: static member", call("p10phone2", m, {"account_id": "1002"}), 0, ok(m, {"callQueues": {"callQueue": [
         {"name": "p10static", "account_id": "p10static", "loggedin_status": "permanent", "total_members": "1", "members_logged_in": "1", "callers_waiting": "0"}]}}))
 
@@ -275,7 +287,7 @@ def queues():
     check("logout: QueueRemove and logout_exten", "Local/agent@p10test" not in show and "Local/1001@p10test" not in show, show)
     mark = log_mark()
     call("p10phone", Q + "pause", {"account_id": "1001", "reason": "x", "call_queue_account_id": "p10sales"})
-    check("pause: failure only logged", "Failed to pause queue member Local/agent@p10test on queue p10sales" in messages_since(mark))
+    check("pause: failure only logged", logged(mark, "Failed to pause queue member Local/agent@p10test on queue p10sales"))
 
 
 def parking(phone_log):
@@ -335,15 +347,18 @@ def recording(phone_log):
     # The original reads "Success" into an 8-byte buffer and always reports
     # an error; dpma-rs reports the success (plan section 8, item 10).
     expect("startRecording", call("p10phone", m, p), 0, ok(m, SUCCESS))
-    check("startRecording: no failure logged", "Failed to start MixMonitor" not in messages_since(mark))
     chan = [l.split("!")[0] for l in cli("core show channels concise").splitlines() if l.startswith("PJSIP/1001-")]
     check("startRecording: MixMonitor running", bool(chan) and "MIXMONITOR_FILENAME" in cli("core show channel " + chan[0]))
+    time.sleep(1)
+    check("startRecording: no failure logged", "Failed to start MixMonitor" not in messages_since(mark))
+    with open(phone_log) as f:
+        log = f.read()
+    check("startRecording: INFO sent", log.count("X-Event-Type: digium.startRecording.success") == 1, log)
     expect("stopRecording", call("p10phone", s, p), 0, ok(s, SUCCESS))
     time.sleep(1)
     with open(phone_log) as f:
         log = f.read()
     check("stopRecording: INFO sent", "X-Event-Type: digium.stopRecording.success" in log, log)
-    check("startRecording: INFO sent", log.count("X-Event-Type: digium.startRecording.success") == 1, log)
     x = f"<parameters><requested_account_id>1001</requested_account_id><call_id>{cid}</call_id></parameters>"
     expect("startRecording (XML)", call_xml("p10phone", m, x), 0, xml_ok(m))
     time.sleep(1)

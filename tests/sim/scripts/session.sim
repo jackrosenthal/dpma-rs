@@ -1,8 +1,9 @@
 # Session layer checks (package P7), written from the decompile and passed
 # by the P7 implementation over UDP and TCP.  Needs the module with
 # sessions, the test PKI (dev/sim/mkpki.py), and the test configuration
-# (dev/sim/install-conf.sh).  Over TCP the Session Timeout replies arrive
-# over UDP (see README.md).
+# (dev/sim/install-conf.sh).  Every reply must arrive over the transport
+# the simulator uses, Session Timeout replies included (port plan section
+# 8, item 11; the original sends those over UDP).
 #
 #   DPMA_SLOT=<n> dev/sim/dpma_sim.py script dev/sim/scripts/session.sim
 #   DPMA_SLOT=<n> dev/sim/dpma_sim.py --transport tcp script dev/sim/scripts/session.sim
@@ -17,7 +18,7 @@ expect header:Token-Auth-Requirements? header:Userlist-Auth-Requirements?
 
 # Encrypted Ping: PingResponse with the body "empty body".
 ping
-expect type=PingResponse error=none encrypted=yes body="empty body"
+expect type=PingResponse error=none encrypted=yes body="empty body" transport=${transport}
 
 # Echo: answered directly, unencrypted, Error-ID 0, body echoed.
 echo "plain echo"
@@ -35,9 +36,9 @@ expect type=HandshakeResponse error=-398
 # MAC or contact mismatch: "Session Timeout" (-398) in the request's own
 # response type, encrypted, prefixed "Command: ".
 raw PingRequest --mac 000fd3999999
-expect type=PingResponse error=-398 encrypted=yes payload~"Session Timeout"
+expect type=PingResponse error=-398 encrypted=yes payload~"Session Timeout" transport=${transport}
 raw PingRequest --contact sip:000fd3000001@127.0.0.1:9
-expect type=PingResponse error=-398
+expect type=PingResponse error=-398 transport=${transport}
 
 # An unencrypted AsteriskRequest with a body is dropped.
 try raw AsteriskRequest --encrypt no --body "X-Digium-AppServer-Digest-Auth=a:b" --timeout 2
@@ -63,6 +64,18 @@ raw PingRequest --session ${old} --encrypt no
 expect type=HandshakeResponse error=-398
 ping
 expect type=PingResponse
+
+# Handshake bodies in chunks that end right before and after every BEGIN
+# and END line: Asterisk strips those line breaks and the module restores
+# them (port plan section 8, item 12; the original rejects these).
+handshake --bundle legacy --pem-cuts
+expect type=HandshakeResponse error=none header:Handshake-Version! appserver=ok
+ping
+expect type=PingResponse error=none
+handshake --bundle chain --pem-cuts
+expect type=HandshakeResponse error=none header:Handshake-Version=1 appserver=ok
+ping
+expect type=PingResponse error=none
 
 # Accepted: expired certificates (errors 9 and 10 are ignored) and a
 # 512-bit SHA-1 legacy certificate.

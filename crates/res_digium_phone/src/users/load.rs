@@ -511,8 +511,10 @@ fn build_phone(reg: &mut Registry, cat: &Category, general: &crate::config::Gene
 }
 
 /// `set_voicemail_pin`: a voicemail.conf mailbox entry.  The phone whose
-/// primary line has this mailbox takes the voicemail password as its pin
-/// when it is configured with `pin=voicemail`.
+/// primary line has this mailbox (`phone_user_for_mailbox`, which locks
+/// each primary line; [`process`] holds every line lock here) takes the
+/// voicemail password as its pin when it is configured with
+/// `pin=voicemail`.
 fn set_voicemail_pin(reg: &mut Registry, mailbox: &str, context: &str, value: &str) {
     let target = format!("{}@{}", mailbox, context);
     let mut found = None;

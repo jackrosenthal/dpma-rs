@@ -488,6 +488,18 @@ pub fn for_last_token_mac(mac: &str) -> Option<String> {
 /// the first phone with that MAC.  Failing that, the phone named
 /// `username`.
 pub fn username_for_token(username: &str, mac: &str) -> Option<String> {
+    // The original locks each primary line while comparing it; take those
+    // line locks first, before the registry lock (see "Line locks" in
+    // exports::objects).
+    let primaries: Vec<String> = if username.is_empty() {
+        Vec::new()
+    } else {
+        read()
+            .as_ref()
+            .map(|reg| reg.phones.values().filter_map(|p| p.lines.first().map(|l| l.name.clone())).collect())
+            .unwrap_or_default()
+    };
+    let _lines = crate::exports::objects::lock_lines(primaries.iter().map(String::as_str));
     let g = read();
     let reg = g.as_ref()?;
     for p in reg.phones.values() {
@@ -543,7 +555,9 @@ pub fn has_line(phone: &str, line: &str) -> bool {
 }
 
 /// `phone_mailbox_by_line`: the mailbox of line `line`, if it has one.
+/// The line's lock is held for the read, as in the original.
 pub fn mailbox_by_line(line: &str) -> Option<String> {
+    let _line = crate::exports::objects::lock_lines([line]);
     let g = read();
     let l = g.as_ref()?.lines.get(line)?;
     (!l.mailbox.is_empty()).then(|| l.mailbox.clone())
