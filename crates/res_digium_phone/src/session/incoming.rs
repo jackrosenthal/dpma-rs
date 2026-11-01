@@ -62,7 +62,7 @@ pub(crate) fn reset() {
 }
 
 /// Make the next [`next_transaction`] prune (test hooks).
-#[allow(dead_code)]
+#[cfg(feature = "devtest")]
 pub(crate) fn force_prune() {
     LAST_PRUNE.store(0, Ordering::SeqCst);
 }

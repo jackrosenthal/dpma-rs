@@ -97,12 +97,21 @@ pub fn load(_config_file: &str) -> Result<(), ()> {
 }
 
 /// `phone_msg_reload` (FUN_00150420): refresh the global auth flags.  The
-/// trust material is read again too (the original's is built in).
+/// trust material is read again too (the original's is built in); what
+/// cannot be read keeps its previous value.
 pub fn reload(_config_file: &str) -> Result<(), ()> {
     set_global_auth_flags(crate::config::get().auth_flags);
     if TRUST.read().unwrap_or_else(|e| e.into_inner()).is_some() {
-        let t = load_trust();
-        *TRUST.write().unwrap_or_else(|e| e.into_inner()) = Some(t);
+        let new = load_trust();
+        let mut g = TRUST.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(old) = g.as_mut() {
+            if new.ca.is_some() {
+                old.ca = new.ca;
+            }
+            if !new.appserver_pem.is_empty() {
+                old.appserver_pem = new.appserver_pem;
+            }
+        }
     }
     Ok(())
 }
