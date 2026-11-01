@@ -123,7 +123,11 @@ pub fn reload(filename: &str) -> Result<(), ()> {
     if let Some(src) = SOURCES.lock().unwrap().as_mut() {
         src.phones = cats;
     }
-    process(filename)
+    let res = process(filename);
+    // phone_user_load_config: the default contacts document is rebuilt on
+    // its next use.
+    super::contacts::reset_cache();
+    res
 }
 
 /// `phone_users_unload`.

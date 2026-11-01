@@ -92,6 +92,29 @@ pub fn all() -> Vec<Package> {
     PACKAGES.read().unwrap().as_ref().map(|m| m.values().cloned().collect()).unwrap_or_default()
 }
 
+/// `firmwares_no_option_settings` (FUN_0017a9f0): the `<firmwares>`
+/// element of a phone configuration document for a phone without
+/// `firmware=` options, listing every package for network `network` with
+/// URLs under `url_prefix` (the network's `file_url_prefix`).  Each piece
+/// goes through `append`, one call per piece of the original.  Nothing is
+/// emitted when the packages were never loaded.
+pub fn no_option_settings(append: &mut dyn FnMut(&str), url_prefix: &str, network: &str) {
+    let g = PACKAGES.read().unwrap();
+    let Some(map) = g.as_ref() else { return };
+    append("<firmwares>\n");
+    for p in map.values() {
+        if p.version.is_empty() || p.file.is_empty() {
+            continue;
+        }
+        let prefix = if p.file.starts_with('/') || p.file.contains("//") { "" } else { url_prefix };
+        append(&format!(
+            "<firmware model=\"{}\" version=\"{}\" url=\"{}{}\" network_id=\"{}\" />\n",
+            p.model, p.version, prefix, p.file, network
+        ));
+    }
+    append("</firmwares>\n");
+}
+
 /// `firmwares_cli_display`, shown at the top of `digium_phones show
 /// firmwares`.
 pub fn cli_display(a: &CliArgs) {
