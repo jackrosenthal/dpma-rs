@@ -52,6 +52,16 @@ pub fn verbose_atleast(level: i32) -> bool {
     unsafe { ffi::dpma_glue_verbose_atleast(level) != 0 }
 }
 
+extern "C" {
+    static ast_verb_sys_level: std::os::raw::c_int;
+}
+
+/// `ast_verb_sys_level`: the highest verbosity of any console or logger
+/// channel (what `VERBOSITY_ATLEAST` tests).
+pub fn verb_sys_level() -> i32 {
+    unsafe { std::ptr::addr_of!(ast_verb_sys_level).read_volatile() }
+}
+
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __func {
