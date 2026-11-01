@@ -5,7 +5,7 @@ Tools for testing res_digium_phone without Digium phones
 
 | File | Purpose |
 |---|---|
-| `dpma_sim.py` | The phone simulator: SIP MESSAGE over UDP or TCP, handshake, encryption, chunking, every request type, events, scripts, self-test.  Python 3 with `cryptography`. |
+| `dpma_sim.py` | The phone simulator: SIP MESSAGE over UDP or TCP, handshake, encryption, chunking, every request type, events, scripts, self-test.  Python 3 with `cryptography` 42 or later (tested with 50). |
 | `ami.py` | AMI client: send an action, print the response and events; also a Python class used by the simulator's scripts. |
 | `mkpki.py` | Generates the test PKI and installs the trust material into an instance. |
 | `install-conf.sh` | Installs the test configuration (`conf/`) into an instance. |
