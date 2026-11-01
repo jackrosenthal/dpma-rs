@@ -7,7 +7,7 @@ devtest build of res_digium_phone installed, and Asterisk running:
     export DPMA_SLOT=<n>
     dev/tests/methods-vm/setup.sh
     dev/tools/ast.sh install && dev/tools/ast.sh start
-    python3 dev/tests/methods-vm/run.py
+    python3 dev/tests/methods-vm/run.py [--via hook|phone]
 
 The script empties the test mailboxes, leaves messages with the dialplan
 (Local channels into VoiceMail()), adds a few hand-made spool messages
@@ -17,6 +17,16 @@ with the document the original builds (key order included), computed
 here from the spool and a model of the decompile; the spool and the
 message trackers ("dpmadev vm trackers") are checked after each change.
 Exit status 0 when every check passes.
+
+With "--via phone" (package P12) the methods are called the way phones
+call them instead: encrypted AsteriskRequests from the phone simulator
+(dev/sim; run mkpki.py and install-conf.sh for the instance first), with
+the phone's name and pin as the credentials.  The reply body must be the
+HTTP wrapper around the same document; return codes are not visible
+that way, and calls for phones that cannot authenticate are skipped.
+This mode also checks that a phone's new session (a TokenRequest after a
+new handshake) drops its message trackers, and lists a page of 50 of 55
+messages (a reply of many chunks).
 """
 import glob
 import json
@@ -31,6 +41,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "dev", "sim"))
 from ami import AmiClient  # noqa: E402
+
+# How methods are called: "hook" ("dpmadev method call") or "phone".
+VIA = sys.argv[sys.argv.index("--via") + 1] if "--via" in sys.argv[:-1] else "hook"
+if VIA not in ("hook", "phone"):
+    sys.exit("usage: run.py [--via hook|phone]")
 
 SLOT = int(os.environ.get("DPMA_SLOT", "0"))
 if not SLOT:
@@ -85,8 +100,49 @@ def esc(s):
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
+# --via phone: the simulated phone, and the pins of the test phones.
+PINS = {"vmphone": "1234", "vmphone2": "2222", "vmphone3": "3333", "nomboxphone": "4444", "ghostphone": "5555"}
+HTTP = b"HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\n\r\n"
+sim = None
+replies = []
+
+
+def start_phone():
+    """Handshake as vmphone and get a token, so the session is authenticated
+    (and never pruned while the checks run)."""
+    global sim
+    import io
+    from dpma_sim import Options, Phone
+    if sim is None:
+        sim = Phone(Options(slot=SLOT, mac="000fd3vm0001"), out=io.StringIO())
+        sim.start()
+    ex = sim.handshake()
+    if not ex.ok:
+        raise SystemExit("handshake failed:\n" + ex.describe())
+    ex = sim.get_token(user="vmphone", config_password="344486")
+    if not ex.ok:
+        raise SystemExit("token failed:\n" + ex.describe())
+
+
+def call_phone(phone, method, params):
+    text = params if isinstance(params, str) else dump(params)
+    doc = '{"request": {"method": "%s", "parameters": %s}}' % (VM + method, text)
+    ex = sim.asterisk(doc, auth="%s:%s" % (phone, PINS[phone]), timeout=10)
+    r = ex.reply
+    if r is None or not r.ok:
+        return None, "(no reply or a bad one: %s)" % ex.describe()
+    replies.append(r)
+    body = r.payload
+    if not body.startswith(HTTP) or not body.endswith(b"\r\n\r\n"):
+        return None, "(not wrapped: %r)" % body
+    return None, body[len(HTTP):-4].decode("utf-8", "replace")
+
+
 def call(phone, method, params):
-    """Invoke a JSON method; returns (return code, response text)."""
+    """Invoke a JSON method; returns (return code, response text).  The
+    return code is None with --via phone."""
+    if VIA == "phone":
+        return call_phone(phone, method, params)
     text = params if isinstance(params, str) else dump(params)
     out = cli("dpmadev method call %s %s %s" % (phone, VM + method, esc(text)))
     m = re.match(r"Return code: (-?\d+)", out[0]) if out else None
@@ -102,15 +158,29 @@ def ok_doc(method, result):
     return dump({"response": {"method": VM + method, "result": result}})
 
 
+def skipped(name, phone):
+    """With --via phone, a phone that cannot authenticate cannot call."""
+    if VIA == "phone" and phone not in PINS:
+        print("skip %s (no credentials for %s)" % (name, phone))
+        return True
+    return False
+
+
 def expect_error(name, phone, method, params, code, detail):
+    if skipped(name, phone):
+        return
     rc, body = call(phone, method, params)
-    same(name + " (code)", rc, -1)
+    if VIA == "hook":
+        same(name + " (code)", rc, -1)
     same(name, body, err_doc(method, code, detail))
 
 
 def expect_ok(name, phone, method, params, result):
+    if skipped(name, phone):
+        return
     rc, body = call(phone, method, params)
-    same(name + " (code)", rc, 0)
+    if VIA == "hook":
+        same(name + " (code)", rc, 0)
     same(name, body, ok_doc(method, result))
 
 
@@ -675,12 +745,42 @@ def test_tracker_lifecycle():
         time.sleep(1)
     cli("dpmadev vm forget vmphone")
     same("dpmadev vm forget", trackers("vmphone"), None)
+    if VIA == "phone":
+        # A new session for the phone (P8's phone_user_token_set_last_info)
+        # drops its trackers.
+        call("vmphone", "getList", {"account_id": "1001", "folder": "INBOX"})
+        same("trackers before a new session", trackers("vmphone") is not None, True)
+        start_phone()
+        same("a new session drops the phone's trackers", trackers("vmphone"), None)
+
+
+def test_big_list():
+    """55 messages: getList pages of 50 (with --via phone, replies of many
+    chunks)."""
+    for i in range(55):
+        craft("default/1001", "Cust2", i, "1641000000-0000b%03d" % i, b'"Big %d" <%d>' % (i, 9000 + i),
+              1641000000 + i)
+    try:
+        before = len(replies)
+        for page in (1, 2):
+            want, ids = getlist_doc("default/1001", "Cust2", "Cust2", page=page)
+            rc, body = call("vmphone", "getList", {"account_id": "1001", "folder": "Cust2",
+                                                   "page_number": str(page)})
+            same("getList 55 messages, page %d" % page, body, want)
+            same("getList 55 messages, page %d trackers" % page, trackers("vmphone"), [tuple(x) for x in ids])
+        if VIA == "phone":
+            chunks = [len(r.parts) for r in replies[before:]]
+            check("getList pages came in many chunks", len(chunks) == 2 and chunks[0] > 10, repr(chunks))
+    finally:
+        shutil.rmtree(os.path.join(SPOOL, "default", "1001", "Cust2"), ignore_errors=True)
 
 
 def main():
     global ami
     ami = AmiClient(slot=SLOT)
     ami.connect()
+    if VIA == "phone":
+        start_phone()
     try:
         setup_messages()
         test_folder_list()
@@ -691,8 +791,11 @@ def main():
         test_remove()
         test_play()
         test_tracker_lifecycle()
+        test_big_list()
     finally:
         ami.close()
+        if sim is not None:
+            sim.close()
     print("\n%d checks, %d failed" % (checks, len(failures)))
     for f in failures:
         print("  " + f)

@@ -513,6 +513,8 @@ pub fn line_find_authenticated(name: &str, secret: &str) -> Option<String> {
     if name.is_empty() {
         return None;
     }
+    // The original compares under the line's lock (see "Line locks").
+    let _line = crate::exports::objects::lock_lines([name]);
     let g = read();
     let l = g.as_ref()?.lines.get(name)?;
     (l.secret == secret).then(|| l.name.clone())

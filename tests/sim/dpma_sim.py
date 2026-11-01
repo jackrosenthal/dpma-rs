@@ -1146,12 +1146,16 @@ class Phone:
         with self._lock:
             self._waiting[txid] = ex
         common = [("Contact", "<%s>" % (contact or self.contact_uri)),
-                  ("User-Agent", self.opts.user_agent),
                   ("Content-Type", "text/plain")]
-        if self.opts.digium_ua_header:
-            # Phones send it; the PJSIP helper identifies them by it.
-            common.insert(2, ("X-Digium-User-Agent", self.opts.user_agent))
-        from_uri = "sip:%s@%s" % (self.mac, self.sip.local_addr[0])
+        # An empty user agent sends neither header.
+        if self.opts.user_agent:
+            common.insert(1, ("User-Agent", self.opts.user_agent))
+            if self.opts.digium_ua_header:
+                # Phones send it; the PJSIP helper identifies them by it.
+                common.insert(2, ("X-Digium-User-Agent", self.opts.user_agent))
+        # (An empty MAC, for tests of phones without one, still needs a
+        # valid From user.)
+        from_uri = "sip:%s@%s" % (self.mac or "phone", self.sip.local_addr[0])
         for i, chunk in enumerate(chunks):
             hdrs = common + base + [(H_SEQUENCE, str(i))]
             if i == len(chunks) - 1:
@@ -1851,7 +1855,8 @@ def build_parser(script=False):
         g.add_argument("--transport", choices=("udp", "tcp"), default="udp")
         g = ap.add_argument_group("phone")
         g.add_argument("--mac", default=DEFAULT_MAC, help="default %(default)s")
-        g.add_argument("--user-agent", default=DEFAULT_UA, help="default %(default)r")
+        g.add_argument("--user-agent", default=DEFAULT_UA,
+                       help="default %(default)r; '' sends no User-Agent headers")
         g.add_argument("--no-digium-ua-header", action="store_true",
                        help="do not send X-Digium-User-Agent (by which the PJSIP helper "
                             "res_pjsip_endpoint_identifier_dpma identifies phones)")

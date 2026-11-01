@@ -120,7 +120,7 @@ Global options (before the command):
 | `--local-host`, `--local-port` | 127.0.0.1, any | The simulator's socket.  `--local-host 127.0.0.2` selects the loopback test path. |
 | `--transport udp\|tcp` | udp | |
 | `--mac` | `000fd3000001` | `X-Digium-AppServer-MACAddress` (colons removed) |
-| `--user-agent` | `Digium D65 2_9_17` | Sent as `User-Agent` and `X-Digium-User-Agent` |
+| `--user-agent` | `Digium D65 2_9_17` | Sent as `User-Agent` and `X-Digium-User-Agent`; an empty one sends neither |
 | `--no-digium-ua-header` | off | Do not send `X-Digium-User-Agent`.  The PJSIP helper (res_pjsip_endpoint_identifier_dpma) gives every request with that header its own endpoint, whose context is `pjsip_message_context`; use this option for the loopback path while the helper is loaded. |
 | `--contact` | `sip:<mac>@<host>:<port>` | The Contact URI (the session is bound to it) |
 | `--origination-network` | none | Sends `X-Origination-Network` |
