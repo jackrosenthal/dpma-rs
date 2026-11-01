@@ -425,7 +425,8 @@ def test_ami():
                            Response=body)
                 r = p.wait_reply(ex, 10).reply
                 check("%s: answered through DPMAMessageResponse" % fmt,
-                      r is not None and r.payload.startswith(HTTP), repr(r and r.payload))
+                      r is not None and r.payload.startswith(HTTP) and b"ok" in r.payload,
+                      repr(r and r.payload))
             else:
                 # Without P13's queue the request cannot wait: the reply
                 # goes out at once with just the HTTP header.
@@ -435,7 +436,11 @@ def test_ami():
         ex = call(p, "p12a:4321", method_request("p12.ami.method", "scalar"), wait=False)
         ev = L.ami.wait_event("DPMAMessage", timeout=2)
         check("JSON scalar parameters: no DPMAMessage", ev is None, repr(ev))
-        if not p13:
+        if p13:
+            # It still waits for DPMAMessageResponse (which nobody can
+            # send without the event).
+            check("JSON scalar parameters: queued, no reply", p.wait_reply(ex, 2).reply is None)
+        else:
             expect("JSON scalar parameters: bare header", p.wait_reply(ex, 5), "AsteriskResponse", None, HTTP)
         # A built-in method shadows an AMI registration of the same name.
         cli("dpmadev method register ami test.dpma.api.echo")

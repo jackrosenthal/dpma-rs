@@ -399,9 +399,6 @@ fn userlist_reply(tx: &Transaction) {
 /// The start of every AsteriskResponse and HTTPResponse body.
 const HTTP_HEADER: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\n\r\n";
 
-/// `EVENT_FLAG_AGENT`, the category of the `DPMAMessage` event.
-const EVENT_FLAG_AGENT: i32 = 0x20;
-
 /// `FUN_00176900`: the phone that `user:secret` authenticates (both parts
 /// stripped of blanks; no colon means no secret): the phone named `user`
 /// with pin `secret`, else the first phone with the line named `user`
@@ -425,23 +422,10 @@ fn authenticate(credentials: &str) -> Option<String> {
     users::runtime::phone_for_line(&line)
 }
 
-/// `__handle_request_ami` (inlined in FUN_00176a60): tell AMI clients about
-/// a request for a method they registered with `DPMAMessageRegister`.
-fn raise_dpma_message(request_id: &str, method: &str, format: &str, params: &str) {
-    dpma_ast::manager::event(
-        EVENT_FLAG_AGENT,
-        "DPMAMessage",
-        &format!(
-            "RequestID: {}\r\nMethod: {}\r\nFormat: {}\r\nParameters: {}\r\n",
-            request_id, method, format, params
-        ),
-    );
-}
-
-/// A request handed to AMI: answered later by `DPMAMessageResponse`.
+/// A request handed to AMI (`ami::messages::raise_event` was called): the
+/// reply waits for `DPMAMessageResponse`.
 struct Forwarded {
     method: String,
-    format: &'static str,
 }
 
 /// `handle_request_asterisk` (FUN_00176a60), registered for both
@@ -474,24 +458,11 @@ pub fn handle_http_or_asterisk(tx: Arc<Transaction>) -> i32 {
     0
 }
 
-/// Keep the transaction until AMI answers (the original allocates the
-/// queued message, schedules its expiry, then links it).  When that
-/// fails, the reply is sent at once with just the HTTP header.
+/// Keep the reply until AMI answers (`ami::messages::queue_request`: the
+/// original schedules the expiry, then links the queued message).  When
+/// that fails, the reply is sent at once with just the HTTP header.
 fn queue_for_ami(tx: &Arc<Transaction>, f: Forwarded) {
-    use crate::ami::messages;
-    let request_id = tx.key.clone();
-    let msg = messages::QueuedMsg {
-        request_id: request_id.clone(),
-        method: f.method,
-        format: f.format.to_string(),
-        tx: tx.clone(),
-    };
-    if messages::queue_link(msg).is_err() {
-        crate::session::send_and_destroy(tx);
-        return;
-    }
-    if messages::schedule_expiry(&request_id).is_err() {
-        drop(messages::queue_unlink(&request_id));
+    if crate::ami::messages::queue_request(tx, &f.method).is_err() {
         crate::session::send_and_destroy(tx);
     }
 }
@@ -589,8 +560,8 @@ fn xml_request(tx: &Arc<Transaction>, phone: &str, text: &[u8], buf: &mut String
         }
         if method::is_ami(&method) {
             let text = params.text();
-            raise_dpma_message(&tx.key, &method, "XML", text.as_deref().unwrap_or("(null)"));
-            return Some(Forwarded { method, format: "XML" });
+            crate::ami::messages::raise_event(&tx.key, &method, "XML", text.as_deref().unwrap_or("(null)"));
+            return Some(Forwarded { method });
         }
         rq::METHOD_NOT_FOUND
     };
@@ -639,9 +610,9 @@ fn json_request(tx: &Arc<Transaction>, phone: &str, text: &[u8], buf: &mut Strin
         // or an array; then no event is raised, but the request still
         // waits for an answer.
         if let Some(params) = params.dump() {
-            raise_dpma_message(&tx.key, &method, "JSON", &params);
+            crate::ami::messages::raise_event(&tx.key, &method, "JSON", &params);
         }
-        return Some(Forwarded { method, format: "JSON" });
+        return Some(Forwarded { method });
     }
     // The original passes the method name as the printf format of the
     // detail.
