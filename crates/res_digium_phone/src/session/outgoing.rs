@@ -294,13 +294,13 @@ pub fn send_timeout(msg: &Msg, session: &Arc<Session>) -> Result<(), ()> {
 /// session's phone.  `digium.assignment.update` goes out as the original
 /// sends it: no event name, ID `bootcReset`, and Error-ID -398.  The error
 /// text matches the original's error buffer.
-pub fn send_event(session: &Arc<Session>, event: &[u8], body: &[u8]) -> Result<(), Vec<u8>> {
+pub fn send_event(session: &Arc<Session>, event: &[u8], body: &[u8]) -> Result<(), &'static str> {
     let mut out = Outgoing::new();
     {
         let st = session.lock();
         if st.response_uri.is_empty() {
             dpma_log!("Unable to send event to '{}' with no uri", st.mac);
-            return Err("URI not available to send event".into());
+            return Err("URI not available to send event");
         }
         out.response_uri = st.response_uri.clone();
     }

@@ -372,7 +372,7 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             a.argv[4],
             body.len(),
             match res {
-                Ok(()) => b"ok".to_vec(),
+                Ok(()) => "ok",
                 Err(e) => e,
             }
         ));

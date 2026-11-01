@@ -170,7 +170,9 @@ class AmiClient:
         msg = AmiMessage()
         try:
             for raw in f:
-                line = raw.decode("utf-8", "replace").rstrip("\r\n")
+                # Bytes that are not UTF-8 survive as lone surrogates
+                # ("surrogateescape"), so callers can get them back exactly.
+                line = raw.decode("utf-8", "surrogateescape").rstrip("\r\n")
                 if line == "":
                     if msg:
                         self._dispatch(msg)
@@ -207,7 +209,7 @@ class AmiClient:
         for src in (fields or {}), kw:
             items += list(src.items()) if isinstance(src, dict) else list(src)
         data = "".join("%s: %s\r\n" % (k, v) for k, v in items) + "\r\n"
-        self.sock.sendall(data.encode())
+        self.sock.sendall(data.encode("utf-8", "surrogateescape"))
         return action_id
 
     def action(self, action, fields=None, timeout=None, list_timeout=None, **kw):

@@ -609,24 +609,24 @@ pub fn send_reconfigure(session_id: &[u8], uri: &[u8], delete_token: bool) -> Re
 /// `digium.assignment.update` goes out instead as id `bootcReset` with
 /// message error -398 (Session Timeout) and no event name.  The error is
 /// the text the original writes to its caller's buffer.
-pub fn send_event(phone: &[u8], event: &[u8], body: &[u8]) -> Result<(), Vec<u8>> {
+pub fn send_event(phone: &[u8], event: &[u8], body: &[u8]) -> Result<(), &'static str> {
     let (name, uri, sid) = {
         let g = read();
         match g.as_ref().and_then(|r| r.phones.get(phone)) {
             Some(p) => (p.name.clone(), p.last_uri.clone(), p.last_session_id.clone()),
             None => {
                 dpma_log!("Unable to send without user");
-                return Err("Memory allocation error".into());
+                return Err("Memory allocation error");
             }
         }
     };
     if uri.is_empty() {
         dpma_log!("Unable to send event to '{}' with no uri", name);
-        return Err("Phone has not contacted server".into());
+        return Err("Phone has not contacted server");
     }
     if sid.is_empty() {
         dpma_log!("Unable to send event to '{}' with no session id", name);
-        return Err("Phone has no active session id".into());
+        return Err("Phone has no active session id");
     }
     let mut out = Outgoing::new();
     out.response_uri = uri;
@@ -639,7 +639,7 @@ pub fn send_event(phone: &[u8], event: &[u8], body: &[u8]) -> Result<(), Vec<u8>
     out.append(body);
     let Some(s) = session::find(&sid) else {
         dpma_log!("Unable to send event to '{}' without session", name);
-        return Err("Phone session no longer exists".into());
+        return Err("Phone session no longer exists");
     };
     let _ = session::send(&out, &s);
     Ok(())

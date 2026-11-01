@@ -487,3 +487,14 @@ fn uri_comparison() {
     assert!(!same_uri("sip:100@1.2.3.4:5060", "sip:100@1.2.3.4:5061"));
     assert!(same_uri("x", "y"));
 }
+
+#[test]
+fn bytes_that_are_not_utf8_pass_through() {
+    let r = parse_uri(b"sip:Jos\xe9@h\xf4te;transport=tcp", Some("sip:"), true, true);
+    assert_eq!((r.user, r.hostport, r.params.transport), (b"Jos\xe9".to_vec(), b"h\xf4te".to_vec(), b"tcp".to_vec()));
+    let (name, rest) = get_calleridname(b"\"Fran\xe7ois\" <sip:f@h>", 40);
+    assert_eq!((name, rest), (b"Fran\xe7ois".to_vec(), b" <sip:f@h>".to_vec()));
+    assert_eq!(get_in_brackets(b"\"\xe9\" <sip:\xe9@h>"), b"sip:\xe9@h");
+    assert_eq!(phone_utils_parse_uri(b"pjsip:\xe9@1.2.3.4:5060;transport=udp"), (b"1.2.3.4:5060".to_vec(), Some(b"udp".to_vec())));
+    assert!(same_uri(b"sip:\xe9@H:1", b"sip:x@h:1;transport=udp"));
+}
