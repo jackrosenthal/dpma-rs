@@ -35,8 +35,8 @@ fn next_counter() -> i32 {
 
 /// Encrypt a header field with the message's salt
 /// (`send_encrypt_hdr_helper`, 0x515-byte buffer).
-fn encrypt_header(plain: &str, password: &[u8], salt: &[u8; SALT_LEN]) -> String {
-    super::persist::encrypt_helper(plain.as_bytes(), password, salt, crypto::CIPHERTEXT_B64_BUF)
+fn encrypt_header(plain: &[u8], password: &[u8], salt: &[u8; SALT_LEN]) -> Vec<u8> {
+    super::persist::encrypt_helper(plain, password, salt, crypto::CIPHERTEXT_B64_BUF)
 }
 
 /// Send `out` to the phone of `session` (or log that there is none), as
@@ -58,12 +58,12 @@ pub fn send_maybe(out: &Outgoing, session: Option<&Arc<Session>>) -> Result<(), 
 
 /// The type the original logs: the response type, else the request type,
 /// else the event name, else "Error" for an error reply.
-fn message_type(out: &Outgoing) -> Option<&str> {
+fn message_type(out: &Outgoing) -> Option<&[u8]> {
     [&out.response_type, &out.request_type, &out.event_name]
         .into_iter()
         .find(|t| !t.is_empty())
-        .map(|t| t.as_str())
-        .or((out.error != 0).then_some("Error"))
+        .map(|t| t.as_slice())
+        .or((out.error != 0).then_some(b"Error"))
 }
 
 /// `phone_msg_outgoing_send` (FUN_0014c6b0): send `out` to the phone of
@@ -77,7 +77,7 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
     let mut st = session.lock();
     let counter = next_counter();
 
-    let handshake = out.response_type.eq_ignore_ascii_case("HandshakeResponse");
+    let handshake = out.response_type.eq_ignore_ascii_case(b"HandshakeResponse");
     let (encrypted, handshake_version, salt) = if handshake {
         (false, (st.intermediate_serial != 0).then_some("1"), None)
     } else {
@@ -89,9 +89,9 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
     let mut body = out.body.clone();
     let error_id = if out.error != 0 {
         body.extend_from_slice(framing::error_body(out.error).as_bytes());
-        out.error.to_string()
+        out.error.to_string().into_bytes()
     } else {
-        String::new()
+        Vec::new()
     };
     let limit = framing::chunk_limit(encrypted, framing::is_tcp(&out.response_uri));
     if body.is_empty() {
@@ -137,14 +137,14 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
             return Err(());
         };
         let mut ok = m.set_exten(transport::SEND_EXTEN);
-        let mut set = |name: &str, value: &str| ok &= m.set_var(name, value);
+        let mut set = |name: &str, value: &[u8]| ok &= m.set_var(name, value);
         if !out.response_type.is_empty() {
             set(h::RESPONSE_TYPE, &out.response_type);
         } else if !out.request_type.is_empty() {
             set(h::REQUEST_TYPE, &out.request_type);
         }
         if let Some(v) = handshake_version {
-            set(h::HANDSHAKE_VERSION, v);
+            set(h::HANDSHAKE_VERSION, v.as_bytes());
         }
         for (name, value) in [
             (h::USERNAME, &out.username),
@@ -193,13 +193,13 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
             };
             ok &= m.set_body(&text);
         } else {
-            ok &= m.set_body_bytes(&chunk.plain);
+            ok &= m.set_body(&chunk.plain);
         }
         if !salt_hex.is_empty() {
             ok &= m.set_var(h::MESSAGE_SALT, &salt_hex);
         }
         if let Some(seq) = chunk.sequence {
-            m.set_var(h::MESSAGE_SEQUENCE, &seq.to_string());
+            m.set_var(h::MESSAGE_SEQUENCE, seq.to_string());
         }
         if chunk.finished {
             m.set_var(h::MESSAGE_FINISHED, "1");
@@ -207,7 +207,7 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
         if !out.id.is_empty() {
             m.set_var(h::APPSERVER_ID, &out.id);
         } else if !out.request_type.is_empty() {
-            m.set_var(h::APPSERVER_ID, &counter.to_string());
+            m.set_var(h::APPSERVER_ID, counter.to_string());
         }
         if !ok {
             drop(m);
@@ -283,7 +283,7 @@ pub fn send_timeout(msg: &Msg, session: &Arc<Session>) -> Result<(), ()> {
         response_uri: uri,
         full_contact,
         id,
-        response_type: response_type.to_string(),
+        response_type: response_type.into(),
         ..Default::default()
     };
     let _ = send(&out, session);
@@ -294,7 +294,7 @@ pub fn send_timeout(msg: &Msg, session: &Arc<Session>) -> Result<(), ()> {
 /// session's phone.  `digium.assignment.update` goes out as the original
 /// sends it: no event name, ID `bootcReset`, and Error-ID -398.  The error
 /// text matches the original's error buffer.
-pub fn send_event(session: &Arc<Session>, event: &str, body: &str) -> Result<(), String> {
+pub fn send_event(session: &Arc<Session>, event: &[u8], body: &[u8]) -> Result<(), Vec<u8>> {
     let mut out = Outgoing::new();
     {
         let st = session.lock();
@@ -304,13 +304,13 @@ pub fn send_event(session: &Arc<Session>, event: &str, body: &str) -> Result<(),
         }
         out.response_uri = st.response_uri.clone();
     }
-    if event == dpma_proto::types::events::ASSIGNMENT_UPDATE {
+    if event == dpma_proto::types::events::ASSIGNMENT_UPDATE.as_bytes() {
         out.id = "bootcReset".into();
         out.error = dpma_proto::errors::msg::SESSION_TIMEOUT;
     } else {
-        out.event_name = event.to_string();
+        out.event_name = event.to_vec();
     }
-    out.append_str(body);
+    out.append(body);
     let _ = send(&out, session);
     Ok(())
 }
@@ -319,12 +319,12 @@ pub fn send_event(session: &Arc<Session>, event: &str, body: &str) -> Result<(),
 /// `HandshakeResponse` with Error-ID -398, unencrypted and unchunked, to a
 /// message for an unknown session, so the phone handshakes again.
 pub fn send_handshake_required(
-    id: &str,
-    response_uri: &str,
+    id: &[u8],
+    response_uri: &[u8],
     session: Option<&Arc<Session>>,
-    salt: &str,
-    body: &str,
-    origination_network: &str,
+    salt: &[u8],
+    body: &[u8],
+    origination_network: &[u8],
 ) {
     let Some(mut m) = transport::new_outgoing(response_uri) else { return };
     m.set_exten(transport::SEND_EXTEN);

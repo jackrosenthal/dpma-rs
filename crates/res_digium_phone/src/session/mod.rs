@@ -45,14 +45,14 @@ pub const DB_FAMILY: &str = "DigiumPhoneSessions";
 #[derive(Default)]
 pub struct SessionState {
     /// Contact URI from the handshake, without brackets (+0xdf8).
-    pub contact: String,
+    pub contact: Vec<u8>,
     /// MAC address (+0xe00); empty when the handshake had none.
-    pub mac: String,
+    pub mac: Vec<u8>,
     /// User agent (+0xe08).
-    pub user_agent: String,
+    pub user_agent: Vec<u8>,
     /// The certificate PEM the phone sent in its Handshake body, stored in
     /// AstDB and verified again on restore (+0xe10).
-    pub client_cert_pem: String,
+    pub client_cert_pem: Vec<u8>,
     /// The verified phone certificate (+0xe18).
     pub certificate: Option<X509>,
     /// Its public key; None when OpenSSL could not decode it.
@@ -74,11 +74,11 @@ pub struct SessionState {
     /// agent is first learned and after every successful send.
     pub last_activity: i64,
     /// Configuration password (+0xe48; never set by 3.6.13).
-    pub config_password: String,
+    pub config_password: Vec<u8>,
     /// Where to send messages for this phone (+0xe50).
-    pub response_uri: String,
+    pub response_uri: Vec<u8>,
     /// `X-Origination-Network` (+0xe58).
-    pub origination_network: String,
+    pub origination_network: Vec<u8>,
     /// The 40-byte common password (+0x8, length at +0x808).
     pub common_password: Vec<u8>,
 }
@@ -89,13 +89,13 @@ pub struct SessionState {
 pub struct Session {
     /// Session id (+0xd78): `"%d%ld"` of a djb2 hash of time+contact and
     /// `ast_random()`, unless restored.
-    pub id: String,
+    pub id: Vec<u8>,
     pub state: Mutex<SessionState>,
 }
 
 impl Session {
-    pub fn new(id: &str) -> Session {
-        Session { id: id.to_string(), state: Mutex::new(SessionState::default()) }
+    pub fn new(id: &[u8]) -> Session {
+        Session { id: id.to_vec(), state: Mutex::new(SessionState::default()) }
     }
 
     /// Lock the state (a poisoned lock is still usable).
@@ -109,17 +109,17 @@ impl Session {
     }
 
     /// `phone_msg_session_get_uri` (FUN_00149fb0).
-    pub fn response_uri(&self) -> String {
+    pub fn response_uri(&self) -> Vec<u8> {
         self.lock().response_uri.clone()
     }
 
     /// `phone_msg_session_get_config_password` (FUN_00149f70).
-    pub fn config_password(&self) -> String {
+    pub fn config_password(&self) -> Vec<u8> {
         self.lock().config_password.clone()
     }
 
     /// The session's MAC address ("" when none).
-    pub fn mac(&self) -> String {
+    pub fn mac(&self) -> Vec<u8> {
         self.lock().mac.clone()
     }
 }
@@ -135,26 +135,26 @@ pub struct Outgoing {
     /// appends `<error msg="..." />` to the body, sets Error-ID, and
     /// prefixes every chunk with "Command: ".
     pub error: i32,
-    pub request_type: String,
-    pub response_type: String,
-    pub response_uri: String,
-    pub full_contact: String,
-    pub userlist_auth_requirements: String,
-    pub token_auth_requirements: String,
+    pub request_type: Vec<u8>,
+    pub response_type: Vec<u8>,
+    pub response_uri: Vec<u8>,
+    pub full_contact: Vec<u8>,
+    pub userlist_auth_requirements: Vec<u8>,
+    pub token_auth_requirements: Vec<u8>,
     /// Sent encrypted in `X-Digium-AppServer-Config-Token`.
-    pub config_token: String,
-    pub username: String,
+    pub config_token: Vec<u8>,
+    pub username: Vec<u8>,
     /// Sent verbatim in `X-Digium-AppServer-Password` (the RSA-encrypted
     /// common password in a HandshakeResponse).
-    pub password: String,
+    pub password: Vec<u8>,
     /// Sent encrypted in `X-Digium-AppServer-Password`.
-    pub encrypted_password: String,
+    pub encrypted_password: Vec<u8>,
     /// Overrides `X-Digium-AppServer-ID` (requests get a counter).
-    pub id: String,
+    pub id: Vec<u8>,
     /// `X-Event-Name`; also selects the "Command: " body prefix.
-    pub event_name: String,
-    pub http_status: String,
-    pub md5: String,
+    pub event_name: Vec<u8>,
+    pub http_status: Vec<u8>,
+    pub md5: Vec<u8>,
 }
 
 impl Outgoing {
@@ -178,46 +178,44 @@ impl Outgoing {
 #[derive(Default)]
 pub struct Transaction {
     /// Container key: `"<X-Digium-AppServer-ID>-<MAC or unknown>"`.
-    pub key: String,
+    pub key: Vec<u8>,
     /// `X-Digium-AppServer-ID` ([1]).
-    pub app_server_id: String,
+    pub app_server_id: Vec<u8>,
     /// [2].
-    pub request_type: String,
+    pub request_type: Vec<u8>,
     /// [3].
-    pub response_type: String,
+    pub response_type: Vec<u8>,
     /// `X-Digium-AppServer-Response-URI` plus `;transport=<PJSIP_TRANSPORT>`
     /// when that variable exists, cut to 78 bytes ([4]).
-    pub response_uri: String,
+    pub response_uri: Vec<u8>,
     /// `X-Digium-AppServer-Response-FullContact` ([5]; Asterisk 24 never
     /// sets PJSIP_FULLCONTACT, so this is empty).
-    pub full_contact: String,
+    pub full_contact: Vec<u8>,
     /// [6].
-    pub username: String,
+    pub username: Vec<u8>,
     /// [7].
-    pub mac: String,
+    pub mac: Vec<u8>,
     /// The user agent (`X-Digium-User-Agent`, else `User-Agent`).  Not a
     /// field of the original's transaction; handlers there read it from
     /// the message.
-    pub user_agent: String,
+    pub user_agent: Vec<u8>,
     /// Decrypted `X-Digium-AppServer-Password` ([8]).
-    pub password: String,
+    pub password: Vec<u8>,
     /// Decrypted `X-Digium-AppServer-ConfigPassword` ([9]).
-    pub config_password: String,
+    pub config_password: Vec<u8>,
     /// Decrypted `X-Digium-AppServer-Config-Token` ([10]).
-    pub config_token: String,
+    pub config_token: Vec<u8>,
     /// Host of the `To` URI ([11]; see `dpma_proto::uri::to_host_port`).
-    pub to_host: String,
+    pub to_host: Vec<u8>,
     /// Port of the `To` URI ([12]).
-    pub to_port: String,
+    pub to_port: Vec<u8>,
     /// Phone model from the user agent (`phone_utils_get_model`, [13]).
-    pub model: String,
+    pub model: Vec<u8>,
     /// `X-Origination-Network` of the first message (not a field of the
     /// original's transaction).
-    pub origination_network: String,
-    /// Reassembled (and decrypted) body, as text.
-    pub body: String,
-    /// The same body's exact bytes.
-    pub body_bytes: Vec<u8>,
+    pub origination_network: Vec<u8>,
+    /// Reassembled (and decrypted) body.
+    pub body: Vec<u8>,
     /// The first message of the transaction, for any other variable (+0xa8).
     pub first_msg: Option<Msg>,
     /// +0x150.
@@ -235,7 +233,7 @@ pub struct Transaction {
 
 impl Transaction {
     /// The value of message variable `name` from the first message.
-    pub fn var(&self, name: &str) -> Option<String> {
+    pub fn var(&self, name: &str) -> Option<Vec<u8>> {
         self.first_msg.as_ref().and_then(|m| m.var(name))
     }
 }
@@ -250,7 +248,7 @@ pub(crate) fn now() -> i64 {
 
 /// `phone_msg_get_user_agent` (FUN_00149fc0): `X-Digium-User-Agent` when
 /// present and not empty, else `User-Agent` (possibly absent).
-pub(crate) fn user_agent_of(m: &Msg) -> Option<String> {
+pub(crate) fn user_agent_of(m: &Msg) -> Option<Vec<u8>> {
     match m.get_var(dpma_proto::headers::DIGIUM_USER_AGENT) {
         Some(ua) if !ua.is_empty() => Some(ua),
         _ => m.get_var(dpma_proto::headers::USER_AGENT),
@@ -258,8 +256,8 @@ pub(crate) fn user_agent_of(m: &Msg) -> Option<String> {
 }
 
 /// `%s` of a C string that may be NULL.
-pub(crate) fn or_null(s: Option<&str>) -> &str {
-    s.unwrap_or("(null)")
+pub(crate) fn or_null(s: Option<&[u8]>) -> &[u8] {
+    s.unwrap_or(b"(null)")
 }
 
 /// Test hooks (feature "devtest").

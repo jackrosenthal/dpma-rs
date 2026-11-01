@@ -1,27 +1,24 @@
 //! Small helpers shared across the module.
 
 use std::collections::{BTreeMap, HashMap};
+use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
 
-/// Asterisk's `ast_str_case_hash`: djb2 over the lower-cased bytes, masked
-/// to a non-negative value.
-pub fn str_case_hash(s: &str) -> u32 {
-    let mut h: u32 = 5381;
-    for b in s.bytes() {
-        h = h.wrapping_mul(33) ^ u32::from(b.to_ascii_lowercase());
-    }
-    h & 0x7fff_ffff
-}
+pub use dpma_ast::dpma_bytes::case_hash as str_case_hash;
 
-/// A map keyed by case-insensitive name that iterates in the same order as
-/// an ao2 hash container with `buckets` buckets (bucket order, then
-/// insertion order within a bucket), so CLI listings come out in the same
-/// order as the original module's.
+/// A map keyed by case-insensitive name (`strcasecmp`: ASCII letters
+/// fold, every other byte is itself) that iterates in the same order as
+/// an ao2 hash container with `buckets` buckets hashed by
+/// `ast_str_case_hash` (bucket order, then insertion order within a
+/// bucket), so CLI listings come out in the same order as the original
+/// module's.
 #[derive(Debug, Clone)]
 pub struct NamedMap<T> {
     buckets: u32,
     seq: u64,
-    order: BTreeMap<(u32, u64), String>,
-    items: HashMap<String, ((u32, u64), T)>,
+    order: BTreeMap<(u32, u64), Vec<u8>>,
+    items: HashMap<Vec<u8>, ((u32, u64), T)>,
 }
 
 impl<T> NamedMap<T> {
@@ -29,8 +26,8 @@ impl<T> NamedMap<T> {
         NamedMap { buckets, seq: 0, order: BTreeMap::new(), items: HashMap::new() }
     }
 
-    fn key(name: &str) -> String {
-        name.to_ascii_lowercase()
+    fn key(name: &[u8]) -> Vec<u8> {
+        dpma_ast::dpma_bytes::c_view(name).to_ascii_lowercase()
     }
 
     pub fn len(&self) -> usize {
@@ -41,20 +38,20 @@ impl<T> NamedMap<T> {
         self.items.is_empty()
     }
 
-    pub fn contains(&self, name: &str) -> bool {
+    pub fn contains(&self, name: &[u8]) -> bool {
         self.items.contains_key(&Self::key(name))
     }
 
-    pub fn get(&self, name: &str) -> Option<&T> {
+    pub fn get(&self, name: &[u8]) -> Option<&T> {
         self.items.get(&Self::key(name)).map(|(_, v)| v)
     }
 
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut T> {
+    pub fn get_mut(&mut self, name: &[u8]) -> Option<&mut T> {
         self.items.get_mut(&Self::key(name)).map(|(_, v)| v)
     }
 
     /// Insert `value` under `name`, replacing (in place) any existing entry.
-    pub fn insert(&mut self, name: &str, value: T) {
+    pub fn insert(&mut self, name: &[u8], value: T) {
         let k = Self::key(name);
         if let Some(e) = self.items.get_mut(&k) {
             e.1 = value;
@@ -68,7 +65,7 @@ impl<T> NamedMap<T> {
 
     /// Get the entry for `name`, creating it with `f` when absent.  Returns
     /// the entry and whether it was created.
-    pub fn get_or_insert_with(&mut self, name: &str, f: impl FnOnce() -> T) -> (&mut T, bool) {
+    pub fn get_or_insert_with(&mut self, name: &[u8], f: impl FnOnce() -> T) -> (&mut T, bool) {
         let created = !self.contains(name);
         if created {
             self.insert(name, f());
@@ -76,7 +73,7 @@ impl<T> NamedMap<T> {
         (self.get_mut(name).unwrap(), created)
     }
 
-    pub fn remove(&mut self, name: &str) -> Option<T> {
+    pub fn remove(&mut self, name: &[u8]) -> Option<T> {
         let (pos, v) = self.items.remove(&Self::key(name))?;
         self.order.remove(&pos);
         Some(v)
@@ -101,8 +98,8 @@ impl<T> NamedMap<T> {
     }
 
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
-        let order: Vec<String> = self.order.values().cloned().collect();
-        let mut refs: HashMap<&String, &mut T> =
+        let order: Vec<Vec<u8>> = self.order.values().cloned().collect();
+        let mut refs: HashMap<&Vec<u8>, &mut T> =
             self.items.iter_mut().map(|(k, (_, v))| (k, v)).collect();
         let mut out = Vec::with_capacity(order.len());
         for k in &order {
@@ -119,9 +116,10 @@ impl<T> NamedMap<T> {
     }
 }
 
-/// `strsep`-style split on any of the characters in `delims`.
-pub fn first_token<'a>(s: &'a str, delims: &[char]) -> &'a str {
-    match s.find(|c| delims.contains(&c)) {
+/// `strsep`-style split: the part of `s` before the first of the bytes in
+/// `delims`.
+pub fn first_token<'a>(s: &'a [u8], delims: &[u8]) -> &'a [u8] {
+    match s.iter().position(|c| delims.contains(c)) {
         Some(i) => &s[..i],
         None => s,
     }
@@ -130,36 +128,42 @@ pub fn first_token<'a>(s: &'a str, delims: &[char]) -> &'a str {
 /// C `%u` scanf semantics: optional leading whitespace and sign, then
 /// digits; the value wraps like an unsigned int.  Returns None when no
 /// digits were found.
-pub fn scan_u32(s: &str) -> Option<i64> {
-    let t = s.trim_start();
-    let (neg, digits) = match t.as_bytes().first() {
+pub fn scan_u32(s: &[u8]) -> Option<i64> {
+    let start = s.iter().position(|&c| !dpma_ast::dpma_bytes::c::is_space(c)).unwrap_or(s.len());
+    let t = &s[start..];
+    let (neg, digits) = match t.first() {
         Some(b'-') => (true, &t[1..]),
         Some(b'+') => (false, &t[1..]),
         _ => (false, t),
     };
-    let end = digits.find(|c: char| !c.is_ascii_digit()).unwrap_or(digits.len());
+    let end = digits.iter().position(|c| !c.is_ascii_digit()).unwrap_or(digits.len());
     if end == 0 {
         return None;
     }
-    let v = digits[..end].parse::<u64>().unwrap_or(u64::MAX) as u32;
+    let v = std::str::from_utf8(&digits[..end]).ok()?.parse::<u64>().unwrap_or(u64::MAX) as u32;
     let v = if neg { v.wrapping_neg() } else { v };
     Some(i64::from(v as i32))
 }
 
 /// C `%d` scanf semantics (see `scan_u32`).
-pub fn scan_i32(s: &str) -> Option<i64> {
+pub fn scan_i32(s: &[u8]) -> Option<i64> {
     scan_u32(s)
 }
 
 /// Copy at most `max - 1` bytes (C `ast_copy_string` into a `max` byte
-/// buffer), never splitting a UTF-8 character.
-pub fn truncate(s: &str, max: usize) -> String {
-    if s.len() < max {
-        return s.to_string();
-    }
-    let mut end = max - 1;
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s[..end].to_string()
+/// buffer).  As in C, the cut can fall inside a multi-byte character.
+pub fn truncate(s: &[u8], max: usize) -> Vec<u8> {
+    let s = dpma_ast::dpma_bytes::c_view(s);
+    s[..s.len().min(max.saturating_sub(1))].to_vec()
+}
+
+/// A file system path from the bytes of a C string.
+pub fn path(s: &[u8]) -> &Path {
+    Path::new(OsStr::from_bytes(dpma_ast::dpma_bytes::c_view(s)))
+}
+
+/// `str::parse` on the bytes of a (test or CLI) argument; Err when they
+/// are not UTF-8 or do not parse.
+pub fn parse<T: std::str::FromStr>(s: &[u8]) -> Result<T, ()> {
+    std::str::from_utf8(s).map_err(|_| ())?.parse().map_err(|_| ())
 }

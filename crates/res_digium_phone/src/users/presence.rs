@@ -13,6 +13,7 @@
 //! state.
 
 use super::*;
+use dpma_ast::bformat;
 use dpma_ast::presence as ast_presence;
 
 /// Buckets of the original's option container; iteration follows them.
@@ -32,7 +33,7 @@ pub struct PresenceOption {
     pub owner: i32,
     /// Sub-state (+0x08); None for an option without one, which the CLI
     /// shows differently from an empty one.
-    pub subtype: Option<String>,
+    pub subtype: Option<Vec<u8>>,
     /// Option id, from 1 (+0x10); the container key.
     pub id: i32,
 }
@@ -58,7 +59,7 @@ pub fn ordered(options: &[PresenceOption]) -> Vec<PresenceOption> {
 
 /// `phone_presence_option_add` (0x1609b0): add an option with the lowest
 /// unused id; returns the id.
-pub fn option_add(options: &mut Vec<PresenceOption>, state: i32, owner: i32, subtype: Option<&str>) -> i32 {
+pub fn option_add(options: &mut Vec<PresenceOption>, state: i32, owner: i32, subtype: Option<&[u8]>) -> i32 {
     let count = options.len() as i32;
     let mut id = 1;
     loop {
@@ -71,7 +72,7 @@ pub fn option_add(options: &mut Vec<PresenceOption>, state: i32, owner: i32, sub
             break;
         }
     }
-    options.push(PresenceOption { state, owner, subtype: subtype.map(str::to_string), id });
+    options.push(PresenceOption { state, owner, subtype: subtype.map(<[u8]>::to_vec), id });
     id
 }
 
@@ -106,7 +107,7 @@ pub fn default_options() -> Vec<PresenceOption> {
 /// `set_user_defaults` runs this with the phone's previous application
 /// list while every application is marked for deletion, so then it only
 /// logs the missing ones (the original's behavior, kept).
-pub fn sync_applications(apps: &NamedMap<Application>, phone: &mut Phone, list: &[String]) {
+pub fn sync_applications(apps: &NamedMap<Application>, phone: &mut Phone, list: &[Vec<u8>]) {
     if phone.send486_custom {
         return;
     }
@@ -140,7 +141,7 @@ pub fn sync_applications(apps: &NamedMap<Application>, phone: &mut Phone, list: 
 /// `phone_presence_user_application_sync`: refresh the presence options
 /// of phone `phone` from its status applications (see
 /// `sync_applications`).
-pub fn user_application_sync(phone: &str) {
+pub fn user_application_sync(phone: &[u8]) {
     let mut g = write();
     let Some(reg) = g.as_mut() else { return };
     let Registry { phones, applications, .. } = reg;
@@ -151,22 +152,22 @@ pub fn user_application_sync(phone: &str) {
 
 /// The presence provider of a phone: `CustomPresence:<first line slot>`
 /// (empty when the phone has no lines, as in the original).
-fn provider(p: &Phone) -> String {
-    format!("CustomPresence:{}", p.lines.first().map_or("", |l| l.name.as_str()))
+fn provider(p: &Phone) -> Vec<u8> {
+    bformat!("CustomPresence:{}", p.lines.first().map_or(&b""[..], |l| l.name.as_slice()))
 }
 
 /// The option matching `state` and `subtype` (absent and empty are the
 /// same), in container order.
-fn matching(options: &[PresenceOption], state: i32, subtype: Option<&str>) -> Option<PresenceOption> {
-    let cur = subtype.unwrap_or("");
-    ordered(options).into_iter().find(|o| o.state == state && o.subtype.as_deref().unwrap_or("") == cur)
+fn matching(options: &[PresenceOption], state: i32, subtype: Option<&[u8]>) -> Option<PresenceOption> {
+    let cur = subtype.unwrap_or(b"");
+    ordered(options).into_iter().find(|o| o.state == state && o.subtype.as_deref().unwrap_or(b"") == cur)
 }
 
 /// The current presence of a phone (`phone_presence_get_current`
 /// 0x1610e0): the option matching the phone's `CustomPresence` state and
 /// sub-state (None when no option matches), and the presence message.
 /// None when the phone does not exist.
-pub fn get_current(phone: &str) -> Option<(Option<PresenceOption>, Option<String>)> {
+pub fn get_current(phone: &[u8]) -> Option<(Option<PresenceOption>, Option<Vec<u8>>)> {
     let (provider, options) = {
         let g = read();
         let p = g.as_ref()?.phones.get(phone)?;
@@ -178,7 +179,7 @@ pub fn get_current(phone: &str) -> Option<(Option<PresenceOption>, Option<String
 
 /// The phone's options in container order (None when the phone does not
 /// exist).
-pub fn options(phone: &str) -> Option<Vec<PresenceOption>> {
+pub fn options(phone: &[u8]) -> Option<Vec<PresenceOption>> {
     let g = read();
     Some(ordered(&g.as_ref()?.phones.get(phone)?.presence_options))
 }
@@ -188,17 +189,17 @@ pub fn options(phone: &str) -> Option<Vec<PresenceOption>> {
 /// `PRESENCE_STATE(CustomPresence:<first line>)` to
 /// `<state>,<sub-state>,<message>` (at most 511 characters).  Err when the
 /// phone or the option does not exist.
-pub fn update(phone: &str, id: i32, message: Option<&str>) -> Result<(), ()> {
+pub fn update(phone: &[u8], id: i32, message: Option<&[u8]>) -> Result<(), ()> {
     let (var, value) = {
         let g = read();
         let p = g.as_ref().and_then(|r| r.phones.get(phone)).ok_or(())?;
         let o = p.presence_options.iter().find(|o| o.id == id).ok_or(())?;
-        let var = crate::util::truncate(&format!("PRESENCE_STATE({})", provider(p)), 0x200);
-        let value = format!(
+        let var = crate::util::truncate(&bformat!("PRESENCE_STATE({})", provider(p)), 0x200);
+        let value = bformat!(
             "{},{},{}",
             ast_presence::state2str(o.state),
-            o.subtype.as_deref().unwrap_or(""),
-            message.unwrap_or("")
+            o.subtype.as_deref().unwrap_or(b""),
+            message.unwrap_or(b"")
         );
         (var, crate::util::truncate(&value, 0x200))
     };
@@ -211,7 +212,7 @@ pub fn update(phone: &str, id: i32, message: Option<&str>) -> Result<(), ()> {
 /// The status listing of `digium_phones show status`: synchronize the
 /// options, then each option in container order with the current one
 /// marked.  None when the phone does not exist.
-pub fn status_lines(phone: &str) -> Option<Vec<String>> {
+pub fn status_lines(phone: &[u8]) -> Option<Vec<Vec<u8>>> {
     user_application_sync(phone);
     let (current, _) = get_current(phone)?;
     let options = options(phone)?;
@@ -219,13 +220,13 @@ pub fn status_lines(phone: &str) -> Option<Vec<String>> {
         options
             .iter()
             .map(|o| {
-                format!(
+                bformat!(
                     "{}{}: {} {} {}\n",
                     if current.as_ref().is_some_and(|c| c.id == o.id) { "(*) " } else { "    " },
                     o.id,
                     ast_presence::state2str(o.state),
                     if o.subtype.is_some() { "-" } else { "" },
-                    o.subtype.as_deref().unwrap_or("")
+                    o.subtype.as_deref().unwrap_or(b"")
                 )
             })
             .collect(),

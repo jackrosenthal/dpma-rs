@@ -18,16 +18,13 @@ use super::handlers::dpma_pjsip_endpoint_is_dphone;
 use super::objects::{self, LineObj, UserObj};
 use super::users_api::*;
 use dpma_ast::ao2;
+use dpma_ast::bformat;
 use dpma_ast::cli::{CliArgs, CliCommand, CliResult};
-use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
 
-unsafe fn s(p: *const c_char) -> String {
-    if p.is_null() {
-        "(null)".into()
-    } else {
-        CStr::from_ptr(p).to_string_lossy().into_owned()
-    }
+/// A C string's bytes, "(null)" for NULL.
+unsafe fn s(p: *const c_char) -> Vec<u8> {
+    dpma_ast::from_ptr(p).unwrap_or_else(|| b"(null)".to_vec())
 }
 
 /// The reference count of `obj` (without changing it).
@@ -43,11 +40,11 @@ fn cmd_line(a: &CliArgs) -> CliResult {
     unsafe {
         let line = phone_line_find(name.as_ptr());
         if line.is_null() {
-            a.out(&format!("phone_line_find('{}') returned NULL\n", a.argv[3]));
+            a.out(bformat!("phone_line_find('{}') returned NULL\n", a.argv[3]));
             return CliResult::Success;
         }
         let l: &LineObj = &*line;
-        a.out(&format!(
+        a.out(bformat!(
             "object {:p} name '{}' refs {} (with ours) linked {}\npjsip_auth (export): '{}'\n",
             line,
             s(phone_users_line_get_name(line)),
@@ -57,11 +54,11 @@ fn cmd_line(a: &CliArgs) -> CliResult {
         ));
         let user = phone_line_get_user(line);
         if !user.is_null() {
-            a.out(&format!("phone_line_get_user: '{}' refs {}\n", (*user).key(), refs(user as *mut c_void)));
+            a.out(bformat!("phone_line_get_user: '{}' refs {}\n", (*user).key(), refs(user as *mut c_void)));
             ao2::cleanup(user as *mut c_void);
         }
         l.with_line(|line| {
-            a.out(&format!(
+            a.out(bformat!(
                 "tech '{}'\nsecret '{}'\ncallerid '{}'\nmailbox '{}'\ncontext '{}'\nauthname '{}'\npjsip_auth '{}'\nline_label '{}'\ndelme {}\n",
                 line.tech, line.secret, line.callerid, line.mailbox, line.context, line.authname, line.pjsip_auth, line.line_label, line.delme
             ))
@@ -73,16 +70,16 @@ fn cmd_line(a: &CliArgs) -> CliResult {
 
 fn cmd_objects(a: &CliArgs) -> CliResult {
     unsafe {
-        a.out(&format!("lines container {:p}\n", phone_users_get_lines()));
+        a.out(bformat!("lines container {:p}\n", phone_users_get_lines()));
         for o in ao2::collect(objects::lines_container()) {
             let l = &*(o as *mut LineObj);
-            a.out(&format!("  line {:p} '{}' refs {} pjsip_auth '{}'\n", o, l.key(), refs(o) - 1, s(l.pjsip_auth_ptr())));
+            a.out(bformat!("  line {:p} '{}' refs {} pjsip_auth '{}'\n", o, l.key(), refs(o) - 1, s(l.pjsip_auth_ptr())));
             ao2::cleanup(o);
         }
-        a.out(&format!("users container {:p}\n", objects::users_container()));
+        a.out(bformat!("users container {:p}\n", objects::users_container()));
         for o in ao2::collect(objects::users_container()) {
             let u = &*(o as *mut UserObj);
-            a.out(&format!("  user {:p} '{}' refs {}\n", o, u.key(), refs(o) - 1));
+            a.out(bformat!("  user {:p} '{}' refs {}\n", o, u.key(), refs(o) - 1));
             ao2::cleanup(o);
         }
     }
@@ -95,16 +92,16 @@ fn cmd_isdphone(a: &CliArgs) -> CliResult {
     }
     let e = dpma_ast::cstr(&a.argv[3]);
     let r = unsafe { dpma_pjsip_endpoint_is_dphone(e.as_ptr()) };
-    a.out(&format!("dpma_pjsip_endpoint_is_dphone('{}') = {}\n", a.argv[3], r));
+    a.out(bformat!("dpma_pjsip_endpoint_is_dphone('{}') = {}\n", a.argv[3], r));
     CliResult::Success
 }
 
 fn cmd_config(a: &CliArgs) -> CliResult {
     unsafe {
         let cfg = dpma_config_get();
-        a.out(&format!("dpma_config_get() = {:p} (refs {})\n", cfg, refs(cfg as *mut c_void)));
+        a.out(bformat!("dpma_config_get() = {:p} (refs {})\n", cfg, refs(cfg as *mut c_void)));
         for (what, c) in [("NULL", std::ptr::null_mut()), ("current", cfg)] {
-            a.out(&format!(
+            a.out(bformat!(
                 "[{}] auth_flags {} discovery {} initial {} max {} delay {}\n",
                 what,
                 dpma_config_auth_flags(c),
@@ -113,7 +110,7 @@ fn cmd_config(a: &CliArgs) -> CliResult {
                 dpma_config_max_threads(c),
                 dpma_config_delay(c)
             ));
-            a.out(&format!(
+            a.out(bformat!(
                 "[{}] file_dir '{}' reg_port '{}' fw_file '{}' fw_dir '{}' uuid '{}' reg_addr '{}' url_prefix '{}'\n",
                 what,
                 s(dpma_config_file_dir(c)),
@@ -126,10 +123,10 @@ fn cmd_config(a: &CliArgs) -> CliResult {
             ));
             let mut buf = [0 as c_char; 256];
             dpma_append_config_file_dir(buf.as_mut_ptr(), 256, c"x.xml".as_ptr(), c);
-            a.out(&format!("[{}] append_config_file_dir: '{}'\n", what, s(buf.as_ptr())));
+            a.out(bformat!("[{}] append_config_file_dir: '{}'\n", what, s(buf.as_ptr())));
         }
         if !cfg.is_null() {
-            a.out(&format!(
+            a.out(bformat!(
                 "password '{}' mdns_addr '{}' mdns_port '{}' mdns_transport '{}' service '{}' context '{}'\n",
                 s(dpma_config_password(cfg)),
                 s(dpma_config_mdns_addr(cfg)),
@@ -156,29 +153,30 @@ fn cmd_info(a: &CliArgs) -> CliResult {
     unsafe {
         let chan = ast_channel_get_by_name(name.as_ptr());
         if chan.is_null() {
-            a.out(&format!("No channel '{}'\n", a.argv[3]));
+            a.out(bformat!("No channel '{}'\n", a.argv[3]));
             return CliResult::Success;
         }
-        let body = a.argv.get(4).map(String::as_str).unwrap_or("");
+        let body = a.argv.get(4).map_or(&b""[..], Vec::as_slice);
         let ct = if body.is_empty() { "" } else { "application/json" };
         let r = super::info_send(chan, &[("X-Event-Name", "digium.test"), ("X-Extra", "1")], ct, body);
-        a.out(&format!("info_send = {}\n", r));
+        a.out(bformat!("info_send = {}\n", r));
         ao2::cleanup(chan as *mut c_void);
     }
     CliResult::Success
 }
 
-static LAST_INFO: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+static LAST_INFO: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
 
 /// Record a call of `phone_user_token_set_last_info`.
-pub fn record_last_info(phone: &str, uri: &str, session: Option<&str>, mac: Option<&str>, linked: bool) {
+pub fn record_last_info(phone: &[u8], uri: &[u8], session: Option<&[u8]>, mac: Option<&[u8]>, linked: bool) {
     let mut v = LAST_INFO.lock().unwrap_or_else(|e| e.into_inner());
-    v.push(format!(
+    let quoted = |x: Option<&[u8]>| x.map_or(b"NULL".to_vec(), |s| bformat!("'{}'", s));
+    v.push(bformat!(
         "phone '{}' uri '{}' session {} mac {}{}",
         phone,
         uri,
-        session.map_or("NULL".to_string(), |s| format!("'{}'", s)),
-        mac.map_or("NULL".to_string(), |s| format!("'{}'", s)),
+        quoted(session),
+        quoted(mac),
         if linked { "" } else { " (unlinked)" }
     ));
 }
@@ -188,11 +186,11 @@ fn cmd_lastinfo(a: &CliArgs) -> CliResult {
     match a.argc() {
         3 => {
             for (i, l) in v.iter().enumerate() {
-                a.out(&format!("{}: {}\n", i + 1, l));
+                a.out(bformat!("{}: {}\n", i + 1, l));
             }
-            a.out(&format!("{} calls\n", v.len()));
+            a.out(bformat!("{} calls\n", v.len()));
         }
-        4 if a.argv[3] == "clear" => v.clear(),
+        4 if a.argv[3] == b"clear" => v.clear(),
         _ => return CliResult::ShowUsage,
     }
     CliResult::Success

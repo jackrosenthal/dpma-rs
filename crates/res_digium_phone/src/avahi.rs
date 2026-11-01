@@ -36,6 +36,12 @@
 //!   addresses, which avahi-daemon leaves out next to global ones).
 //! - On a name collision `mdns-sd` picks "<name> (2)" where Avahi's
 //!   `avahi_alternative_service_name` picks "<name> #2".
+//! - `mdns-sd` takes the instance name as UTF-8 text, so a `service_name`
+//!   that is not valid UTF-8 is announced with each invalid sequence
+//!   replaced by U+FFFD.  (Avahi passes the name over D-Bus, which
+//!   accepts only UTF-8; the original's behavior with such a name is not
+//!   known.)  The TXT record carries `mdns_address` and `mdns_transport`
+//!   as bytes.
 //! - Interfaces: those that are up, multicast-capable, and not point to
 //!   point.  avahi-daemon also never uses loopback interfaces; this
 //!   responder uses one only if multicast is enabled on it (never the case
@@ -61,7 +67,8 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(2);
 /// The service `av_create_service` would register.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Announcement {
-    name: String,
+    /// The instance name's bytes.
+    name: Vec<u8>,
     port: u16,
     /// The `sipUrl` TXT value, when `mdns_address` is set.
     sip_url: Option<Vec<u8>>,
@@ -76,9 +83,8 @@ struct Responder {
 static STATE: Mutex<Option<Responder>> = Mutex::new(None);
 
 /// `strtol(s, NULL, 10)`.
-fn strtol(s: &str) -> libc::c_long {
-    let c = dpma_ast::cstr(s);
-    unsafe { libc::strtol(c.as_ptr(), std::ptr::null_mut(), 10) }
+fn strtol(s: &[u8]) -> i64 {
+    dpma_ast::dpma_bytes::c::strtol(s).0
 }
 
 /// What to announce under the current configuration (read from the C
@@ -91,19 +97,19 @@ fn wanted() -> Option<Announcement> {
             None
         } else {
             let port = match text(cfg, |p| c::dpma_config_mdns_port(p)) {
-                p if p.is_empty() => crate::config::DEFAULT_PORT.to_string(),
+                p if p.is_empty() => crate::config::DEFAULT_PORT.into(),
                 p => p,
             };
             let addr = text(cfg, |p| c::dpma_config_mdns_addr(p));
             let sip_url = (!addr.is_empty()).then(|| {
                 let transport = text(cfg, |p| c::dpma_config_mdns_transport(p));
                 let sep = if transport.is_empty() { "" } else { ";transport=" };
-                let mut entry = format!("sipUrl=sip:proxy@{}:{}{}{}", addr, port, sep, transport).into_bytes();
+                let mut entry = dpma_ast::bformat!("sipUrl=sip:proxy@{}:{}{}{}", addr, port, sep, transport);
                 entry.truncate(255);
                 entry.split_off("sipUrl=".len())
             });
             let name = match text(cfg, |p| c::dpma_config_service_name(p)) {
-                n if n.is_empty() => crate::config::DEFAULT_SERVICE_NAME.to_string(),
+                n if n.is_empty() => crate::config::DEFAULT_SERVICE_NAME.into(),
                 n => n,
             };
             Some(Announcement { name, port: (strtol(&port) & 0xffff) as u16, sip_url })
@@ -173,7 +179,8 @@ fn service_info(a: &Announcement) -> Option<ServiceInfo> {
     if let Some(url) = &a.sip_url {
         txt.push(TxtProperty::from(("sipUrl", url.as_slice())));
     }
-    let info = ServiceInfo::new(SERVICE_TYPE, &a.name, &host_name(), (), a.port, txt).ok()?;
+    let name = String::from_utf8_lossy(&a.name);
+    let info = ServiceInfo::new(SERVICE_TYPE, &name, &host_name(), (), a.port, txt).ok()?;
     Some(info.enable_addr_auto())
 }
 

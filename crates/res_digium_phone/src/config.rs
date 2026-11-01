@@ -1,7 +1,7 @@
 //! The `[general]` section of res_digium_phone.conf.
 
 use dpma_ast::config::{self, LoadResult};
-use dpma_ast::{ast_log, dpma_log, log::LOG_ERROR, log::LOG_WARNING};
+use dpma_ast::{ast_log, bformat, dpma_log, log::LOG_ERROR, log::LOG_WARNING};
 use std::sync::{Arc, RwLock};
 
 /// Authentication flags (shared with the session layer).
@@ -32,84 +32,84 @@ pub struct General {
     pub initial_threads: u32,
     pub max_threads: u32,
     pub message_delay: u32,
-    pub globalpin: String,
-    pub mdns_address: String,
-    pub mdns_port: String,
-    pub mdns_transport: String,
-    pub service_name: String,
-    pub pjsip_message_context: String,
-    pub file_directory: String,
-    pub firmware_package_file: String,
-    pub firmware_package_directory: String,
-    pub server_uuid: String,
-    pub registration_address: String,
-    pub registration_port: String,
-    pub firmware_url_prefix: String,
+    pub globalpin: Vec<u8>,
+    pub mdns_address: Vec<u8>,
+    pub mdns_port: Vec<u8>,
+    pub mdns_transport: Vec<u8>,
+    pub service_name: Vec<u8>,
+    pub pjsip_message_context: Vec<u8>,
+    pub file_directory: Vec<u8>,
+    pub firmware_package_file: Vec<u8>,
+    pub firmware_package_directory: Vec<u8>,
+    pub server_uuid: Vec<u8>,
+    pub registration_address: Vec<u8>,
+    pub registration_port: Vec<u8>,
+    pub firmware_url_prefix: Vec<u8>,
     /// PEM file with the server certificate presented to phones during the
     /// handshake.  Not part of the original module: the certificate must come
     /// from the user's own copy of the original distribution.
-    pub appserver_certificate: String,
+    pub appserver_certificate: Vec<u8>,
     /// PEM bundle of the CA certificates that phone certificates are
     /// verified against.  Same provenance as `appserver_certificate`.
-    pub phone_ca_file: String,
+    pub phone_ca_file: Vec<u8>,
 }
 
 impl General {
     fn defaults() -> General {
-        let file_dir = format!("{}/digium_phones", dpma_ast::var_dir());
-        let trust_dir = format!("{}/dpma", dpma_ast::config_dir());
+        let file_dir = bformat!("{}/digium_phones", dpma_ast::var_dir());
+        let trust_dir = bformat!("{}/dpma", dpma_ast::config_dir());
         General {
             auth_flags: auth::USER,
             discovery_enabled: true,
             initial_threads: DEFAULT_INITIAL_THREADS,
             max_threads: DEFAULT_MAX_THREADS,
             message_delay: DEFAULT_MESSAGE_DELAY,
-            globalpin: String::new(),
-            mdns_address: String::new(),
-            mdns_port: String::new(),
-            mdns_transport: String::new(),
+            globalpin: Vec::new(),
+            mdns_address: Vec::new(),
+            mdns_port: Vec::new(),
+            mdns_transport: Vec::new(),
             service_name: DEFAULT_SERVICE_NAME.into(),
             pjsip_message_context: DEFAULT_PJSIP_MESSAGE_CONTEXT.into(),
             file_directory: file_dir,
-            firmware_package_file: String::new(),
-            firmware_package_directory: String::new(),
-            server_uuid: String::new(),
-            registration_address: String::new(),
-            registration_port: String::new(),
-            firmware_url_prefix: String::new(),
-            appserver_certificate: format!("{}/appserver.pem", trust_dir),
-            phone_ca_file: format!("{}/phone_ca.pem", trust_dir),
+            firmware_package_file: Vec::new(),
+            firmware_package_directory: Vec::new(),
+            server_uuid: Vec::new(),
+            registration_address: Vec::new(),
+            registration_port: Vec::new(),
+            firmware_url_prefix: Vec::new(),
+            appserver_certificate: bformat!("{}/appserver.pem", trust_dir),
+            phone_ca_file: bformat!("{}/phone_ca.pem", trust_dir),
         }
     }
 
     /// The pjsip message context, never empty.
-    pub fn message_context(&self) -> &str {
+    pub fn message_context(&self) -> &[u8] {
         if self.pjsip_message_context.is_empty() {
-            DEFAULT_PJSIP_MESSAGE_CONTEXT
+            DEFAULT_PJSIP_MESSAGE_CONTEXT.as_bytes()
         } else {
             &self.pjsip_message_context
         }
     }
 
-    pub fn service_name(&self) -> &str {
+    pub fn service_name(&self) -> &[u8] {
         if self.service_name.is_empty() {
-            DEFAULT_SERVICE_NAME
+            DEFAULT_SERVICE_NAME.as_bytes()
         } else {
             &self.service_name
         }
     }
 
-    pub fn mdns_port(&self) -> &str {
+    pub fn mdns_port(&self) -> &[u8] {
         if self.mdns_port.is_empty() {
-            DEFAULT_PORT
+            DEFAULT_PORT.as_bytes()
         } else {
             &self.mdns_port
         }
     }
 
-    pub fn registration_port(&self) -> &str {
+    pub fn registration_port(&self) -> &[u8] {
         if self.registration_port.is_empty() {
-            DEFAULT_PORT
+            DEFAULT_PORT.as_bytes()
         } else {
             &self.registration_port
         }
@@ -126,10 +126,10 @@ pub fn get() -> Arc<General> {
     Arc::new(General::defaults())
 }
 
-fn parse_uint(name: &str, value: &str) -> Option<u32> {
-    match value.trim().parse::<u32>() {
-        Ok(v) => Some(v),
-        Err(_) => {
+fn parse_uint(name: &str, value: &[u8]) -> Option<u32> {
+    match std::str::from_utf8(value.trim_ascii()).ok().and_then(|v| v.parse::<u32>().ok()) {
+        Some(v) => Some(v),
+        None => {
             ast_log!(
                 LOG_WARNING,
                 "Invalid value '{}' - '{}' must be an an integer greater or equal to zero",
@@ -139,6 +139,12 @@ fn parse_uint(name: &str, value: &str) -> Option<u32> {
             None
         }
     }
+}
+
+/// A whole number, as Rust's `str::parse` reads it (surrounding white
+/// space ignored).
+fn parse_i64(value: &[u8]) -> Option<i64> {
+    std::str::from_utf8(value.trim_ascii()).ok()?.parse().ok()
 }
 
 /// Load (or reload) the general configuration.  Returns the previous
@@ -159,63 +165,63 @@ pub fn load() -> Result<(Option<Arc<General>>, Arc<General>), ()> {
     let mut g = General::defaults();
     let mut mdns_port_set = false;
 
-    if let Some(cat) = cats.iter().find(|c| c.name.eq_ignore_ascii_case("general")) {
+    if let Some(cat) = cats.iter().find(|c| c.name.eq_ignore_ascii_case(b"general")) {
         for v in &cat.vars {
             let name = v.name.to_ascii_lowercase();
-            let value = v.value.as_str();
-            match name.as_str() {
-                "globalpin" => g.globalpin = value.into(),
-                "userlist_auth" => {
-                    if value.eq_ignore_ascii_case("disabled") {
+            let value = v.value.as_slice();
+            match name.as_slice() {
+                b"globalpin" => g.globalpin = value.into(),
+                b"userlist_auth" => {
+                    if value.eq_ignore_ascii_case(b"disabled") {
                         g.auth_flags &= !auth::USERLIST_GLOBALPIN;
-                    } else if value.eq_ignore_ascii_case("globalpin") {
+                    } else if value.eq_ignore_ascii_case(b"globalpin") {
                         g.auth_flags |= auth::USERLIST_GLOBALPIN;
                     }
                 }
-                "mdns_address" => g.mdns_address = value.into(),
-                "mdns_port" => {
+                b"mdns_address" => g.mdns_address = value.into(),
+                b"mdns_port" => {
                     g.mdns_port = value.into();
                     mdns_port_set = true;
                 }
-                "mdns_transport" => g.mdns_transport = value.into(),
-                "registration_address" => {
+                b"mdns_transport" => g.mdns_transport = value.into(),
+                b"registration_address" => {
                     g.registration_address = value.into();
                     if g.mdns_address.is_empty() {
                         g.mdns_address = value.into();
                     }
                 }
-                "registration_port" => {
+                b"registration_port" => {
                     g.registration_port = value.into();
                     if !mdns_port_set {
                         g.mdns_port = value.into();
                     }
                 }
-                "service_name" => g.service_name = value.into(),
-                "service_discovery_enabled" => g.discovery_enabled = dpma_ast::util::ast_true(value),
-                "config_auth" => {
+                b"service_name" => g.service_name = value.into(),
+                b"service_discovery_enabled" => g.discovery_enabled = dpma_ast::util::ast_true(value),
+                b"config_auth" => {
                     let v = value.to_ascii_lowercase();
-                    match v.as_str() {
-                        "mac_pin" => g.auth_flags |= auth::USER | auth::PIN | auth::MAC,
-                        "mac_globalpin" => g.auth_flags |= auth::USER | auth::GLOBALPIN | auth::MAC,
-                        "mac" => g.auth_flags = (g.auth_flags & !auth::USER) | auth::MAC,
-                        "pin" => g.auth_flags |= auth::USER | auth::PIN,
-                        "globalpin" => g.auth_flags |= auth::USER | auth::GLOBALPIN,
-                        "disabled" => g.auth_flags |= auth::USER,
+                    match v.as_slice() {
+                        b"mac_pin" => g.auth_flags |= auth::USER | auth::PIN | auth::MAC,
+                        b"mac_globalpin" => g.auth_flags |= auth::USER | auth::GLOBALPIN | auth::MAC,
+                        b"mac" => g.auth_flags = (g.auth_flags & !auth::USER) | auth::MAC,
+                        b"pin" => g.auth_flags |= auth::USER | auth::PIN,
+                        b"globalpin" => g.auth_flags |= auth::USER | auth::GLOBALPIN,
+                        b"disabled" => g.auth_flags |= auth::USER,
                         _ => {}
                     }
                 }
-                "file_directory" => g.file_directory = value.into(),
-                "firmware_url_prefix" => g.firmware_url_prefix = value.into(),
-                "firmware_package_directory" => {
-                    let sep = if value.ends_with('/') { "" } else { "/" };
-                    g.firmware_package_directory = format!("{}{}", value, sep);
+                b"file_directory" => g.file_directory = value.into(),
+                b"firmware_url_prefix" => g.firmware_url_prefix = value.into(),
+                b"firmware_package_directory" => {
+                    let sep = if value.ends_with(b"/") { "" } else { "/" };
+                    g.firmware_package_directory = bformat!("{}{}", value, sep);
                     g.firmware_package_file =
-                        format!("{}{}{}", value, sep, crate::firmware::PACKAGE_CONFIG_FILE);
+                        bformat!("{}{}{}", value, sep, crate::firmware::PACKAGE_CONFIG_FILE);
                 }
-                "server_uuid" => g.server_uuid = value.into(),
-                "pjsip_message_context" => g.pjsip_message_context = value.into(),
-                "transaction_max_threads" => match value.trim().parse::<i64>() {
-                    Ok(n) if n >= 1 => g.max_threads = n as u32,
+                b"server_uuid" => g.server_uuid = value.into(),
+                b"pjsip_message_context" => g.pjsip_message_context = value.into(),
+                b"transaction_max_threads" => match parse_i64(value) {
+                    Some(n) if n >= 1 => g.max_threads = n as u32,
                     _ => {
                         dpma_log!(
                             "transaction_max_threads must be numerical value >= 1. Forcing to default value ({}).",
@@ -224,8 +230,8 @@ pub fn load() -> Result<(Option<Arc<General>>, Arc<General>), ()> {
                         g.max_threads = DEFAULT_MAX_THREADS;
                     }
                 },
-                "transaction_initial_threads" => match value.trim().parse::<i64>() {
-                    Ok(n) if n >= 1 => g.initial_threads = n as u32,
+                b"transaction_initial_threads" => match parse_i64(value) {
+                    Some(n) if n >= 1 => g.initial_threads = n as u32,
                     _ => {
                         dpma_log!(
                             "transaction_initial_threads must be numerical value >= 1. Forcing to default value ({}).",
@@ -234,14 +240,14 @@ pub fn load() -> Result<(Option<Arc<General>>, Arc<General>), ()> {
                         g.initial_threads = DEFAULT_INITIAL_THREADS;
                     }
                 },
-                "message_delay" => {
+                b"message_delay" => {
                     if let Some(n) = parse_uint("message_delay", value) {
                         g.message_delay = n;
                     }
                 }
                 // Additions of this implementation (see README).
-                "appserver_certificate" => g.appserver_certificate = value.into(),
-                "phone_ca_file" => g.phone_ca_file = value.into(),
+                b"appserver_certificate" => g.appserver_certificate = value.into(),
+                b"phone_ca_file" => g.phone_ca_file = value.into(),
                 _ => dpma_log!("Unknown configuration parameter '{}'", v.name),
             }
         }
@@ -268,7 +274,7 @@ pub fn check_trust_material(g: &General) {
         ("appserver_certificate", &g.appserver_certificate),
         ("phone_ca_file", &g.phone_ca_file),
     ] {
-        if !std::path::Path::new(path).exists() {
+        if !crate::util::path(path).exists() {
             ast_log!(
                 LOG_ERROR,
                 "{} '{}' does not exist; phones will not be able to complete a handshake. See README.md, \"Phone trust material\".",

@@ -54,7 +54,7 @@ fn queue() -> std::sync::MutexGuard<'static, ReadQueue> {
 /// `receive_msg` (FUN_00147c70): the technology's `msg_send` callback.
 /// Takes a reference to the message (done by the caller) and queues it
 /// for [`read_msg`].
-fn receive_msg(m: Msg, _to: &str, _from: &str) -> i32 {
+fn receive_msg(m: Msg, _to: &[u8], _from: &[u8]) -> i32 {
     queue().msgs.push_back(m);
     QUEUE_CV.notify_one();
     0
@@ -147,9 +147,9 @@ pub fn write_msg(msg: Msg) -> Result<(), ()> {
 /// `pjsip_message_context` (its default when the setting is empty).  None
 /// for other schemes, including the original's `sip...` (chan_sip), which
 /// is not supported.
-pub fn new_outgoing(response_uri: &str) -> Option<Msg> {
+pub fn new_outgoing(response_uri: &[u8]) -> Option<Msg> {
     // The original compares prefixes (strncmp with "sip", then "pjsip").
-    if !response_uri.starts_with("pjsip") {
+    if !response_uri.starts_with(b"pjsip") {
         return None;
     }
     let mut m = Msg::alloc()?;
@@ -185,7 +185,7 @@ pub fn destroy_routing() {
 /// `msg_build_dialplan_routing` (FUN_00148860): create `context` and add
 /// the `digium_phone_module` (send) and `proxy` (receive) extensions for
 /// the channel technology `tech` ("pjsip").
-fn build_dialplan_routing(context: &str, tech: &str) -> Result<(), ()> {
+fn build_dialplan_routing(context: &[u8], tech: &str) -> Result<(), ()> {
     dpma_debug!(5, "Build dialplan routing for {} - message context = {}", tech, context);
     if !pbx::context_create(context, REGISTRAR) {
         dpma_log!("Unable to build dialplan routing - can't find/create context {}", context);
@@ -222,9 +222,10 @@ fn build_dialplan_routing(context: &str, tech: &str) -> Result<(), ()> {
     ];
     for (exten, steps) in [(SEND_EXTEN, &send[..]), (PROXY_EXTEN, &proxy[..])] {
         for (i, (label, app, data)) in steps.iter().enumerate() {
-            let data = (!data.is_empty()).then_some(data.as_str());
+            let data = (!data.is_empty()).then_some(data.as_bytes());
+            let label = label.map(str::as_bytes);
             // The original ignores the results.
-            pbx::add_extension(context, true, exten, i as i32 + 1, *label, None, app, data, REGISTRAR);
+            pbx::add_extension(context, true, exten.as_bytes(), i as i32 + 1, label, None, app.as_bytes(), data, REGISTRAR);
         }
     }
     Ok(())
@@ -232,7 +233,7 @@ fn build_dialplan_routing(context: &str, tech: &str) -> Result<(), ()> {
 
 /// `msg_destroy_dialplan_routing` (FUN_0014ff30): remove what this module
 /// added to `context` (and the context itself when that leaves it empty).
-fn destroy_dialplan_routing(context: &str) {
+fn destroy_dialplan_routing(context: &[u8]) {
     if !pbx::context_exists(context) {
         return;
     }
@@ -245,28 +246,29 @@ fn destroy_dialplan_routing(context: &str) {
 #[cfg(feature = "devtest")]
 pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
     use dpma_ast::cli::{CliArgs, CliCommand, CliResult};
+    use dpma_ast::{bformat, bwrite};
     use std::sync::atomic::{AtomicU32, Ordering};
 
     fn read(a: &CliArgs) -> CliResult {
         if a.argc() != 4 {
             return CliResult::ShowUsage;
         }
-        let Ok(ms) = a.argv[3].parse::<i32>() else {
+        let Ok(ms) = crate::util::parse::<i32>(&a.argv[3]) else {
             return CliResult::ShowUsage;
         };
         let Some(m) = read_msg(ms) else {
             a.out("No message\n");
             return CliResult::Success;
         };
-        let mut out = format!("Refcount: {}\n", m.refcount());
+        let mut out = bformat!("Refcount: {}\n", m.refcount());
         for (what, v) in [("To", m.to()), ("From", m.from()), ("Tech", m.tech()), ("Endpoint", m.endpoint())] {
-            out.push_str(&format!("{}: {}\n", what, v.unwrap_or_default()));
+            bwrite!(out, "{}: {}\n", what, v.unwrap_or_default());
         }
-        out.push_str("Variables:\n");
+        bwrite!(out, "Variables:\n");
         for v in m.vars() {
-            out.push_str(&format!("  {}{}: {}\n", if v.outbound { "" } else { "(received) " }, v.name, v.value));
+            bwrite!(out, "  {}{}: {}\n", if v.outbound { "" } else { "(received) " }, v.name, v.value);
         }
-        out.push_str(&format!("Body:\n{}\n", m.body().unwrap_or_default()));
+        bwrite!(out, "Body:\n{}\n", m.body().unwrap_or_default());
         a.out(&out);
         CliResult::Success
     }
@@ -278,26 +280,26 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         }
         let uri = &a.argv[3];
         let ty = &a.argv[4];
-        let body = a.argv[5..].join(" ");
+        let body = a.argv[5..].join(&b" "[..]);
         let Some(mut m) = new_outgoing(uri) else {
-            a.out(&format!("Cannot create a message for '{}'\n", uri));
+            a.out(bformat!("Cannot create a message for '{}'\n", uri));
             return CliResult::Failure;
         };
         m.set_exten(SEND_EXTEN);
         m.set_var(VAR_RESPONSE_URI, uri);
-        let type_var = if ty.ends_with("Response") {
+        let type_var = if ty.ends_with(b"Response") {
             "X-Digium-AppServer-ResponseType"
         } else {
             "X-Digium-AppServer-RequestType"
         };
         m.set_var(type_var, ty);
         let id = ID.fetch_add(1, Ordering::Relaxed) % 100000 + 1;
-        m.set_var("X-Digium-AppServer-ID", &id.to_string());
+        m.set_var("X-Digium-AppServer-ID", id.to_string());
         if !body.is_empty() {
             m.set_body(&body);
         }
         if write_msg(m).is_ok() {
-            a.out(&format!("Queued {} (ID {}) to {}\n", ty, id, uri));
+            a.out(bformat!("Queued {} (ID {}) to {}\n", ty, id, uri));
             CliResult::Success
         } else {
             a.out("Queueing failed\n");
@@ -317,7 +319,7 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         let n = q.msgs.len();
         drop(q);
         let by_ref: Vec<String> = counts.iter().map(|(r, c)| format!("{} with refcount {}", c, r)).collect();
-        a.out(&format!("{} queued message(s){}{}\n", n, if n > 0 { ": " } else { "" }, by_ref.join(", ")));
+        a.out(format!("{} queued message(s){}{}\n", n, if n > 0 { ": " } else { "" }, by_ref.join(", ")));
         CliResult::Success
     }
 

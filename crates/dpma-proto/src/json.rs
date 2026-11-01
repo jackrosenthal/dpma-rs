@@ -22,6 +22,14 @@ impl Formatter for JanssonFormatter {
     }
 }
 
+/// The text of a JSON string made from the bytes of a C string, or None
+/// where jansson refuses them: `json_string` and `ast_json_pack`'s `s`
+/// accept only valid UTF-8 (the same rules as Rust's: no overlong forms,
+/// surrogates, or values above U+10FFFF).
+pub fn utf8(b: &[u8]) -> Option<&str> {
+    std::str::from_utf8(b).ok()
+}
+
 /// `ast_json_dump_string(value)`: compact JSON text.
 pub fn dump(value: &serde_json::Value) -> String {
     let mut buf = Vec::new();
@@ -42,6 +50,16 @@ mod tests {
             dump(&v),
             r#"{"response":{"method":"m","errors":{"error":{"code":10005,"message":"a/b"}}}}"#
         );
+    }
+
+    #[test]
+    fn utf8_like_jansson() {
+        assert_eq!(utf8("Jos\u{e9}".as_bytes()), Some("Jos\u{e9}"));
+        assert_eq!(utf8(b"Jos\xe9"), None);
+        // Overlong, surrogate, and out of range forms.
+        assert_eq!(utf8(b"\xc0\xaf"), None);
+        assert_eq!(utf8(b"\xed\xa0\x80"), None);
+        assert_eq!(utf8(b"\xf4\x90\x80\x80"), None);
     }
 
     #[test]

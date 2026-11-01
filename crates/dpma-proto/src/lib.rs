@@ -67,8 +67,9 @@ pub enum LogLevel {
 
 /// Receives log messages: level, the original's source file, line, and
 /// function, and the message exactly as the original formats it
-/// (including its trailing newline, or the lack of one).
-pub type LogHook = fn(level: LogLevel, file: &str, line: u32, func: &str, msg: &str);
+/// (including its trailing newline, or the lack of one; bytes, as the
+/// message carries text from phones as it came).
+pub type LogHook = fn(level: LogLevel, file: &str, line: u32, func: &str, msg: &[u8]);
 
 static LOG_HOOK: RwLock<Option<LogHook>> = RwLock::new(None);
 
@@ -79,7 +80,7 @@ pub fn set_log_hook(hook: Option<LogHook>) {
     }
 }
 
-pub(crate) fn log(level: LogLevel, file: &str, line: u32, func: &str, msg: &str) {
+pub(crate) fn log(level: LogLevel, file: &str, line: u32, func: &str, msg: &[u8]) {
     let hook = LOG_HOOK.read().ok().and_then(|h| *h);
     if let Some(hook) = hook {
         hook(level, file, line, func, msg);
@@ -95,8 +96,8 @@ pub(crate) mod testlog {
         static LINES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     }
 
-    fn hook(_level: super::LogLevel, _file: &str, _line: u32, _func: &str, msg: &str) {
-        LINES.with(|l| l.borrow_mut().push(msg.to_string()));
+    fn hook(_level: super::LogLevel, _file: &str, _line: u32, _func: &str, msg: &[u8]) {
+        LINES.with(|l| l.borrow_mut().push(String::from_utf8_lossy(msg).into_owned()));
     }
 
     /// Run `f` and return what it logged on this thread.

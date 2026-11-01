@@ -7,25 +7,25 @@ use crate::util::{cstr, from_ptr};
 /// One `name = value` line of a configuration category.
 #[derive(Debug, Clone)]
 pub struct Variable {
-    pub name: String,
-    pub value: String,
+    pub name: Vec<u8>,
+    pub value: Vec<u8>,
     pub lineno: i32,
 }
 
 /// One `[category]` with its variables in file order.
 #[derive(Debug, Clone)]
 pub struct Category {
-    pub name: String,
+    pub name: Vec<u8>,
     pub vars: Vec<Variable>,
 }
 
 impl Category {
     /// First value for `name` (case insensitive).
-    pub fn get(&self, name: &str) -> Option<&str> {
+    pub fn get(&self, name: &str) -> Option<&[u8]> {
         self.vars
             .iter()
-            .find(|v| v.name.eq_ignore_ascii_case(name))
-            .map(|v| v.value.as_str())
+            .find(|v| dpma_bytes::eq_ic(&v.name, name.as_bytes()))
+            .map(|v| v.value.as_slice())
     }
 }
 
@@ -41,7 +41,7 @@ pub enum LoadResult {
 pub const CONFIG_FLAG_NOCACHE: u32 = 1 << 2;
 
 /// Load `filename` and copy its contents into Rust structures.
-pub fn load(filename: &str, who_asked: &str, flags: u32) -> LoadResult {
+pub fn load(filename: impl AsRef<[u8]>, who_asked: &str, flags: u32) -> LoadResult {
     let f = cstr(filename);
     let w = cstr(who_asked);
     unsafe {

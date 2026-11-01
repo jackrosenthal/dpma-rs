@@ -22,7 +22,8 @@ use super::options::{self, UserCtx};
 use super::*;
 use dpma_ast::config::{self, Category, LoadResult};
 use dpma_ast::util::{ast_false, ast_true};
-use dpma_ast::{ast_debug, dpma_log};
+use dpma_ast::dpma_bytes::ByteSlice;
+use dpma_ast::{ast_debug, bformat, dpma_log};
 use std::sync::{Arc, Mutex};
 
 /// One loaded configuration file (shared, so a processing pass can work
@@ -51,7 +52,7 @@ const HOOKS: &[(&str, &str, &str)] = &[
     ("digium_phones_users_voicemail", "users.conf", "app_voicemail"),
 ];
 
-fn load_file(file: &str) -> Option<Vec<Category>> {
+fn load_file(file: &[u8]) -> Option<Vec<Category>> {
     match config::load(file, "res_digium_phone", config::CONFIG_FLAG_NOCACHE) {
         LoadResult::Loaded(c) => Some(c),
         _ => None,
@@ -63,7 +64,7 @@ fn sources() -> Option<Sources> {
 }
 
 /// Store a refreshed copy of one of the other modules' files and reprocess.
-fn set_and_process(which: &str, cats: Option<Vec<Category>>) {
+fn set_and_process(which: &[u8], cats: Option<Vec<Category>>) {
     {
         let mut g = SOURCES.lock().unwrap();
         let Some(src) = g.as_mut() else { return };
@@ -72,8 +73,8 @@ fn set_and_process(which: &str, cats: Option<Vec<Category>>) {
         }
         let cats = cats.map(Arc::new);
         match which {
-            "Voicemail" => src.voicemail = cats,
-            "User voicemail" => src.users_voicemail = cats,
+            b"Voicemail" => src.voicemail = cats,
+            b"User voicemail" => src.users_voicemail = cats,
             _ => return,
         }
     }
@@ -81,20 +82,20 @@ fn set_and_process(which: &str, cats: Option<Vec<Category>>) {
 }
 
 fn hook_voicemail(c: Option<Vec<Category>>) {
-    set_and_process("Voicemail", c);
+    set_and_process(b"Voicemail", c);
 }
 fn hook_users_voicemail(c: Option<Vec<Category>>) {
-    set_and_process("User voicemail", c);
+    set_and_process(b"User voicemail", c);
 }
 
 /// `phone_users_load`.
-pub fn load(filename: &str) -> Result<(), ()> {
+pub fn load(filename: &[u8]) -> Result<(), ()> {
     *write() = Some(Registry::new());
     *SOURCES.lock().unwrap() = Some(Sources::default());
     // The containers of line and phone objects for the exported C API.
     crate::exports::objects::create_containers();
 
-    set_and_process("Voicemail", load_file("voicemail.conf"));
+    set_and_process(b"Voicemail", load_file(b"voicemail.conf"));
 
     let hooks: [dpma_ast::hooks::HookFn; 2] = [hook_voicemail, hook_users_voicemail];
     for ((name, file, module), f) in HOOKS.iter().zip(hooks) {
@@ -108,7 +109,7 @@ pub fn load(filename: &str) -> Result<(), ()> {
 }
 
 /// `phone_users_reload`: re-read res_digium_phone.conf and reprocess.
-pub fn reload(filename: &str) -> Result<(), ()> {
+pub fn reload(filename: &[u8]) -> Result<(), ()> {
     let cats = match config::load(filename, "res_digium_phone", 0) {
         LoadResult::Loaded(c) => Some(c),
         _ => None,
@@ -142,7 +143,7 @@ fn restore_from_db() {
     let mut g = write();
     let Some(reg) = g.as_mut() else { return };
     for (key, value) in entries {
-        let Some((_, name)) = key.rsplit_once('/') else { continue };
+        let Some((_, name)) = key.rsplit_once_str("/") else { continue };
         if value.is_empty() || name.is_empty() {
             continue;
         }
@@ -158,18 +159,18 @@ fn restore_from_db() {
 }
 
 /// A setting of a file's `[general]` section.
-fn general_var<'a>(cats: &'a Cfg, var: &str) -> Option<&'a str> {
+fn general_var<'a>(cats: &'a Cfg, var: &str) -> Option<&'a [u8]> {
     cats.as_ref()?
         .iter()
-        .find(|c| c.name.eq_ignore_ascii_case("general"))?
+        .find(|c| c.name.eq_ignore_ascii_case(b"general"))?
         .get(var)
 }
 
 /// Side effects collected while the registry is locked and performed after.
 #[derive(Default)]
 struct Effects {
-    new_internal_lines: Vec<String>,
-    remove_hints: Vec<(String, String)>,
+    new_internal_lines: Vec<Vec<u8>>,
+    remove_hints: Vec<(Vec<u8>, Vec<u8>)>,
     /// `phone_user_delme_cb` for each phone, in container order.
     phones: Vec<PhoneFx>,
     /// Lines removed by this pass (for their exported objects).
@@ -180,9 +181,9 @@ struct Effects {
 enum PhoneFx {
     /// A phone that is no longer configured: reconfigure it, forget its
     /// AstDB entry, and mark its session inactive.
-    Delete { name: String, uri: String, session: String },
+    Delete { name: Vec<u8>, uri: Vec<u8>, session: Vec<u8> },
     /// A phone whose lines changed (or whose voicemail pin did).
-    Reconfigure { name: String, uri: String, session: String },
+    Reconfigure { name: Vec<u8>, uri: Vec<u8>, session: Vec<u8> },
 }
 
 /// A res_digium_phone.conf `[line]` or `[external_line]` section for
@@ -197,8 +198,8 @@ fn apply_section(cat: &Category, line: &mut Line) {
 /// Does a users.conf section have voicemail (app_voicemail's
 /// `hasvoicemail`)?
 fn users_voicemail_enabled(users_voicemail: &Cfg, cat: &Category) -> bool {
-    let all = ast_true(general_var(users_voicemail, "hasvoicemail").unwrap_or(""));
-    let v = cat.get("hasvoicemail").unwrap_or("");
+    let all = ast_true(general_var(users_voicemail, "hasvoicemail").unwrap_or(b""));
+    let v = cat.get("hasvoicemail").unwrap_or(b"");
     if all {
         !ast_false(v) || ast_true(v)
     } else {
@@ -207,9 +208,9 @@ fn users_voicemail_enabled(users_voicemail: &Cfg, cat: &Category) -> bool {
 }
 
 /// voicemail.conf's `userscontext`, "default" when unset.
-fn users_context(voicemail: &Cfg) -> String {
+fn users_context(voicemail: &Cfg) -> Vec<u8> {
     match general_var(voicemail, "userscontext") {
-        Some(c) if !c.is_empty() => c.to_string(),
+        Some(c) if !c.is_empty() => c.to_vec(),
         _ => "default".into(),
     }
 }
@@ -221,14 +222,14 @@ fn users_context(voicemail: &Cfg) -> String {
 /// named after the variable (as in the original), and a users.conf
 /// (app_voicemail) section named after `line` with voicemail sets that
 /// line's mailbox.
-pub fn line_mailboxes(line: &str) -> Vec<(String, String)> {
+pub fn line_mailboxes(line: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
     let Some(src) = sources() else { return Vec::new() };
     let named = |c: &&Category| c.name.eq_ignore_ascii_case(line);
     let mut out = Vec::new();
     if let Some(vm) = &src.voicemail {
         for cat in vm.iter().filter(named) {
             for v in &cat.vars {
-                out.push((v.name.clone(), format!("{}@{}", v.name, cat.name)));
+                out.push((v.name.clone(), bformat!("{}@{}", v.name, cat.name)));
             }
         }
     }
@@ -236,7 +237,7 @@ pub fn line_mailboxes(line: &str) -> Vec<(String, String)> {
         let context = users_context(&src.voicemail);
         for cat in users.iter().filter(named) {
             if users_voicemail_enabled(&src.users_voicemail, cat) {
-                out.push((cat.name.clone(), format!("{}@{}", cat.name, context)));
+                out.push((cat.name.clone(), bformat!("{}@{}", cat.name, context)));
             }
         }
     }
@@ -252,7 +253,7 @@ pub fn apply_line_sections(line: &mut Line) {
     for cat in phones.iter().filter(|c| c.name.eq_ignore_ascii_case(&name)) {
         match cat.get("type") {
             None => dpma_log!("No type set for {}", cat.name),
-            Some(t) if t.eq_ignore_ascii_case("line") || t.eq_ignore_ascii_case("external_line") => {
+            Some(t) if t.eq_ignore_ascii_case(b"line") || t.eq_ignore_ascii_case(b"external_line") => {
                 apply_section(cat, line);
             }
             Some(_) => {}
@@ -261,7 +262,7 @@ pub fn apply_line_sections(line: &mut Line) {
 }
 
 fn is_type(cat: &Category, ty: &str) -> bool {
-    cat.get("type").is_some_and(|t| t.eq_ignore_ascii_case(ty))
+    cat.get("type").is_some_and(|t| t.eq_ignore_ascii_case(ty.as_bytes()))
 }
 
 const KNOWN_TYPES: &[&str] = &[
@@ -270,7 +271,7 @@ const KNOWN_TYPES: &[&str] = &[
 ];
 
 /// Reprocess everything (`phone_users_process_phone_config`).
-pub fn process(trigger: &str) -> Result<(), ()> {
+pub fn process(trigger: &[u8]) -> Result<(), ()> {
     dpma_log!("Reconfiguring triggered by {}", trigger);
 
     let (phones_cfg, voicemail, users_voicemail) = {
@@ -323,13 +324,13 @@ pub fn process(trigger: &str) -> Result<(), ()> {
         }
 
         // ---- phones ----
-        for cat in phones_cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case("general")) {
+        for cat in phones_cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
             match cat.get("type") {
                 None => dpma_log!("No type set for {}", cat.name),
-                Some(t) if t.eq_ignore_ascii_case("phone") => {
+                Some(t) if t.eq_ignore_ascii_case(b"phone") => {
                     build_phone(reg, cat, &general, &mut fx);
                 }
-                Some(t) if KNOWN_TYPES.iter().any(|k| k.eq_ignore_ascii_case(t)) => {}
+                Some(t) if KNOWN_TYPES.iter().any(|k| k.as_bytes().eq_ignore_ascii_case(t)) => {}
                 Some(t) => dpma_log!("Unknown type \"{}\" for entry \"{}\"", t, cat.name),
             }
         }
@@ -351,7 +352,7 @@ pub fn process(trigger: &str) -> Result<(), ()> {
         let Some(reg) = g.as_mut() else { return Err(()) };
 
         // ---- [line] / [external_line] sections (`process_lines_dp`) ----
-        for cat in phones_cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case("general")) {
+        for cat in phones_cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
             if cat.get("type").is_none() {
                 dpma_log!("No type set for {}", cat.name);
                 continue;
@@ -367,7 +368,7 @@ pub fn process(trigger: &str) -> Result<(), ()> {
         // ---- voicemail.conf: pins for phones with pin=voicemail ----
         if let Some(vm) = &voicemail {
             for cat in vm.iter() {
-                if cat.name.eq_ignore_ascii_case("general") || cat.name.eq_ignore_ascii_case("zonemessages") {
+                if cat.name.eq_ignore_ascii_case(b"general") || cat.name.eq_ignore_ascii_case(b"zonemessages") {
                     continue;
                 }
                 for v in &cat.vars {
@@ -378,10 +379,10 @@ pub fn process(trigger: &str) -> Result<(), ()> {
 
         // ---- users.conf (app_voicemail): mailboxes ----
         if let Some(users) = &users_voicemail {
-            for cat in users.iter().filter(|c| !c.name.eq_ignore_ascii_case("general")) {
+            for cat in users.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
                 if users_voicemail_enabled(&users_voicemail, cat) {
                     if let Some(line) = reg.lines.get_mut(&cat.name) {
-                        options::set_line_mailbox(line, &format!("{}@{}", cat.name, users_context));
+                        options::set_line_mailbox(line, &bformat!("{}@{}", cat.name, users_context));
                     }
                 }
             }
@@ -401,7 +402,7 @@ pub fn process(trigger: &str) -> Result<(), ()> {
         reg.lines.retain(|l| {
             if l.delme {
                 if !l.hint_context.is_empty() {
-                    fx.remove_hints.push((l.hint_context.clone(), format!("auto_hint_{}", l.name)));
+                    fx.remove_hints.push((l.hint_context.clone(), bformat!("auto_hint_{}", l.name)));
                 }
                 fx.swept_lines.push(l.clone());
                 false
@@ -456,7 +457,7 @@ pub fn process(trigger: &str) -> Result<(), ()> {
 
 /// `build_user`.
 fn build_phone(reg: &mut Registry, cat: &Category, general: &crate::config::General, fx: &mut Effects) {
-    let name = cat.name.as_str();
+    let name = cat.name.as_slice();
     let mut phone = match reg.phones.get_mut(name) {
         Some(p) => std::mem::replace(p, Phone::new(name)),
         None => Phone::new(name),
@@ -469,7 +470,7 @@ fn build_phone(reg: &mut Registry, cat: &Category, general: &crate::config::Gene
     // the old lists (every application is marked for deletion by now).
     super::presence::sync_applications(&reg.applications, &mut phone, &old_apps);
 
-    let lines_before: Vec<String> = reg.lines.values().map(|l| l.name.clone()).collect();
+    let lines_before: Vec<Vec<u8>> = reg.lines.values().map(|l| l.name.clone()).collect();
     {
         let mut ctx = UserCtx { lines: &mut reg.lines, networks: &mut reg.networks };
         for v in &cat.vars {
@@ -493,9 +494,9 @@ fn build_phone(reg: &mut Registry, cat: &Category, general: &crate::config::Gene
     if !general.registration_address.is_empty() || !general.firmware_url_prefix.is_empty() {
         let (net, _) = reg.networks.get_or_insert_with(name, || Network::new(name));
         net.delme = false;
-        let _ = options::set_network_option(net, "registration_address", &general.registration_address);
-        let _ = options::set_network_option(net, "registration_port", general.registration_port());
-        let _ = options::set_network_option(net, "file_url_prefix", &general.firmware_url_prefix);
+        let _ = options::set_network_option(net, b"registration_address", &general.registration_address);
+        let _ = options::set_network_option(net, b"registration_port", general.registration_port());
+        let _ = options::set_network_option(net, b"file_url_prefix", &general.firmware_url_prefix);
     }
     if let Some(net) = reg.networks.get_mut(name) {
         net.cidr = "0.0.0.0/0".into();
@@ -515,8 +516,8 @@ fn build_phone(reg: &mut Registry, cat: &Category, general: &crate::config::Gene
 /// each primary line; [`process`] holds every line lock here) takes the
 /// voicemail password as its pin when it is configured with
 /// `pin=voicemail`.
-fn set_voicemail_pin(reg: &mut Registry, mailbox: &str, context: &str, value: &str) {
-    let target = format!("{}@{}", mailbox, context);
+fn set_voicemail_pin(reg: &mut Registry, mailbox: &[u8], context: &[u8], value: &[u8]) {
+    let target = bformat!("{}@{}", mailbox, context);
     let mut found = None;
     for p in reg.phones.values() {
         let Some(primary) = p.primary_line() else { continue };
@@ -532,11 +533,11 @@ fn set_voicemail_pin(reg: &mut Registry, mailbox: &str, context: &str, value: &s
         return;
     }
     // Asterisk allows a leading '-' or '*' on voicemail passwords.
-    let v = match value.chars().next() {
-        Some(c) if !c.is_ascii_digit() => &value[c.len_utf8()..],
+    let v = match value.first() {
+        Some(c) if !c.is_ascii_digit() => &value[1..],
         _ => value,
     };
-    let pin = crate::util::first_token(v, &[',']).to_string();
+    let pin = crate::util::first_token(v, b",").to_vec();
     if pin != phone.applied_pin {
         ast_debug!(3, "{} pin changed from {} to {} - reconfiguring", phone.name, phone.applied_pin, pin);
         phone.needs_reconfigure = true;
@@ -547,7 +548,7 @@ fn set_voicemail_pin(reg: &mut Registry, mailbox: &str, context: &str, value: &s
 
 /// `process_applications`.
 fn process_applications(reg: &mut Registry, cfg: &[Category]) {
-    for cat in cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case("general")) {
+    for cat in cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
         if !is_type(cat, "application") {
             continue;
         }
@@ -560,7 +561,7 @@ fn process_applications(reg: &mut Registry, cfg: &[Category]) {
             continue;
         };
         for v in &cat.vars {
-            if v.name.eq_ignore_ascii_case("type") || v.name.eq_ignore_ascii_case("application") {
+            if v.name.eq_ignore_ascii_case(b"type") || v.name.eq_ignore_ascii_case(b"application") {
                 continue;
             }
             if options::set_app_option(&mut data, &v.name, &v.value).is_err() {
@@ -587,14 +588,14 @@ fn process_applications(reg: &mut Registry, cfg: &[Category]) {
 
 /// `process_networks`.
 fn process_networks(reg: &mut Registry, cfg: &[Category]) {
-    for cat in cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case("general")) {
+    for cat in cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
         if !is_type(cat, "network") {
             continue;
         }
         let (net, _) = reg.networks.get_or_insert_with(&cat.name, || Network::new(&cat.name));
         net.reset_for_section();
         for v in &cat.vars {
-            if v.name.eq_ignore_ascii_case("type") {
+            if v.name.eq_ignore_ascii_case(b"type") {
                 continue;
             }
             if options::set_network_option(net, &v.name, &v.value).is_err() {
@@ -606,17 +607,17 @@ fn process_networks(reg: &mut Registry, cfg: &[Category]) {
 
 /// Ringtones, firmware profiles, alerts, and multicast pages.
 fn process_simple(reg: &mut Registry, cfg: &[Category]) {
-    let sections = || cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case("general"));
-    let opts = |cat: &Category| cat.vars.iter().filter(|v| !v.name.eq_ignore_ascii_case("type")).cloned().collect::<Vec<_>>();
+    let sections = || cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general"));
+    let opts = |cat: &Category| cat.vars.iter().filter(|v| !v.name.eq_ignore_ascii_case(b"type")).cloned().collect::<Vec<_>>();
 
     for cat in sections().filter(|c| is_type(c, "ringtone")) {
         let r = Ringtone { name: cat.name.clone(), ..Default::default() };
         reg.ringtones.insert(&cat.name, r);
         let r = reg.ringtones.get_mut(&cat.name).unwrap();
         for v in opts(cat) {
-            match v.name.to_ascii_lowercase().as_str() {
-                "alias" => r.alias = v.value,
-                "filename" => r.filename = v.value,
+            match v.name.to_ascii_lowercase().as_slice() {
+                b"alias" => r.alias = v.value,
+                b"filename" => r.filename = v.value,
                 _ => dpma_log!("Unknown ringtone option '{}'", v.name),
             }
         }
@@ -636,10 +637,10 @@ fn process_simple(reg: &mut Registry, cfg: &[Category]) {
         reg.alerts.insert(&cat.name, Alert { name: cat.name.clone(), ..Default::default() });
         let a = reg.alerts.get_mut(&cat.name).unwrap();
         for v in opts(cat) {
-            match v.name.to_ascii_lowercase().as_str() {
-                "alert_info" => a.alert_info = v.value,
-                "ring_type" => a.ring_type = v.value,
-                "ringtone" => a.ringtone = v.value,
+            match v.name.to_ascii_lowercase().as_slice() {
+                b"alert_info" => a.alert_info = v.value,
+                b"ring_type" => a.ring_type = v.value,
+                b"ringtone" => a.ringtone = v.value,
                 _ => dpma_log!("Unknown alert option '{}'", v.name),
             }
         }
@@ -649,12 +650,12 @@ fn process_simple(reg: &mut Registry, cfg: &[Category]) {
         reg.pages.insert(&cat.name, Page { name: cat.name.clone(), interrupt: "0".into(), ..Default::default() });
         let p = reg.pages.get_mut(&cat.name).unwrap();
         for v in opts(cat) {
-            match v.name.to_ascii_lowercase().as_str() {
-                "alias" => p.alias = v.value,
-                "address" => p.address = v.value,
-                "port" => p.port = v.value,
-                "priority" => p.priority = v.value,
-                "interrupt" => p.interrupt = v.value,
+            match v.name.to_ascii_lowercase().as_slice() {
+                b"alias" => p.alias = v.value,
+                b"address" => p.address = v.value,
+                b"port" => p.port = v.value,
+                b"priority" => p.priority = v.value,
+                b"interrupt" => p.interrupt = v.value,
                 _ => dpma_log!("Unknown multicast page option '{}'", v.name),
             }
         }
@@ -663,9 +664,9 @@ fn process_simple(reg: &mut Registry, cfg: &[Category]) {
 
 /// A dialplan hint to (re)create for an internal line.
 struct HintPlan {
-    line: String,
-    tech: String,
-    context: String,
+    line: Vec<u8>,
+    tech: Vec<u8>,
+    context: Vec<u8>,
 }
 
 /// `phone_line_hint_cb`, first half: decide which hints to create and drop
@@ -683,7 +684,7 @@ fn plan_hints(reg: &mut Registry, fx: &mut Effects) -> Vec<HintPlan> {
             l.subscribecontext = l.context.clone();
         }
         if !l.hint_context.is_empty() && l.hint_context != l.subscribecontext {
-            fx.remove_hints.push((std::mem::take(&mut l.hint_context), format!("auto_hint_{}", l.name)));
+            fx.remove_hints.push((std::mem::take(&mut l.hint_context), bformat!("auto_hint_{}", l.name)));
         }
         plans.push(HintPlan { line: l.name.clone(), tech: l.tech.clone(), context: l.subscribecontext.clone() });
     }
@@ -696,11 +697,11 @@ fn apply_hints(plans: Vec<HintPlan>) {
     for h in plans {
         if !dpma_ast::pbx::context_create(&h.context, REGISTRAR) {
             dpma_log!("Could not create context '{}' for auto_hint.", h.context);
-            results.push((h.line, String::new()));
+            results.push((h.line, Vec::new()));
             continue;
         }
-        let exten = format!("auto_hint_{}", h.line);
-        let hint = format!("{}/{},CustomPresence:{}", h.tech, h.line, h.line);
+        let exten = bformat!("auto_hint_{}", h.line);
+        let hint = bformat!("{}/{},CustomPresence:{}", h.tech, h.line, h.line);
         let ok = dpma_ast::pbx::add_extension(
             &h.context,
             true,
@@ -712,7 +713,7 @@ fn apply_hints(plans: Vec<HintPlan>) {
             None,
             REGISTRAR,
         );
-        results.push((h.line, if ok { h.context } else { String::new() }));
+        results.push((h.line, if ok { h.context } else { Vec::new() }));
     }
     let mut g = write();
     let Some(reg) = g.as_mut() else { return };

@@ -19,7 +19,6 @@
 
 use dpma_ast::ao2;
 use dpma_ast::log::{debug_atleast, LOG_DEBUG, LOG_WARNING};
-use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_uint, c_void};
 use std::ptr::null_mut;
@@ -33,7 +32,7 @@ const MAX_URL_SIZE: usize = 512;
 /// `ast_log` under the original's file name and the given function name.
 macro_rules! log {
     ($level:expr, $func:expr, $($arg:tt)*) => {
-        dpma_ast::log::log($level, FILE, line!(), $func, &format!($($arg)*))
+        dpma_ast::log::log($level, FILE, line!(), $func, &dpma_ast::bformat!($($arg)*))
     };
 }
 
@@ -94,11 +93,12 @@ extern "C" {
     fn dpma_dlg_glue_set_content(pool: *mut c_void, node: *mut c_void, text: *const c_char);
 }
 
-unsafe fn lossy<'a>(p: *const c_char) -> Cow<'a, str> {
+/// The bytes of a C string, as `%s` prints it ("(null)" for NULL).
+unsafe fn text<'a>(p: *const c_char) -> &'a [u8] {
     if p.is_null() {
-        "(null)".into()
+        b"(null)"
     } else {
-        CStr::from_ptr(p).to_string_lossy()
+        CStr::from_ptr(p).to_bytes()
     }
 }
 
@@ -118,14 +118,14 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 /// The user and domain of a party's URI: "anonymous" (or "" when the
 /// number is not valid) at "anonymous.invalid" when the number is
 /// restricted, else the number at `domain`.
-unsafe fn uri_of(party: &Party, domain: &CStr) -> String {
+unsafe fn uri_of(party: &Party, domain: &CStr) -> Vec<u8> {
     let (user, domain): (CString, &CStr) = if party.number_restricted != 0 {
         let user = if party.number_valid != 0 { c"anonymous" } else { c"" };
         (user.to_owned(), c"anonymous.invalid")
     } else {
         (s_cor(party.number_valid, party.number), domain)
     };
-    format!("sip:{}@{}", user.to_string_lossy(), domain.to_string_lossy())
+    dpma_ast::bformat!("sip:{}@{}", user.as_bytes(), domain.to_bytes())
 }
 
 /// A party's display name, XML escaped: "anonymous" (or "" when the name is
@@ -144,11 +144,11 @@ unsafe fn display_name_of(party: &Party) -> CString {
 /// `setup_elements`: give `dialog` a `tag` ("local" or "remote") element
 /// with `<target uri=...>` and `<identity display=...>uri</identity>`,
 /// keeping whatever of them is there already.
-unsafe fn setup_elements(st: &State, statestring: &str, dialog: *mut c_void, tag: &CStr, uri: &CStr, name: &CStr) {
+unsafe fn setup_elements(st: &State, statestring: &[u8], dialog: *mut c_void, tag: &CStr, uri: &CStr, name: &CStr) {
     const FUNC: &str = "setup_elements";
-    let exten = lossy(st.exten);
-    let local = lossy(st.local);
-    let t = tag.to_string_lossy();
+    let exten = text(st.exten);
+    let local = text(st.local);
+    let t = tag.to_bytes();
 
     let mut node = dpma_dlg_glue_find_node(dialog, tag.as_ptr());
     if node.is_null() {
@@ -191,9 +191,9 @@ unsafe fn supplement_body(body: *mut c_void, data: *mut c_void) -> c_int {
         pool: null_mut(),
     };
     dpma_dlg_glue_state(data, &mut st);
-    let exten = lossy(st.exten);
-    let local = lossy(st.local);
-    let remote = lossy(st.remote);
+    let exten = text(st.exten);
+    let local = text(st.local);
+    let remote = text(st.remote);
 
     // res_pjsip_exten_state lower-cases the subscriber's user agent.
     let is_phone = !st.user_agent.is_null() && {
@@ -223,7 +223,7 @@ unsafe fn supplement_body(body: *mut c_void, data: *mut c_void) -> c_int {
     let mut pidfnote: *mut c_char = null_mut();
     let mut local_state: c_int = 0;
     ast_sip_presence_exten_state_to_str(st.exten_state, &mut statestring, &mut pidfstate, &mut pidfnote, &mut local_state, 1);
-    let state_str = lossy(statestring);
+    let state_str = text(statestring);
 
     // The domain of the local URI.
     let mut local_copy = if st.local.is_null() { vec![0] } else { CStr::from_ptr(st.local).to_bytes_with_nul().to_vec() };
@@ -240,7 +240,7 @@ unsafe fn supplement_body(body: *mut c_void, data: *mut c_void) -> c_int {
             state_str,
             local,
             remote,
-            sanitized.to_string_lossy()
+            sanitized.to_bytes()
         );
         ao2::cleanup(callee);
         return 0;
@@ -282,22 +282,22 @@ unsafe fn supplement_body(body: *mut c_void, data: *mut c_void) -> c_int {
     // The local side is the channel's caller, the remote side its
     // connected line.
     dpma_dlg_glue_party(callee, 0, &mut party);
-    let local_uri = dpma_ast::cstr(&uri_of(&party, &domain));
+    let local_uri = dpma_ast::cstr(uri_of(&party, &domain));
     let local_name = display_name_of(&party);
     dpma_dlg_glue_party(callee, 1, &mut party);
-    let remote_uri = dpma_ast::cstr(&uri_of(&party, &domain));
+    let remote_uri = dpma_ast::cstr(uri_of(&party, &domain));
     let remote_name = display_name_of(&party);
     debug!(
         1,
         FUNC,
         "Local: '{}' <{}>  Remote: '{}' <{}>\n",
-        local_name.to_string_lossy(),
-        local_uri.to_string_lossy(),
-        remote_name.to_string_lossy(),
-        remote_uri.to_string_lossy()
+        local_name.to_bytes(),
+        local_uri.to_bytes(),
+        remote_name.to_bytes(),
+        remote_uri.to_bytes()
     );
-    setup_elements(&st, &state_str, dialog, c"local", &local_uri, &local_name);
-    setup_elements(&st, &state_str, dialog, c"remote", &remote_uri, &remote_name);
+    setup_elements(&st, state_str, dialog, c"local", &local_uri, &local_name);
+    setup_elements(&st, state_str, dialog, c"remote", &remote_uri, &remote_name);
     ao2::unlock(callee);
     ao2::cleanup(callee);
     0

@@ -65,11 +65,12 @@ pub static phone_line_transport_string: CStrTable = CStrTable([cs!("udp"), cs!("
 #[no_mangle]
 pub static phone_line_transport_type: CStrTable = CStrTable([cs!(""), cs!("udp"), cs!("tcp"), cs!("tls")]);
 
-unsafe fn opt_str<'a>(p: *const c_char) -> std::borrow::Cow<'a, str> {
+/// The bytes of a C string argument ("" for NULL).
+unsafe fn opt_str<'a>(p: *const c_char) -> &'a [u8] {
     if p.is_null() {
-        "".into()
+        b""
     } else {
-        CStr::from_ptr(p).to_string_lossy()
+        CStr::from_ptr(p).to_bytes()
     }
 }
 
@@ -112,15 +113,15 @@ pub unsafe extern "C" fn phone_users_set_line_option(opt: *const c_char, val: *c
         let val = opt_str(val);
         if line.is_null() {
             let mut scratch = Line::default();
-            return if options::set_line_option(&mut scratch, &opt, &val).is_ok() { 0 } else { -1 };
+            return if options::set_line_option(&mut scratch, opt, val).is_ok() { 0 } else { -1 };
         }
-        match (*line).with_line(|l| options::set_line_option(l, &opt, &val)) {
+        match (*line).with_line(|l| options::set_line_option(l, opt, val)) {
             Some(Err(())) => -1,
             Some(Ok(())) => 0,
             // The registry no longer has the line: validate the name only.
             None => {
                 let mut scratch = Line::default();
-                if options::set_line_option(&mut scratch, &opt, &val).is_ok() { 0 } else { -1 }
+                if options::set_line_option(&mut scratch, opt, val).is_ok() { 0 } else { -1 }
             }
         }
     })
@@ -137,7 +138,7 @@ pub unsafe extern "C" fn phone_users_process_line(line: *mut LineObj) {
     if line.is_null() {
         return;
     }
-    let name = (*line).key().to_string();
+    let name = (*line).key().to_vec();
     let mailboxes = dpma_ast::guard(Vec::new(), || users::load::line_mailboxes(&name));
     for (target, mailbox) in mailboxes {
         let t = dpma_ast::cstr(&target);
@@ -147,7 +148,7 @@ pub unsafe extern "C" fn phone_users_process_line(line: *mut LineObj) {
         }
         ao2::lock(obj as *mut c_void);
         dpma_ast::guard((), || {
-            (*obj).with_line(|l| options::set_line_option(l, "mailbox", &mailbox));
+            (*obj).with_line(|l| options::set_line_option(l, b"mailbox", &mailbox));
         });
         ao2::unlock(obj as *mut c_void);
         ao2::cleanup(obj as *mut c_void);
@@ -163,7 +164,7 @@ pub unsafe extern "C" fn phone_users_process_line(line: *mut LineObj) {
 /// reprocess everything; -1 when res_digium_phone.conf is not loaded.
 #[no_mangle]
 pub unsafe extern "C" fn phone_users_process_phone_config(trigger: *const c_char) -> c_int {
-    let trigger = opt_str(trigger).into_owned();
+    let trigger = opt_str(trigger).to_vec();
     dpma_ast::guard(-1, || if users::load::process(&trigger).is_ok() { 0 } else { -1 })
 }
 
@@ -191,7 +192,7 @@ pub unsafe extern "C" fn phone_line_find_authenticated(name: *const c_char, secr
         return line;
     }
     ao2::lock(line as *mut c_void);
-    let given = opt_str(secret).into_owned();
+    let given = opt_str(secret).to_vec();
     let ok = dpma_ast::guard(false, || (*line).with_line(|l| l.secret == given).unwrap_or(given.is_empty()));
     ao2::unlock(line as *mut c_void);
     if !ok {
@@ -209,7 +210,7 @@ pub unsafe extern "C" fn phone_line_get_user(line: *mut LineObj) -> *mut UserObj
     if users_c.is_null() || line.is_null() {
         return std::ptr::null_mut();
     }
-    let name = opt_str(line as *const c_char).into_owned();
+    let name = opt_str(line as *const c_char).to_vec();
     let phone = dpma_ast::guard(None, || users::runtime::phone_for_line(&name));
     match phone {
         Some(p) => {
@@ -225,9 +226,9 @@ pub unsafe extern "C" fn phone_line_get_user(line: *mut LineObj) -> *mut UserObj
 /// lines get an initial CustomPresence state.
 #[no_mangle]
 pub unsafe extern "C" fn phone_line_create(name: *const c_char, external: c_int) -> *mut LineObj {
-    let name = opt_str(name).into_owned();
+    let name = opt_str(name).to_vec();
     dpma_ast::guard(std::ptr::null_mut(), || {
-        let line = objects::new_line(&name, "", Some(Line::new(&name, external & 1 != 0)));
+        let line = objects::new_line(&name, b"", Some(Line::new(&name, external & 1 != 0)));
         if !line.is_null() && external == 0 {
             options::init_custom_presence(&name);
         }
@@ -284,10 +285,10 @@ pub unsafe extern "C" fn phone_user_token_set_last_info(
     if user.is_null() {
         return;
     }
-    let name = (*user).key().to_string();
-    let uri = opt_str(uri).into_owned();
-    let session = (!session.is_null()).then(|| opt_str(session).into_owned());
-    let mac = (!mac.is_null()).then(|| opt_str(mac).into_owned());
+    let name = (*user).key().to_vec();
+    let uri = opt_str(uri).to_vec();
+    let session = (!session.is_null()).then(|| opt_str(session).to_vec());
+    let mac = (!mac.is_null()).then(|| opt_str(mac).to_vec());
     dpma_ast::guard((), || {
         #[cfg(feature = "devtest")]
         super::devtest::record_last_info(&name, &uri, session.as_deref(), mac.as_deref(), (*user).is_linked());
@@ -300,7 +301,7 @@ pub unsafe extern "C" fn phone_user_token_set_last_info(
 /// `int phone_users_load(const char *file)`.
 #[no_mangle]
 pub unsafe extern "C" fn phone_users_load(file: *const c_char) -> c_int {
-    let file = opt_str(file).into_owned();
+    let file = opt_str(file).to_vec();
     dpma_ast::guard(-1, || {
         let _ = users::load::load(&file);
         0
@@ -310,7 +311,7 @@ pub unsafe extern "C" fn phone_users_load(file: *const c_char) -> c_int {
 /// `int phone_users_reload(const char *file)`.
 #[no_mangle]
 pub unsafe extern "C" fn phone_users_reload(file: *const c_char) -> c_int {
-    let file = opt_str(file).into_owned();
+    let file = opt_str(file).to_vec();
     dpma_ast::guard(-1, || {
         let _ = users::load::reload(&file);
         0

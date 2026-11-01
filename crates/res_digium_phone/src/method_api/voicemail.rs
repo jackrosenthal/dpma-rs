@@ -33,12 +33,11 @@ use dpma_ast::channel;
 use dpma_ast::dial::{self, AstDial};
 use dpma_ast::log::LOG_WARNING;
 use dpma_ast::vm::{self, SortBy};
-use dpma_ast::{ast_log, dpma_log};
+use dpma_ast::{ast_log, bformat, dpma_log};
 use dpma_proto::errors::request::{
     INVALID_MAILBOX_FOLDER, NOT_PERMITTED, PARAMS_NOT_FOUND, PARSE, PHONE_EVENT_APP_FAILED,
 };
 use serde_json::{json, Value};
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::os::raw::c_void;
 use std::sync::{Arc, Mutex};
@@ -95,13 +94,13 @@ struct UserTracker {
 
 /// The phone-user tracker container (0x5eff48), keyed by phone name (case
 /// sensitive).  None while the module is not loaded.
-static USER_TRACKERS: Mutex<Option<HashMap<String, Arc<UserTracker>>>> = Mutex::new(None);
+static USER_TRACKERS: Mutex<Option<HashMap<Vec<u8>, Arc<UserTracker>>>> = Mutex::new(None);
 
 /// `vm_phone_user_tracker_find_or_create` (FUN_00181950).
-fn user_tracker_find_or_create(name: &str) -> Arc<UserTracker> {
+fn user_tracker_find_or_create(name: &[u8]) -> Arc<UserTracker> {
     let mut g = USER_TRACKERS.lock().unwrap();
     match g.as_mut() {
-        Some(map) => map.entry(name.to_string()).or_default().clone(),
+        Some(map) => map.entry(name.to_vec()).or_default().clone(),
         // No container: the original's link fails but the tracker is
         // still used for the request.
         None => Arc::new(UserTracker::default()),
@@ -111,7 +110,7 @@ fn user_tracker_find_or_create(name: &str) -> Arc<UserTracker> {
 /// `vm_phone_user_tracker_remove` (FUN_0017b390): drop a phone's
 /// trackers.  Called when the phone is destroyed and when its session
 /// changes (`phone_user_token_set_last_info`).
-pub fn remove_user_tracker(name: &str) {
+pub fn remove_user_tracker(name: &[u8]) {
     if let Some(map) = USER_TRACKERS.lock().unwrap().as_mut() {
         map.remove(name);
     }
@@ -218,11 +217,8 @@ fn make_id(folder: Option<&str>, msg_id: &[u8]) -> Vec<u8> {
 }
 
 /// A string for printf-style output; None prints as "(null)".
-fn show(s: Option<&[u8]>) -> Cow<'_, str> {
-    match s {
-        Some(s) => String::from_utf8_lossy(s),
-        None => Cow::Borrowed("(null)"),
-    }
+fn show(s: Option<&[u8]>) -> &[u8] {
+    s.unwrap_or(b"(null)")
 }
 
 /// Split `box@context` at the first '@' (no '@': no context).
@@ -289,20 +285,22 @@ fn strtol10(s: &[u8]) -> i64 {
 }
 
 /// Replace `out` with a JSON error document; the handlers then return -1.
-fn fail(out: &mut String, method: &str, code: i32, detail: &str) -> i32 {
+fn fail(out: &mut Vec<u8>, method: &[u8], code: i32, detail: impl AsRef<[u8]>) -> i32 {
     error_response_json(out, method, code, detail);
     -1
 }
 
-/// Append `{"response":{"method":M,"result":R}}` to `out`.
-fn respond(out: &mut String, method: &str, result: Value) {
+/// Append `{"response":{"method":M,"result":R}}` to `out` (nothing when
+/// the method is not UTF-8, where the original's `ast_json_pack` fails).
+fn respond(out: &mut Vec<u8>, method: &[u8], result: Value) {
+    let Some(method) = dpma_proto::json::utf8(method) else { return };
     let doc = json!({"response": {"method": method, "result": result}});
-    out.push_str(&dpma_proto::json::dump(&doc));
+    out.extend_from_slice(dpma_proto::json::dump(&doc).as_bytes());
 }
 
 /// `phone_user_get_application_settings(user, voicemail)` and its folder
 /// translation table (logs "Failed to find application" like the original).
-fn vm_translation(phone: &str) -> Option<Arc<Table>> {
+fn vm_translation(phone: &[u8]) -> Option<Arc<Table>> {
     let g = users::read();
     let reg = g.as_ref()?;
     let p = reg.phones.get(phone)?;
@@ -317,8 +315,8 @@ fn vm_translation(phone: &str) -> Option<Arc<Table>> {
 /// key), case insensitive.
 fn untranslate(t: &Option<Arc<Table>>, folder: &[u8]) -> Vec<u8> {
     if let Some(t) = t {
-        if let Some((k, _)) = t.entries.iter().find(|(_, v)| eq_ic(folder, v.as_bytes())) {
-            return k.as_bytes().to_vec();
+        if let Some((k, _)) = t.entries.iter().find(|(_, v)| eq_ic(folder, v)) {
+            return k.clone();
         }
     }
     folder.to_vec()
@@ -327,8 +325,8 @@ fn untranslate(t: &Option<Arc<Table>>, folder: &[u8]) -> Vec<u8> {
 /// Voicemail folder to the name the phone shows (key to value).
 fn translate(t: &Option<Arc<Table>>, folder: &[u8]) -> Vec<u8> {
     if let Some(t) = t {
-        if let Some((_, v)) = t.entries.iter().find(|(k, _)| eq_ic(folder, k.as_bytes())) {
-            return v.as_bytes().to_vec();
+        if let Some((_, v)) = t.entries.iter().find(|(k, _)| eq_ic(folder, k)) {
+            return v.clone();
         }
     }
     folder.to_vec()
@@ -345,21 +343,20 @@ fn unrecordings(folder: &[u8]) -> &[u8] {
 
 /// `phone_user_has_line(user, line)` and then `phone_mailbox_by_line(line)`:
 /// the mailbox of one of the phone's own lines.
-fn own_mailbox(phone: &str, line: &[u8]) -> Option<Vec<u8>> {
-    let line = String::from_utf8_lossy(line);
+fn own_mailbox(phone: &[u8], line: &[u8]) -> Option<Vec<u8>> {
     let has = {
         let g = users::read();
-        g.as_ref().and_then(|r| r.phones.get(phone)).is_some_and(|p| p.has_line(&line))
+        g.as_ref().and_then(|r| r.phones.get(phone)).is_some_and(|p| p.has_line(line))
     };
     if !has {
         return None;
     }
-    line_mailbox(&line)
+    line_mailbox(line)
 }
 
 /// `phone_mailbox_by_line` into the original's 0x400-byte buffer.
-fn line_mailbox(line: &str) -> Option<Vec<u8>> {
-    users::runtime::mailbox_by_line(line).map(|m| copy_trunc(m.as_bytes(), MAILBOX_BUF))
+fn line_mailbox(line: &[u8]) -> Option<Vec<u8>> {
+    users::runtime::mailbox_by_line(line).map(|m| copy_trunc(&m, MAILBOX_BUF))
 }
 
 /// Split a message id (already copied into its 0x80-byte buffer) into its
@@ -444,8 +441,8 @@ pub fn unload() {
 
 /// `switchvox.users.voicemail.getList` (`handle_request_json_vm_getlist`,
 /// FUN_001859c0): one page of a folder's messages.
-pub fn get_list(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
-    let m = c.method.as_str();
+pub fn get_list(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
+    let m = c.method.as_slice();
     let tr = vm_translation(&c.phone);
     let Some(account) = json_str(p, "account_id") else {
         return fail(out, m, PARAMS_NOT_FOUND, "account_id");
@@ -477,7 +474,7 @@ pub fn get_list(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
             out,
             m,
             INVALID_MAILBOX_FOLDER,
-            &format!("could not create snapshot of {}@{} {}", show(Some(mbox)), show(context), show(Some(unrecordings(&folder)))),
+            bformat!("could not create snapshot of {}@{} {}", show(Some(mbox)), show(context), show(Some(unrecordings(&folder)))),
         );
     };
 
@@ -571,8 +568,8 @@ fn parse_callerid(cid: &[u8]) -> (Vec<u8>, Vec<u8>) {
 
 /// `switchvox.users.voicemail.getFolderList` (FUN_0017d8d0): the folders
 /// and their message counts.
-pub fn get_folder_list(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
-    let m = c.method.as_str();
+pub fn get_folder_list(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
+    let m = c.method.as_slice();
     let tr = vm_translation(&c.phone);
     let Some(account) = json_str(p, "account_id") else {
         return fail(out, m, PARAMS_NOT_FOUND, "account_id");
@@ -586,7 +583,7 @@ pub fn get_folder_list(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
             out,
             m,
             INVALID_MAILBOX_FOLDER,
-            &format!("could not create snapshot of {}@{}", show(Some(mbox)), show(context)),
+            bformat!("could not create snapshot of {}@{}", show(Some(mbox)), show(context)),
         );
     };
     let mut folders = Vec::new();
@@ -610,8 +607,8 @@ pub fn get_folder_list(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
 
 /// `switchvox.users.voicemail.move` (`handle_request_json_vm_move`,
 /// FUN_00184200).
-pub fn move_message(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
-    let m = c.method.as_str();
+pub fn move_message(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
+    let m = c.method.as_slice();
     let tr = vm_translation(&c.phone);
     let Some(account) = json_str(p, "account_id") else {
         return fail(out, m, PARAMS_NOT_FOUND, "account_id");
@@ -676,8 +673,8 @@ pub fn move_message(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
 
 /// `switchvox.users.voicemail.remove` (`handle_request_json_vm_remove`,
 /// FUN_00183500).
-pub fn remove(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
-    let m = c.method.as_str();
+pub fn remove(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
+    let m = c.method.as_slice();
     let tr = vm_translation(&c.phone);
     let Some(account) = json_str(p, "account_id") else {
         return fail(out, m, PARAMS_NOT_FOUND, "account_id");
@@ -719,8 +716,8 @@ pub fn remove(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
 
 /// `switchvox.users.voicemail.forward` (`handle_request_json_vm_forward`,
 /// FUN_00182660): copy messages to the INBOX of another line's mailbox.
-pub fn forward(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
-    let m = c.method.as_str();
+pub fn forward(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
+    let m = c.method.as_slice();
     let Some(account_from) = json_str(p, "account_from") else {
         return fail(out, m, PARAMS_NOT_FOUND, "account_from");
     };
@@ -738,7 +735,7 @@ pub fn forward(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
         return fail(out, m, NOT_PERMITTED, "must have line with mailbox");
     };
     // Any line with a mailbox can receive.
-    let to_mailbox = line_mailbox(&String::from_utf8_lossy(account_to)).unwrap_or_default();
+    let to_mailbox = line_mailbox(account_to).unwrap_or_default();
     if to_mailbox.is_empty() {
         return fail(out, m, NOT_PERMITTED, "to_mailbox");
     }
@@ -773,8 +770,8 @@ pub fn forward(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
 
 /// `mark_read_unread_helper_json` (FUN_001850e0): move INBOX, Old, or
 /// Urgent messages to Old (`read`) or INBOX, and update their trackers.
-fn mark_read_unread(c: &MethodCall, p: &Value, out: &mut String, read: bool) -> i32 {
-    let m = c.method.as_str();
+fn mark_read_unread(c: &MethodCall, p: &Value, out: &mut Vec<u8>, read: bool) -> i32 {
+    let m = c.method.as_slice();
     let target: &[u8] = if read { b"Old" } else { b"INBOX" };
     let tr = vm_translation(&c.phone);
     let Some(account) = json_str(p, "account_id") else {
@@ -821,20 +818,20 @@ fn mark_read_unread(c: &MethodCall, p: &Value, out: &mut String, read: bool) -> 
 }
 
 /// `switchvox.users.voicemail.markRead` (FUN_001859b0).
-pub fn mark_read(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
+pub fn mark_read(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
     mark_read_unread(c, p, out, true)
 }
 
 /// `switchvox.users.voicemail.markUnread` (FUN_001859a0).
-pub fn mark_unread(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
+pub fn mark_unread(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
     mark_read_unread(c, p, out, false)
 }
 
 /// `switchvox.users.voicemail.play` (`handle_request_json_vm_play`,
 /// FUN_00181d40): call the phone's primary line; when answered, the call
 /// runs `DigiumVoicemailPlayback(<mailbox>,<folder>,<msg_id>)`.
-pub fn play(c: &MethodCall, p: &Value, out: &mut String) -> i32 {
-    let m = c.method.as_str();
+pub fn play(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
+    let m = c.method.as_slice();
     let Some(account) = json_str(p, "account_id") else {
         return fail(out, m, PARAMS_NOT_FOUND, "account_id");
     };
@@ -879,13 +876,13 @@ struct DialData {
 /// line with `X-Event-Name: digium.incomingCall.voicemail` and run `app`
 /// ("app,args") when it answers, on a detached thread.  Errors replace
 /// `out`.
-fn dial_phone_event_app(phone: &str, out: &mut String, method: &str, app: &[u8]) {
+fn dial_phone_event_app(phone: &[u8], out: &mut Vec<u8>, method: &[u8], app: &[u8]) {
     let (tech, line) = {
         let g = users::read();
         match g.as_ref().and_then(|r| r.phones.get(phone).map(|p| (r, p))) {
             Some((reg, p)) => (
-                users::build_config::primary_line(reg, p).map_or_else(Vec::new, |l| copy_trunc(l.tech.as_bytes(), TECH_BUF)),
-                p.lines.first().map_or_else(Vec::new, |l| copy_trunc(l.name.as_bytes(), LINE_NAME_BUF)),
+                users::build_config::primary_line(reg, p).map_or_else(Vec::new, |l| copy_trunc(&l.tech, TECH_BUF)),
+                p.lines.first().map_or_else(Vec::new, |l| copy_trunc(&l.name, LINE_NAME_BUF)),
             ),
             None => (Vec::new(), Vec::new()),
         }
@@ -983,14 +980,14 @@ mod devtest {
             a.out("Tracker container does not exist\n");
             return CliResult::Success;
         };
-        let mut names: Vec<&String> = map.keys().filter(|n| a.argc() == 3 || **n == a.argv[3]).collect();
+        let mut names: Vec<&Vec<u8>> = map.keys().filter(|n| a.argc() == 3 || **n == a.argv[3]).collect();
         names.sort();
-        a.out(&format!("{} user tracker(s)\n", names.len()));
+        a.out(bformat!("{} user tracker(s)\n", names.len()));
         for n in names {
             let msgs = map[n].messages.lock().unwrap();
-            a.out(&format!("{}: {} message(s)\n", n, msgs.len()));
+            a.out(bformat!("{}: {} message(s)\n", n, msgs.len()));
             for t in msgs.iter() {
-                a.out(&format!("  {} => {}\n", show(Some(&t.id)), show(Some(&t.folder))));
+                a.out(bformat!("  {} => {}\n", show(Some(&t.id)), show(Some(&t.folder))));
             }
         }
         CliResult::Success
@@ -1001,17 +998,17 @@ mod devtest {
         if !(4..=6).contains(&a.argc()) {
             return CliResult::ShowUsage;
         }
-        let (mbox, context) = split_mailbox(a.argv[3].as_bytes());
-        let folder = a.argv.get(4).filter(|f| *f != "-").map(|f| f.as_bytes());
-        let combine = a.argv.get(5).is_some_and(|s| s == "combine");
+        let (mbox, context) = split_mailbox(&a.argv[3]);
+        let folder = a.argv.get(4).filter(|f| *f != b"-").map(Vec::as_slice);
+        let combine = a.argv.get(5).is_some_and(|s| s == b"combine");
         let Some(snap) = vm::mailbox_snapshot_create(mbox, context, folder, false, SortBy::Time, combine) else {
             a.out("No snapshot\n");
             return CliResult::Success;
         };
-        a.out(&format!("total {} in {} folders\n", snap.total_msg_num, snap.folders.len()));
+        a.out(bformat!("total {} in {} folders\n", snap.total_msg_num, snap.folders.len()));
         for (i, list) in snap.folders.iter().enumerate() {
             for msg in list {
-                a.out(&format!(
+                a.out(bformat!(
                     "[{}] #{} id={} folder={} callerid={} origtime={} duration={} flag={}\n",
                     i,
                     msg.msg_number,
@@ -1033,7 +1030,7 @@ mod devtest {
             return CliResult::ShowUsage;
         }
         remove_user_tracker(&a.argv[3]);
-        a.out(&format!("Removed the user tracker of '{}'\n", a.argv[3]));
+        a.out(bformat!("Removed the user tracker of '{}'\n", a.argv[3]));
         CliResult::Success
     }
 

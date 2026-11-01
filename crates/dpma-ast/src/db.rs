@@ -3,20 +3,20 @@
 use crate::ffi;
 use crate::util::{cstr, from_ptr, take_ast_string};
 
-pub fn put(family: &str, key: &str, value: &str) -> bool {
+pub fn put(family: &str, key: impl AsRef<[u8]>, value: impl AsRef<[u8]>) -> bool {
     let f = cstr(family);
     let k = cstr(key);
     let v = cstr(value);
     unsafe { ffi::ast_db_put(f.as_ptr(), k.as_ptr(), v.as_ptr()) == 0 }
 }
 
-pub fn get(family: &str, key: &str) -> Option<String> {
+pub fn get(family: &str, key: impl AsRef<[u8]>) -> Option<Vec<u8>> {
     let f = cstr(family);
     let k = cstr(key);
     unsafe { take_ast_string(ffi::dpma_glue_db_get(f.as_ptr(), k.as_ptr())) }
 }
 
-pub fn del(family: &str, key: &str) -> bool {
+pub fn del(family: &str, key: impl AsRef<[u8]>) -> bool {
     let f = cstr(family);
     let k = cstr(key);
     unsafe { ffi::ast_db_del(f.as_ptr(), k.as_ptr()) == 0 }
@@ -24,7 +24,7 @@ pub fn del(family: &str, key: &str) -> bool {
 
 /// All entries in `family`, as (full key, value).  Keys look like
 /// "/family/key".
-pub fn tree(family: &str) -> Vec<(String, String)> {
+pub fn tree(family: &str) -> Vec<(Vec<u8>, Vec<u8>)> {
     let f = cstr(family);
     let mut out = Vec::new();
     unsafe {

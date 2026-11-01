@@ -3,7 +3,7 @@
 use crate::ffi;
 use crate::util::cstr;
 
-fn opt(s: Option<&str>) -> Option<std::ffi::CString> {
+fn opt(s: Option<&[u8]>) -> Option<std::ffi::CString> {
     s.map(cstr)
 }
 
@@ -12,34 +12,34 @@ fn ptr(c: &Option<std::ffi::CString>) -> *const std::os::raw::c_char {
 }
 
 /// Create (or find) a context owned by `registrar`.
-pub fn context_create(name: &str, registrar: &str) -> bool {
+pub fn context_create(name: impl AsRef<[u8]>, registrar: &str) -> bool {
     let n = cstr(name);
     let r = cstr(registrar);
     unsafe { ffi::dpma_glue_context_create(n.as_ptr(), r.as_ptr()) == 0 }
 }
 
 /// Remove everything `registrar` added to the context `name`.
-pub fn context_destroy(name: &str, registrar: &str) {
+pub fn context_destroy(name: impl AsRef<[u8]>, registrar: &str) {
     let n = cstr(name);
     let r = cstr(registrar);
     unsafe { ffi::dpma_glue_context_destroy(n.as_ptr(), r.as_ptr()) };
 }
 
-pub fn context_exists(name: &str) -> bool {
+pub fn context_exists(name: impl AsRef<[u8]>) -> bool {
     let n = cstr(name);
     unsafe { ffi::dpma_glue_context_exists(n.as_ptr()) != 0 }
 }
 
 #[allow(clippy::too_many_arguments)]
 pub fn add_extension(
-    context: &str,
+    context: &[u8],
     replace: bool,
-    exten: &str,
+    exten: &[u8],
     priority: i32,
-    label: Option<&str>,
-    callerid: Option<&str>,
-    app: &str,
-    data: Option<&str>,
+    label: Option<&[u8]>,
+    callerid: Option<&[u8]>,
+    app: &[u8],
+    data: Option<&[u8]>,
     registrar: &str,
 ) -> bool {
     let c = cstr(context);
@@ -64,7 +64,7 @@ pub fn add_extension(
     }
 }
 
-pub fn remove_extension(context: &str, exten: &str, priority: i32, registrar: &str) -> bool {
+pub fn remove_extension(context: impl AsRef<[u8]>, exten: impl AsRef<[u8]>, priority: i32, registrar: &str) -> bool {
     let c = cstr(context);
     let e = cstr(exten);
     let r = cstr(registrar);
@@ -82,7 +82,7 @@ pub fn context_destroy_registrar(registrar: &str) {
 
 /// Set a global dialplan variable or function (`pbx_builtin_setvar_helper`
 /// with no channel).
-pub fn set_global(name: &str, value: &str) -> bool {
+pub fn set_global(name: impl AsRef<[u8]>, value: impl AsRef<[u8]>) -> bool {
     let n = cstr(name);
     let v = cstr(value);
     unsafe { ffi::pbx_builtin_setvar_helper(std::ptr::null_mut(), n.as_ptr(), v.as_ptr()) == 0 }

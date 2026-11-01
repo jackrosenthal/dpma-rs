@@ -14,50 +14,31 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn header(&self, name: &str) -> String {
+    /// `astman_get_header(m, name)`: the header's bytes ("" when absent).
+    pub fn header(&self, name: &str) -> Vec<u8> {
         let c = cstr(name);
         unsafe { from_ptr(ffi::astman_get_header(self.m, c.as_ptr())).unwrap_or_default() }
     }
 
-    /// The raw bytes of header `name` (empty when absent), for values that
-    /// must not go through a lossy UTF-8 conversion.
-    pub fn header_bytes(&self, name: &str) -> Vec<u8> {
-        let c = cstr(name);
-        unsafe {
-            let p = ffi::astman_get_header(self.m, c.as_ptr());
-            if p.is_null() {
-                Vec::new()
-            } else {
-                std::ffi::CStr::from_ptr(p).to_bytes().to_vec()
-            }
-        }
-    }
-
-    pub fn append(&self, text: &str) {
+    /// `astman_append(s, "%s", text)` (up to a NUL).
+    pub fn append(&self, text: impl AsRef<[u8]>) {
         let c = cstr(text);
         unsafe { ffi::dpma_glue_astman_append(self.s, c.as_ptr()) };
     }
 
-    /// `astman_append(s, "%s", text)` with raw bytes (cut at a NUL).
-    pub fn append_bytes(&self, text: &[u8]) {
-        let end = text.iter().position(|&b| b == 0).unwrap_or(text.len());
-        let c = std::ffi::CString::new(&text[..end]).unwrap_or_default();
-        unsafe { ffi::dpma_glue_astman_append(self.s, c.as_ptr()) };
-    }
-
-    pub fn send_ack(&self, msg: Option<&str>) {
+    pub fn send_ack(&self, msg: Option<&[u8]>) {
         let c = msg.map(cstr);
         unsafe {
             ffi::astman_send_ack(self.s, self.m, c.as_ref().map_or(std::ptr::null(), |c| c.as_ptr()))
         };
     }
 
-    pub fn send_error(&self, msg: &str) {
+    pub fn send_error(&self, msg: impl AsRef<[u8]>) {
         let c = cstr(msg);
         unsafe { ffi::astman_send_error(self.s, self.m, c.as_ptr()) };
     }
 
-    pub fn send_listack(&self, msg: &str, listflag: &str) {
+    pub fn send_listack(&self, msg: impl AsRef<[u8]>, listflag: &str) {
         let c = cstr(msg);
         let l = cstr(listflag);
         unsafe { ffi::astman_send_listack(self.s, self.m, c.as_ptr(), l.as_ptr()) };
@@ -66,8 +47,9 @@ impl Request {
 
 pub type ActionFn = fn(&Request) -> i32;
 
-fn actions() -> &'static Mutex<HashMap<String, ActionFn>> {
-    static A: OnceLock<Mutex<HashMap<String, ActionFn>>> = OnceLock::new();
+/// Registered actions by lower-cased name.
+fn actions() -> &'static Mutex<HashMap<Vec<u8>, ActionFn>> {
+    static A: OnceLock<Mutex<HashMap<Vec<u8>, ActionFn>>> = OnceLock::new();
     A.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -84,7 +66,7 @@ pub const AUTH_MESSAGE: i32 = 1 << 30;
 
 /// Register a manager action.
 pub fn register(action: &str, authority: i32, synopsis: &str, description: &str, f: ActionFn) -> bool {
-    actions().lock().unwrap().insert(action.to_ascii_lowercase(), f);
+    actions().lock().unwrap().insert(action.as_bytes().to_ascii_lowercase(), f);
     let a = cstr(action);
     let s = cstr(synopsis);
     let d = cstr(description);
@@ -94,7 +76,7 @@ pub fn register(action: &str, authority: i32, synopsis: &str, description: &str,
 pub fn unregister(action: &str) {
     let a = cstr(action);
     unsafe { ffi::dpma_glue_manager_unregister(a.as_ptr()) };
-    actions().lock().unwrap().remove(&action.to_ascii_lowercase());
+    actions().lock().unwrap().remove(&action.as_bytes().to_ascii_lowercase());
 }
 
 #[no_mangle]
@@ -113,8 +95,8 @@ pub unsafe extern "C" fn dpma_rust_manager_action(s: *mut Mansession, m: *const 
     })
 }
 
-/// Raise a manager event.
-pub fn event(category: i32, event: &str, body: &str) {
+/// Raise a manager event (`manager_event(category, event, "%s", body)`).
+pub fn event(category: i32, event: &str, body: impl AsRef<[u8]>) {
     let e = cstr(event);
     let b = cstr(body);
     unsafe { ffi::dpma_glue_manager_event(category, e.as_ptr(), b.as_ptr()) };
@@ -123,7 +105,7 @@ pub fn event(category: i32, event: &str, body: &str) {
 /// Raise a manager event that names `file`, `line`, and `func` as its
 /// origin (the `File`, `Line`, and `Func` headers shown with `manager set
 /// debug on`), as the original's `manager_event` calls do.
-pub fn event_at(category: i32, event: &str, file: &str, line: u32, func: &str, body: &str) {
+pub fn event_at(category: i32, event: &str, file: &str, line: u32, func: &str, body: impl AsRef<[u8]>) {
     let e = cstr(event);
     let f = cstr(file);
     let fu = cstr(func);
@@ -134,7 +116,7 @@ pub fn event_at(category: i32, event: &str, file: &str, line: u32, func: &str, b
 /// Run a manager action in-process (through a custom hook) and return the
 /// raw response text.  `action` is the full action text, e.g.
 /// "Action: QueueStatus\r\nQueue: sales\r\n".
-pub fn hook_action(action: &str) -> Option<String> {
+pub fn hook_action(action: impl AsRef<[u8]>) -> Option<Vec<u8>> {
     let c = cstr(action);
     unsafe { take_ast_string(ffi::dpma_glue_manager_hook_action(c.as_ptr())) }
 }

@@ -21,9 +21,9 @@ extern "C" {
 ///
 /// # Safety
 /// `chan` must be NULL or a live channel.
-pub unsafe fn name(chan: *const AstChannel) -> String {
+pub unsafe fn name(chan: *const AstChannel) -> Vec<u8> {
     if chan.is_null() {
-        return String::new();
+        return Vec::new();
     }
     from_ptr(ast_channel_name(chan)).unwrap_or_default()
 }
@@ -67,7 +67,7 @@ impl Channel {
     /// insensitive, as Asterisk's by-name iterator compares) and whose
     /// technology's `get_pvt_uniqueid` equals `callid`
     /// (`find_channel_by_callid_tech`).
-    pub fn find_by_callid(prefix: &str, callid: &str) -> Option<Channel> {
+    pub fn find_by_callid(prefix: &[u8], callid: &[u8]) -> Option<Channel> {
         if prefix.is_empty() {
             return None;
         }
@@ -78,7 +78,7 @@ impl Channel {
     }
 
     /// The channel's name and unique id, read under its lock.
-    pub fn name_and_uniqueid(&self) -> (String, String) {
+    pub fn name_and_uniqueid(&self) -> (Vec<u8>, Vec<u8>) {
         let mut name: *mut c_char = std::ptr::null_mut();
         let mut uid: *mut c_char = std::ptr::null_mut();
         unsafe {
@@ -101,7 +101,7 @@ impl Drop for Channel {
 /// The creation time (seconds since the epoch) of the first channel whose
 /// `MEMBERINTERFACE` equals `interface` (case insensitive) and whose
 /// `QUEUEPOSITION` is empty: the queue member's current queue call.
-pub fn queue_member_call_created(interface: &str) -> Option<i64> {
+pub fn queue_member_call_created(interface: &[u8]) -> Option<i64> {
     let c = cstr(interface);
     let mut created: c_long = 0;
     let found = unsafe { dpma_glue_channel_queue_member_call(c.as_ptr(), &mut created) };

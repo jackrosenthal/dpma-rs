@@ -55,7 +55,7 @@ const CONFIG_FLAG_NOCACHE: u32 = 1 << 2;
 /// `ast_log` under the original's file name and the given function name.
 macro_rules! log {
     ($level:expr, $func:expr, $($arg:tt)*) => {
-        dpma_ast::log::log($level, FILE, line!(), $func, &format!($($arg)*))
+        dpma_ast::log::log($level, FILE, line!(), $func, &dpma_ast::bformat!($($arg)*))
     };
 }
 
@@ -257,11 +257,12 @@ unsafe fn set_line_option(option: &CStr, value: &CStr, line: *mut c_void) {
     phone_users_set_line_option(option.as_ptr(), value.as_ptr(), line);
 }
 
-unsafe fn lossy<'a>(p: *const c_char) -> std::borrow::Cow<'a, str> {
+/// The bytes of a C string, as `%s` prints it ("(null)" for NULL).
+unsafe fn text<'a>(p: *const c_char) -> &'a [u8] {
     if p.is_null() {
-        "(null)".into()
+        b"(null)"
     } else {
-        CStr::from_ptr(p).to_string_lossy()
+        CStr::from_ptr(p).to_bytes()
     }
 }
 
@@ -476,7 +477,7 @@ unsafe extern "C" fn pjsip_contact_update(contact: *const c_void) {
         // The contact id is "<aor>;@<hash>".
         let id_bytes = CStr::from_ptr(id).to_bytes();
         let Some(semi) = id_bytes.iter().position(|&c| c == b';') else {
-            log!(LOG_WARNING, FUNC, "Unable to parse username from id '{}'\n", lossy(id));
+            log!(LOG_WARNING, FUNC, "Unable to parse username from id '{}'\n", text(id));
             return;
         };
         let username = CString::new(&id_bytes[..semi]).unwrap_or_default();
@@ -492,14 +493,14 @@ unsafe extern "C" fn pjsip_contact_update(contact: *const c_void) {
         // The original tests the address (never NULL) rather than the
         // transport, so ";transport=" is always there, even when empty.
         let separator = if addr.is_null() { "" } else { ";transport=" };
-        let last_uri = format!("pjsip:{}{}{}", lossy(addr), separator, lossy(transport));
+        let last_uri = dpma_ast::bformat!("pjsip:{}{}{}", text(addr), separator, text(transport));
         debug!(
             2,
             FUNC,
             "Updating DPMA user '{}' uri='{}' ua='{}'\n",
-            username.to_string_lossy(),
+            username.as_bytes(),
             last_uri,
-            lossy(ua_ptr)
+            text(ua_ptr)
         );
         let last_uri = dpma_ast::cstr(&last_uri);
         phone_user_token_set_last_info(user, last_uri.as_ptr(), std::ptr::null(), std::ptr::null());
@@ -565,9 +566,9 @@ unsafe extern "C" fn pjsip_endpoint_is_dphone(name: *const c_char) -> c_int {
 
 /// `ast_variable_retrieve(cfg, category, name)`: the last `name` in the
 /// first category called `category`.
-fn variable_retrieve<'a>(cfg: &'a [Category], category: &str, name: &str) -> Option<&'a str> {
-    let cat = cfg.iter().find(|c| c.name.eq_ignore_ascii_case(category))?;
-    cat.vars.iter().rev().find(|v| v.name.eq_ignore_ascii_case(name)).map(|v| v.value.as_str())
+fn variable_retrieve<'a>(cfg: &'a [Category], category: &str, name: &str) -> Option<&'a [u8]> {
+    let cat = cfg.iter().find(|c| c.name.eq_ignore_ascii_case(category.as_bytes()))?;
+    cat.vars.iter().rev().find(|v| v.name.eq_ignore_ascii_case(name.as_bytes())).map(|v| v.value.as_slice())
 }
 
 /// `set_endpoint_context`: the DPMA endpoint's context is
@@ -580,7 +581,7 @@ fn set_endpoint_context(cfg: &[Category]) {
         if endpoint.is_null() {
             log!(LOG_ERROR, FUNC, "Endpoint for DPMA endpoint identifier not found when setting endpoint context\n");
         } else {
-            let context = dpma_ast::cstr(context.filter(|c| !c.is_empty()).unwrap_or(DEFAULT_CONTEXT));
+            let context = dpma_ast::cstr(context.filter(|c| !c.is_empty()).unwrap_or(DEFAULT_CONTEXT.as_bytes()));
             let var = dpma_eid_glue_variable_new(c"context".as_ptr(), context.as_ptr(), c"res_pjsip_endpoint_identifier_dpma".as_ptr());
             if var.is_null() {
                 log!(LOG_ERROR, FUNC, "Allocation error while applying context for DPMA endpoint identifier\n");
@@ -640,7 +641,7 @@ unsafe fn cleanup_module(res: c_int) -> c_int {
 unsafe fn load_module() -> c_int {
     const FUNC: &str = "load_module";
     let default = ast_sip_default_outbound_endpoint();
-    let version = lossy(pj_get_version()).into_owned();
+    let version = text(pj_get_version()).to_vec();
     if dpma_eid_glue_init_get_dialog() != 0 {
         log!(LOG_NOTICE, FUNC, "Using ast_sip_session_get_dialog() for pjproject version {}\n", version);
     } else {

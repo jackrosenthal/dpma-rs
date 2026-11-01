@@ -11,7 +11,7 @@
 
 use crate::ami::AmiAction;
 use crate::session::Transaction;
-use dpma_ast::dpma_log;
+use dpma_ast::{bformat, bwrite, dpma_log};
 use dpma_ast::manager::{self, Request};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -55,13 +55,13 @@ impl TimeVal {
 #[derive(Debug, Clone)]
 struct Problem {
     /// Reason of the first failure (+0x00).
-    reason: String,
+    reason: Vec<u8>,
     /// Source host, without brackets or port (+0x08); the container key.
-    ip: String,
+    ip: Vec<u8>,
     /// MAC address of the first failure (+0x10).
-    mac: String,
+    mac: Vec<u8>,
     /// User agent of the first failure (+0x18).
-    user_agent: String,
+    user_agent: Vec<u8>,
     /// First failure (+0x20).
     first: TimeVal,
     /// Latest failure (+0x30).
@@ -77,15 +77,15 @@ static PROBLEMS: Mutex<Option<Vec<Vec<Problem>>>> = Mutex::new(None);
 
 /// The container's hash (FUN_00177810): djb2 (`h * 33 ^ c`, seed 5381)
 /// over the address bytes, masked to 31 bits.
-fn bucket(ip: &str) -> usize {
+fn bucket(ip: &[u8]) -> usize {
     let mut h: u32 = 5381;
-    for b in ip.bytes() {
+    for &b in ip {
         h = h.wrapping_mul(33) ^ u32::from(b);
     }
     (h & 0x7fff_ffff) as usize % BUCKETS
 }
 
-fn find_mut<'a>(buckets: &'a mut [Vec<Problem>], ip: &str) -> Option<&'a mut Problem> {
+fn find_mut<'a>(buckets: &'a mut [Vec<Problem>], ip: &[u8]) -> Option<&'a mut Problem> {
     buckets[bucket(ip)].iter_mut().find(|p| p.ip == ip)
 }
 
@@ -132,7 +132,7 @@ fn record(tx: &Transaction, reason: &str) -> Result<(), ()> {
         return Err(());
     }
     let (ip, _) = dpma_proto::uri::split_hostport(&addr);
-    let ip = ip.as_str();
+    let ip = ip.as_slice();
 
     let mut g = PROBLEMS.lock().unwrap();
     let Some(buckets) = g.as_mut() else {
@@ -148,8 +148,8 @@ fn record(tx: &Transaction, reason: &str) -> Result<(), ()> {
         };
         let now = TimeVal::now();
         buckets[bucket(ip)].push(Problem {
-            reason: reason.to_string(),
-            ip: ip.to_string(),
+            reason: reason.into(),
+            ip: ip.to_vec(),
             mac: tx.mac.clone(),
             user_agent,
             first: now,
@@ -198,18 +198,12 @@ pub fn expire_problems() {
 
 /// "ActionID: <id>\r\n" as the original formats it into a 256-byte buffer
 /// (at most 255 bytes kept), or "" when there is no ActionID.
-fn action_id_text(id: &str) -> String {
+fn action_id_text(id: &[u8]) -> Vec<u8> {
     if id.is_empty() {
-        return String::new();
+        return Vec::new();
     }
-    let mut s = format!("ActionID: {}\r\n", id);
-    if s.len() > 255 {
-        let mut end = 255;
-        while !s.is_char_boundary(end) {
-            end -= 1;
-        }
-        s.truncate(end);
-    }
+    let mut s = bformat!("ActionID: {}\r\n", id);
+    s.truncate(255);
     s
 }
 
@@ -226,7 +220,7 @@ fn action_show_incidents(r: &Request) -> i32 {
         .map(|b| b.iter().flatten().cloned().collect())
         .unwrap_or_default();
     for p in &problems {
-        r.append(&format!(
+        r.append(&bformat!(
             "Event: DPMAShowIncidentsList\r\n{}IPAddress: {}\r\nMAC: {}\r\nUserAgent: {}\r\nSecondsFirstIncident: {}\r\nSecondsLastIncident: {}\r\nIncidentCount: {}\r\nReason: {}\r\nBlocking: {}\r\nAlertSent: {}\r\n\r\n",
             idtext,
             p.ip,
@@ -241,11 +235,11 @@ fn action_show_incidents(r: &Request) -> i32 {
             if p.alert_sent { "Yes" } else { "No" },
         ));
     }
-    let mut done = String::from("Event: DPMAShowIncidentsComplete\r\n");
+    let mut done = b"Event: DPMAShowIncidentsComplete\r\n".to_vec();
     if !id.is_empty() {
-        done.push_str(&format!("ActionID: {}\r\n", id));
+        bwrite!(done, "ActionID: {}\r\n", id);
     }
-    done.push_str(&format!("EventList: Complete\r\nListItems: {}\r\n\r\n", problems.len()));
+    bwrite!(done, "EventList: Complete\r\nListItems: {}\r\n\r\n", problems.len());
     r.append(&done);
     0
 }
@@ -275,7 +269,7 @@ fn action_remove_incident(r: &Request) -> i32 {
             "Failure"
         }
     };
-    r.append(&format!("Response: {}\r\n{}\r\n", result, idtext));
+    r.append(&bformat!("Response: {}\r\n{}\r\n", result, idtext));
     0
 }
 
@@ -291,6 +285,7 @@ pub fn ami_actions() -> Vec<AmiAction> {
 mod devtest {
     use super::*;
     use dpma_ast::cli::{CliArgs, CliCommand, CliResult};
+    use dpma_ast::dpma_bytes::ByteSlice;
     use dpma_ast::msg::Msg;
     use std::sync::Arc;
 
@@ -304,19 +299,19 @@ mod devtest {
             return CliResult::Failure;
         };
         let target = &a.argv[3];
-        let uri = if target.contains("sip:") { target.clone() } else { format!("pjsip:{}", target) };
+        let uri = if target.contains_str("sip:") { target.clone() } else { bformat!("pjsip:{}", target) };
         msg.set_var("X-Digium-AppServer-Response-URI", &uri);
-        if a.argv[5] != "-" {
+        if a.argv[5] != b"-" {
             msg.set_var("User-Agent", &a.argv[5]);
         }
-        let mac = if a.argv[4] == "-" { String::new() } else { a.argv[4].clone() };
-        let mut tx = crate::request::devtest_synthetic("TokenRequest", "", Some("dpmadev"));
+        let mac = if a.argv[4] == b"-" { Vec::new() } else { a.argv[4].clone() };
+        let mut tx = crate::request::devtest_synthetic(b"TokenRequest", b"", Some(b"dpmadev"));
         tx.mac = mac;
         tx.first_msg = Some(msg);
         let tx = Arc::new(tx);
-        let reason = a.argv[6..].join(" ");
+        let reason = String::from_utf8_lossy(&a.argv[6..].join(&b" "[..])).into_owned();
         let res = record(&tx, &reason);
-        a.out(&format!("issue_alert(uri '{}'): {}\n", uri, if res.is_ok() { "recorded" } else { "failed" }));
+        a.out(bformat!("issue_alert(uri '{}'): {}\n", uri, if res.is_ok() { "recorded" } else { "failed" }));
         CliResult::Success
     }
 
@@ -334,7 +329,7 @@ mod devtest {
         if a.argc() != 5 {
             return CliResult::ShowUsage;
         }
-        let Ok(secs) = a.argv[4].parse::<i64>() else {
+        let Ok(secs) = crate::util::parse::<i64>(&a.argv[4]) else {
             return CliResult::ShowUsage;
         };
         let mut g = PROBLEMS.lock().unwrap();

@@ -68,7 +68,7 @@ fn action_reconfigure(r: &Request) -> i32 {
     if !exists {
         r.send_error("Could not find user to reconfigure.");
     } else if users::reconfigure(&name, false).is_ok() {
-        r.send_ack(Some("Reconfigure message successfully sent"));
+        r.send_ack(Some(b"Reconfigure message successfully sent"));
     } else {
         r.send_error(
             "Phone has not contacted the server.  The server is unaware of the location of this device and can not reconfigure it at this time.\n",
@@ -78,14 +78,14 @@ fn action_reconfigure(r: &Request) -> i32 {
 }
 
 fn action_reconfigure_all(r: &Request) -> i32 {
-    let names: Vec<String> = users::read()
+    let names: Vec<Vec<u8>> = users::read()
         .as_ref()
         .map(|reg| reg.phones.values().map(|p| p.name.clone()).collect())
         .unwrap_or_default();
     for n in names {
         let _ = users::reconfigure(&n, false);
     }
-    r.send_ack(Some("Reconfigure message successfully sent to all known device locations."));
+    r.send_ack(Some(b"Reconfigure message successfully sent to all known device locations."));
     0
 }
 
@@ -145,13 +145,13 @@ fn load_full() -> Result<Full, ()> {
     if auth::load().is_err() {
         return fail("Failed to load auth handlers");
     }
-    if session::load(CONFIG_FILE).is_err() {
+    if session::load(CONFIG_FILE.as_bytes()).is_err() {
         return fail("Failed to load phone message");
     }
     if translation::load(CONFIG_FILE).is_err() {
         return fail("Failed to load phone translation");
     }
-    if users::load::load(CONFIG_FILE).is_err() {
+    if users::load::load(CONFIG_FILE.as_bytes()).is_err() {
         // A missing or invalid res_digium_phone.conf is reported by the
         // config layer; the module still loads, as the original does.
         dpma_log!("No phones configured from {}", CONFIG_FILE);
@@ -196,7 +196,7 @@ fn load_full() -> Result<Full, ()> {
 
 /// Log hook for dpma-proto: its messages carry the original's file, line,
 /// and function names.
-fn proto_log(level: dpma_proto::LogLevel, file: &str, line: u32, func: &str, msg: &str) {
+fn proto_log(level: dpma_proto::LogLevel, file: &str, line: u32, func: &str, msg: &[u8]) {
     match level {
         dpma_proto::LogLevel::Dpma => dpma_ast::log::log(dpma_ast::log::custom_level(), file, line, func, msg),
         dpma_proto::LogLevel::Debug(n) => {
@@ -256,8 +256,8 @@ pub extern "C" fn dpma_rust_reload() -> i32 {
         let mut failed = false;
         failed |= load_config().is_err();
         failed |= translation::reload(CONFIG_FILE).is_err();
-        failed |= users::load::reload(CONFIG_FILE).is_err();
-        failed |= session::reload(CONFIG_FILE).is_err();
+        failed |= users::load::reload(CONFIG_FILE.as_bytes()).is_err();
+        failed |= session::reload(CONFIG_FILE.as_bytes()).is_err();
         failed |= firmware::reload().is_err();
         avahi::reload();
         let _ = phone_main::start();

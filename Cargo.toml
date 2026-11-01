@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/dpma-ast",
+    "crates/dpma-bytes",
     "crates/dpma-build",
     "crates/dpma-proto",
     "crates/res_digium_phone",
@@ -19,7 +20,9 @@ rust-version = "1.99"
 [workspace.dependencies]
 dpma-ast = { path = "crates/dpma-ast" }
 dpma-build = { path = "crates/dpma-build" }
+dpma-bytes = { path = "crates/dpma-bytes" }
 dpma-proto = { path = "crates/dpma-proto" }
+bstr = { version = "1.13", default-features = false, features = ["std"] }
 cc = "1.2"
 openssl = "0.10"
 serde_json = { version = "1.0", features = ["preserve_order"] }

@@ -39,8 +39,8 @@ extern "C" {
 /// One message variable.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MsgVar {
-    pub name: String,
-    pub value: String,
+    pub name: Vec<u8>,
+    pub value: Vec<u8>,
     /// Marked for sending out (outbound messages turn these into headers).
     pub outbound: bool,
 }
@@ -93,58 +93,40 @@ impl Msg {
         unsafe { __ao2_ref(self.ptr, 0, std::ptr::null(), file.as_ptr(), line!() as c_int, func.as_ptr()) }
     }
 
-    pub fn get_var(&self, name: &str) -> Option<String> {
+    /// `ast_msg_get_var`: the variable's bytes.
+    pub fn get_var(&self, name: &str) -> Option<Vec<u8>> {
         let n = cstr(name);
         unsafe { from_ptr(ffi::ast_msg_get_var(self.ptr, n.as_ptr())) }
     }
 
     /// Like `get_var`, but empty values are treated as absent.
-    pub fn var(&self, name: &str) -> Option<String> {
+    pub fn var(&self, name: &str) -> Option<Vec<u8>> {
         self.get_var(name).filter(|s| !s.is_empty())
     }
 
-    pub fn body(&self) -> Option<String> {
+    /// The body's bytes (up to its NUL).
+    pub fn body(&self) -> Option<Vec<u8>> {
         unsafe { from_ptr(ffi::ast_msg_get_body(self.ptr)) }
-    }
-
-    /// The body's exact bytes (up to its NUL), without UTF-8 conversion.
-    pub fn body_bytes(&self) -> Option<Vec<u8>> {
-        unsafe {
-            let p = ffi::ast_msg_get_body(self.ptr);
-            if p.is_null() {
-                None
-            } else {
-                Some(std::ffi::CStr::from_ptr(p).to_bytes().to_vec())
-            }
-        }
-    }
-
-    /// Set the body from bytes (`ast_msg_set_body(msg, "%s", body)`): the
-    /// body ends at the first NUL, as it would in C.
-    pub fn set_body_bytes(&mut self, v: &[u8]) -> bool {
-        let end = v.iter().position(|&b| b == 0).unwrap_or(v.len());
-        let c = std::ffi::CString::new(&v[..end]).unwrap_or_default();
-        unsafe { ffi::dpma_glue_msg_set_body(self.ptr, c.as_ptr()) == 0 }
     }
 
     /// The message's "to" (for received PJSIP messages, the Request-URI
     /// with a `pjsip:` prefix).
-    pub fn to(&self) -> Option<String> {
+    pub fn to(&self) -> Option<Vec<u8>> {
         unsafe { from_ptr(ast_msg_get_to(self.ptr)) }
     }
 
     /// The message's "from".
-    pub fn from(&self) -> Option<String> {
+    pub fn from(&self) -> Option<Vec<u8>> {
         unsafe { from_ptr(ast_msg_get_from(self.ptr)) }
     }
 
     /// The technology that received the message (e.g., "PJSIP").
-    pub fn tech(&self) -> Option<String> {
+    pub fn tech(&self) -> Option<Vec<u8>> {
         unsafe { from_ptr(ast_msg_get_tech(self.ptr)) }
     }
 
     /// The endpoint that sent the message.
-    pub fn endpoint(&self) -> Option<String> {
+    pub fn endpoint(&self) -> Option<Vec<u8>> {
         unsafe { from_ptr(ast_msg_get_endpoint(self.ptr)) }
     }
 
@@ -183,29 +165,31 @@ impl Msg {
         out
     }
 
-    pub fn set_var(&mut self, name: &str, value: &str) -> bool {
+    pub fn set_var(&mut self, name: impl AsRef<[u8]>, value: impl AsRef<[u8]>) -> bool {
         let n = cstr(name);
         let v = cstr(value);
         unsafe { ffi::ast_msg_set_var(self.ptr, n.as_ptr(), v.as_ptr()) == 0 }
     }
 
-    pub fn set_var_outbound(&mut self, name: &str, value: &str) -> bool {
+    pub fn set_var_outbound(&mut self, name: impl AsRef<[u8]>, value: impl AsRef<[u8]>) -> bool {
         let n = cstr(name);
         let v = cstr(value);
         unsafe { ffi::ast_msg_set_var_outbound(self.ptr, n.as_ptr(), v.as_ptr()) == 0 }
     }
 
-    pub fn set_context(&mut self, v: &str) -> bool {
+    pub fn set_context(&mut self, v: impl AsRef<[u8]>) -> bool {
         let c = cstr(v);
         unsafe { ffi::dpma_glue_msg_set_context(self.ptr, c.as_ptr()) == 0 }
     }
 
-    pub fn set_exten(&mut self, v: &str) -> bool {
+    pub fn set_exten(&mut self, v: impl AsRef<[u8]>) -> bool {
         let c = cstr(v);
         unsafe { ffi::dpma_glue_msg_set_exten(self.ptr, c.as_ptr()) == 0 }
     }
 
-    pub fn set_body(&mut self, v: &str) -> bool {
+    /// `ast_msg_set_body(msg, "%s", v)`: the body ends at the first NUL,
+    /// as it would in C.
+    pub fn set_body(&mut self, v: impl AsRef<[u8]>) -> bool {
         let c = cstr(v);
         unsafe { ffi::dpma_glue_msg_set_body(self.ptr, c.as_ptr()) == 0 }
     }
@@ -222,7 +206,7 @@ impl Msg {
     /// Send the message straight to a message technology (`ast_msg_send`),
     /// e.g., to "pjsip:<endpoint>".  The message core takes over this
     /// reference.  Returns `ast_msg_send`'s result (0 on success).
-    pub fn send(self, to: &str, from: Option<&str>) -> i32 {
+    pub fn send(self, to: impl AsRef<[u8]>, from: Option<&[u8]>) -> i32 {
         let p = self.ptr;
         std::mem::forget(self);
         let t = cstr(to);
@@ -240,7 +224,7 @@ impl Drop for Msg {
 /// Receives the messages handed to the `digium_phone` technology
 /// (`MessageSend(digium_phone:...)`): the message (a new reference), the
 /// destination, and the sender.  Returns 0 on success, or -1.
-pub type ReceiveFn = fn(msg: Msg, to: &str, from: &str) -> i32;
+pub type ReceiveFn = fn(msg: Msg, to: &[u8], from: &[u8]) -> i32;
 
 static RECEIVER: RwLock<Option<ReceiveFn>> = RwLock::new(None);
 

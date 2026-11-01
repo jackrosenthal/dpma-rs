@@ -3,13 +3,14 @@
 
 use super::*;
 use crate::util::truncate;
-use std::fmt::Write;
+use dpma_ast::dpma_bytes::ByteVec;
+use dpma_ast::{bwrite, bwriteln};
 use std::sync::Mutex;
 
 /// The document, built on first use after each load or reload of
 /// res_digium_phone.conf (the original keeps it in a global `ast_str`
 /// guarded by `users_cfg_lock` and empties it in `phone_user_load_config`).
-static CACHE: Mutex<String> = Mutex::new(String::new());
+static CACHE: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 
 /// Forget the cached document (end of `phone_user_load_config`).
 pub fn reset_cache() {
@@ -18,7 +19,7 @@ pub fn reset_cache() {
 
 /// Build the document: one contact per phone with a primary line, in
 /// container order.  Values are not XML-escaped, as in the original.
-fn build(reg: Option<&Registry>, s: &mut String) {
+fn build(reg: Option<&Registry>, s: &mut Vec<u8>) {
     s.push_str("<contacts group_name=\"Internal Extensions\" editable=\"0\" >\n");
     let phones = reg.into_iter().flat_map(|r| r.phones.values().map(move |p| (r, p)));
     for (reg, p) in phones {
@@ -28,18 +29,18 @@ fn build(reg: Option<&Registry>, s: &mut String) {
         } else {
             line.first_name.clone()
         };
-        let _ = write!(s, "<contact first_name=\"{}\" ", first_name);
-        let last_name = if line.last_name.is_empty() { " " } else { &line.last_name };
-        let _ = write!(s, "last_name=\"{}\" ", last_name);
+        bwrite!(*s, "<contact first_name=\"{}\" ", first_name);
+        let last_name = if line.last_name.is_empty() { &b" "[..] } else { &line.last_name };
+        bwrite!(*s, "last_name=\"{}\" ", last_name);
         s.push_str("contact_type=\"sip\" ");
-        let _ = write!(s, "account_id=\"{}\" ", line.name);
+        bwrite!(*s, "account_id=\"{}\" ", line.name);
         if !line.location.is_empty() {
-            let _ = write!(s, "location=\"{}\" ", line.location);
+            bwrite!(*s, "location=\"{}\" ", line.location);
         }
-        let _ = write!(s, "subscribe_to=\"auto_hint_{}\"", line.name);
+        bwrite!(*s, "subscribe_to=\"auto_hint_{}\"", line.name);
         s.push_str(">\n");
         s.push_str("<numbers>\n");
-        let _ = writeln!(s, "<number dial=\"{}\" label=\"Extension\" primary=\"1\" />", line.dialable_exten());
+        bwriteln!(*s, "<number dial=\"{}\" label=\"Extension\" primary=\"1\" />", line.dialable_exten());
         s.push_str("</numbers>\n");
         s.push_str("</contact>\n");
     }
@@ -48,10 +49,10 @@ fn build(reg: Option<&Registry>, s: &mut String) {
 
 /// `phone_user_get_default_contacts_xml`: append the default contacts
 /// document to `out`.
-pub fn default_contacts_xml(out: &mut String) {
+pub fn default_contacts_xml(out: &mut Vec<u8>) {
     let mut cache = CACHE.lock().unwrap();
     if cache.is_empty() {
         build(read().as_ref(), &mut cache);
     }
-    out.push_str(&cache);
+    out.extend_from_slice(&cache);
 }

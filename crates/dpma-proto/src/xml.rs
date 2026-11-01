@@ -46,13 +46,13 @@ pub fn escape_bounded(input: &[u8], size: usize) -> Vec<u8> {
 }
 
 /// `phone_utils_xml_escape` with unlimited room: escape `&`, `<`, `>`,
-/// `"`, and `'` exactly as the original does.
-pub fn escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match u8::try_from(c).ok().and_then(entity) {
-            // Entities are ASCII.
-            Some(e) => out.push_str(std::str::from_utf8(e).unwrap_or_default()),
+/// `"`, and `'` exactly as the original does (bytewise; every other byte
+/// is copied).
+pub fn escape(s: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s.len());
+    for &c in s {
+        match entity(c) {
+            Some(e) => out.extend_from_slice(e),
             None => out.push(c),
         }
     }
@@ -65,15 +65,16 @@ mod tests {
 
     #[test]
     fn escapes() {
-        assert_eq!(escape("a&b<c>d\"e'f"), "a&amp;b&lt;c&gt;d&quot;e&apos;f");
-        assert_eq!(escape("plain ünïcödé"), "plain ünïcödé");
-        assert_eq!(escape(""), "");
+        assert_eq!(escape(b"a&b<c>d\"e'f"), b"a&amp;b&lt;c&gt;d&quot;e&apos;f");
+        assert_eq!(escape("plain ünïcödé".as_bytes()), "plain ünïcödé".as_bytes());
+        assert_eq!(escape(b"Jos\xe9 <\xff>"), b"Jos\xe9 &lt;\xff&gt;");
+        assert_eq!(escape(b""), b"");
     }
 
     #[test]
     fn bounded() {
         let s = b"a&b<c>d\"e'f";
-        assert_eq!(escape_bounded(s, 1024), escape("a&b<c>d\"e'f").as_bytes());
+        assert_eq!(escape_bounded(s, 1024), escape(s));
         // size 1: nothing fits.
         assert_eq!(escape_bounded(b"abc", 1), b"");
         assert_eq!(escape_bounded(b"abc", 3), b"ab");

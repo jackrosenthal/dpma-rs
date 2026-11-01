@@ -37,7 +37,8 @@ pub fn custom_level() -> i32 {
     CUSTOM_LEVEL.load(Ordering::Relaxed)
 }
 
-pub fn log(level: i32, file: &str, line: u32, func: &str, msg: &str) {
+/// Log `msg` (bytes, as the original's `%s` would print them).
+pub fn log(level: i32, file: &str, line: u32, func: &str, msg: &[u8]) {
     let file = cstr(file.rsplit('/').next().unwrap_or(file));
     let func = cstr(func);
     let msg = cstr(msg);
@@ -75,11 +76,24 @@ macro_rules! __func {
     }};
 }
 
+/// The message of a log macro: its format string and arguments (with
+/// byte strings written as their exact bytes, see `dpma_bytes::bformat!`)
+/// and a trailing newline.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __log_msg {
+    ($($arg:tt)*) => {{
+        let mut m = $crate::dpma_bytes::bformat!($($arg)*);
+        m.push(b'\n');
+        m
+    }};
+}
+
 /// Log at an explicit Asterisk level. A trailing newline is added.
 #[macro_export]
 macro_rules! ast_log {
     ($level:expr, $($arg:tt)*) => {
-        $crate::log::log($level, file!(), line!(), $crate::__func!(), &format!("{}\n", format_args!($($arg)*)))
+        $crate::log::log($level, file!(), line!(), $crate::__func!(), &$crate::__log_msg!($($arg)*))
     };
 }
 
@@ -87,7 +101,7 @@ macro_rules! ast_log {
 #[macro_export]
 macro_rules! dpma_log {
     ($($arg:tt)*) => {
-        $crate::log::log($crate::log::custom_level(), file!(), line!(), $crate::__func!(), &format!("{}\n", format_args!($($arg)*)))
+        $crate::log::log($crate::log::custom_level(), file!(), line!(), $crate::__func!(), &$crate::__log_msg!($($arg)*))
     };
 }
 
@@ -96,7 +110,7 @@ macro_rules! dpma_log {
 macro_rules! ast_debug {
     ($level:expr, $($arg:tt)*) => {
         if $crate::log::debug_atleast($level) {
-            $crate::log::log($crate::log::LOG_DEBUG, file!(), line!(), $crate::__func!(), &format!("{}\n", format_args!($($arg)*)))
+            $crate::log::log($crate::log::LOG_DEBUG, file!(), line!(), $crate::__func!(), &$crate::__log_msg!($($arg)*))
         }
     };
 }
@@ -106,7 +120,7 @@ macro_rules! ast_debug {
 macro_rules! dpma_debug {
     ($level:expr, $($arg:tt)*) => {
         if $crate::log::debug_atleast($level) {
-            $crate::log::log($crate::log::custom_level(), file!(), line!(), $crate::__func!(), &format!("{}\n", format_args!($($arg)*)))
+            $crate::log::log($crate::log::custom_level(), file!(), line!(), $crate::__func!(), &$crate::__log_msg!($($arg)*))
         }
     };
 }

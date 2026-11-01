@@ -7,7 +7,8 @@ use super::{error_response_json, error_response_xml, register_handler};
 use crate::method::{self, MethodCall};
 use crate::session::{Outgoing, Transaction};
 use crate::users;
-use dpma_ast::{astxml, dpma_debug, dpma_log, json};
+use dpma_ast::dpma_bytes::ByteSlice;
+use dpma_ast::{astxml, bformat, dpma_debug, dpma_log, json};
 use dpma_proto::errors;
 use std::io::Read;
 use std::sync::atomic::Ordering;
@@ -48,7 +49,7 @@ pub fn handle_echo(tx: Arc<Transaction>) -> i32 {
     use dpma_proto::headers as h;
     let var = |name: &str| tx.first_msg.as_ref().and_then(|m| m.get_var(name));
     let uri = var(h::RESPONSE_URI);
-    let Some(mut m) = crate::transport::new_outgoing(uri.as_deref().unwrap_or("")) else {
+    let Some(mut m) = crate::transport::new_outgoing(uri.as_deref().unwrap_or(b"")) else {
         dpma_ast::ast_log!(dpma_ast::log::LOG_ERROR, "Unable to allocate msg");
         return 0;
     };
@@ -69,7 +70,7 @@ pub fn handle_echo(tx: Arc<Transaction>) -> i32 {
     if let Some(net) = var(h::ORIGINATION_NETWORK).filter(|n| !n.is_empty()) {
         m.set_var(h::ORIGINATION_NETWORK, &net);
     }
-    m.set_body_bytes(&tx.body_bytes);
+    m.set_body(&tx.body);
     let _ = crate::transport::write_msg(m);
     0
 }
@@ -99,7 +100,7 @@ fn append(tx: &Transaction, data: &[u8]) {
 }
 
 /// `phone_msg_session_get_id` (FUN_00149fa0) of the transaction's session.
-fn session_id(tx: &Transaction) -> String {
+fn session_id(tx: &Transaction) -> Vec<u8> {
     tx.session.as_ref().map(|s| s.id.clone()).unwrap_or_default()
 }
 
@@ -111,7 +112,7 @@ fn session_auth_flags(tx: &Transaction) -> i32 {
 
 /// `dpma_config_password(dpma_config_get())`: the global pin as the
 /// exported configuration object holds it (at most 255 bytes).
-fn config_password() -> String {
+fn config_password() -> Vec<u8> {
     crate::util::truncate(&crate::config::get().globalpin, 0x100)
 }
 
@@ -121,19 +122,19 @@ const PATH_BUF: usize = 0x1000;
 /// `dpma_append_config_file_dir(buf, 0x1000, file, NULL)`: `file` inside
 /// the file directory (`"%s/%s"`), or the directory itself when `file` is
 /// empty.
-fn config_file_dir(file: &str) -> String {
+fn config_file_dir(file: &[u8]) -> Vec<u8> {
     let dir = crate::util::truncate(&crate::config::get().file_directory, PATH_BUF);
     if file.is_empty() {
         dir
     } else {
-        crate::util::truncate(&format!("{}/{}", dir, file), PATH_BUF)
+        crate::util::truncate(&bformat!("{}/{}", dir, file), PATH_BUF)
     }
 }
 
 /// The transaction's body as the original's handlers see it: a C string,
 /// so it ends at the first NUL.
 fn body_cstr(tx: &Transaction) -> &[u8] {
-    let b = &tx.body_bytes;
+    let b = &tx.body;
     &b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())]
 }
 
@@ -152,9 +153,11 @@ fn cstr_at(b: &[u8], pos: usize) -> &[u8] {
 }
 
 /// `ast_skip_blanks` and `ast_trim_blanks` (bytes 1 to 32 are blanks).
-fn strip_blanks(s: &str) -> &str {
-    s.trim_start_matches(|c: char| ('\u{1}'..='\u{20}').contains(&c))
-        .trim_end_matches(|c: char| c <= '\u{20}')
+fn strip_blanks(s: &[u8]) -> &[u8] {
+    let start = s.iter().position(|c| !(1..=0x20).contains(c)).unwrap_or(s.len());
+    let s = &s[start..];
+    let end = s.iter().rposition(|&c| c > 0x20).map_or(0, |i| i + 1);
+    &s[..end]
 }
 
 // ---------------------------------------------------------------------------
@@ -193,29 +196,28 @@ fn file_reply(tx: &Transaction) {
     // strsep(&p, "\r\n")
     let rest = &body[pos + 7..];
     let name = &rest[..rest.iter().position(|&c| c == b'\r' || c == b'\n').unwrap_or(rest.len())];
-    let name = String::from_utf8_lossy(name);
-    if name.eq_ignore_ascii_case("default") {
-        let mut buf = String::with_capacity(0x400);
+    if name.eq_ignore_ascii_case(b"default") {
+        let mut buf = Vec::with_capacity(0x400);
         crate::users::contacts::default_contacts_xml(&mut buf);
-        append(tx, buf.as_bytes());
+        append(tx, &buf);
         return;
     }
-    if name.eq_ignore_ascii_case("null") {
+    if name.eq_ignore_ascii_case(b"null") {
         append(tx, NULL_CONTACTS.as_bytes());
         return;
     }
-    if escapes_file_dir(&name) {
+    if escapes_file_dir(name) {
         dpma_log!("File request for '{}' outside the file directory refused", name);
         set_error(tx, errors::msg::FILE_NOT_FOUND);
         return;
     }
-    let path = config_file_dir(&name);
+    let path = config_file_dir(name);
     if path.is_empty() {
         dpma_log!("File request with null filename");
         set_error(tx, errors::msg::FILE_NOT_FOUND);
         return;
     }
-    let mut f = match std::fs::File::open(&path) {
+    let mut f = match std::fs::File::open(crate::util::path(&path)) {
         Ok(f) => f,
         Err(_) => {
             dpma_log!("Failed to open file {}", path);
@@ -237,8 +239,8 @@ fn file_reply(tx: &Transaction) {
 /// True for a FileRequest name with a `..` component, the only kind that
 /// can leave the file directory: the original joins every name to it with
 /// a `/`, so an absolute name stays inside.
-fn escapes_file_dir(name: &str) -> bool {
-    name.split('/').any(|c| c == "..")
+fn escapes_file_dir(name: &[u8]) -> bool {
+    name.split(|&c| c == b'/').any(|c| c == b"..")
 }
 
 // ---------------------------------------------------------------------------
@@ -247,7 +249,7 @@ fn escapes_file_dir(name: &str) -> bool {
 
 /// `standard_phone_user_find_by_token` for the transaction's
 /// `Config-Token`, MAC, session, and Response-URI.
-fn phone_for_token(tx: &Transaction) -> Option<String> {
+fn phone_for_token(tx: &Transaction) -> Option<Vec<u8>> {
     users::runtime::find_by_token(&tx.config_token, &tx.mac, &session_id(tx), &tx.response_uri, &config_password())
         .phone
 }
@@ -262,10 +264,10 @@ pub fn handle_config(tx: Arc<Transaction>) -> i32 {
         Some(phone) => {
             // The original builds the document in an ast_str of 0x400
             // bytes; get_config reproduces that buffer's behavior.
-            let mut buf = String::with_capacity(crate::users::build_config::INITIAL_BUF);
-            let dir = config_file_dir("");
+            let mut buf = Vec::with_capacity(crate::users::build_config::INITIAL_BUF);
+            let dir = config_file_dir(b"");
             let _ = crate::users::build_config::get_config(&phone, &mut buf, &dir, &tx.model);
-            append(&tx, buf.as_bytes());
+            append(&tx, &buf);
             tx.configured.store(true, Ordering::SeqCst);
         }
     }
@@ -393,9 +395,9 @@ fn userlist_reply(tx: &Transaction) {
     }
     let differs = tx.config_password != config_password();
     let filter = differs && (flags as u32) & crate::config::auth::USERLIST_GLOBALPIN != 0;
-    let mut buf = String::with_capacity(0x400);
+    let mut buf = Vec::with_capacity(0x400);
     match crate::users::userlist::build_userlist_json(&mut buf, filter, &tx.config_password) {
-        Ok(n) if n >= 1 => append(tx, buf.as_bytes()),
+        Ok(n) if n >= 1 => append(tx, &buf),
         _ => {
             set_error(tx, errors::msg::INVALID_CONFIG_PASSWORD);
             crate::auth::issue_alert(tx, "invalid config pass");
@@ -413,13 +415,13 @@ fn userlist_reply(tx: &Transaction) {
 /// stripped of blanks; no colon means no secret): the phone named `user`
 /// with pin `secret`, else the first phone with the line named `user`
 /// whose secret is `secret`.
-fn authenticate(credentials: &str) -> Option<String> {
-    let (user, secret) = match credentials.find(':') {
+fn authenticate(credentials: &[u8]) -> Option<Vec<u8>> {
+    let (user, secret) = match credentials.find_byte(b':') {
         Some(i) => (&credentials[..i], strip_blanks(&credentials[i + 1..])),
         // The original passes NULL, which matches only an empty pin or
         // secret (and crashes on a set one); "" does the same without the
         // crash.
-        None => (credentials, ""),
+        None => (credentials, &b""[..]),
     };
     if user.is_empty() {
         return None;
@@ -435,7 +437,7 @@ fn authenticate(credentials: &str) -> Option<String> {
 /// A request handed to AMI (`ami::messages::raise_event` was called): the
 /// reply waits for `DPMAMessageResponse`.
 struct Forwarded {
-    method: String,
+    method: Vec<u8>,
 }
 
 /// `handle_request_asterisk` (FUN_00176a60), registered for both
@@ -455,11 +457,11 @@ struct Forwarded {
 pub fn handle_http_or_asterisk(tx: Arc<Transaction>) -> i32 {
     append(&tx, crate::ami::messages::HTTP_PREAMBLE.as_bytes());
     // The original's response buffer (ast_str_create(0x400)).
-    let mut buf = String::with_capacity(0x400);
+    let mut buf = Vec::with_capacity(0x400);
     let forwarded = asterisk_request(&tx, &mut buf);
     if !buf.is_empty() {
-        buf.push_str("\r\n\r\n");
-        append(&tx, buf.as_bytes());
+        buf.extend_from_slice(b"\r\n\r\n");
+        append(&tx, &buf);
     }
     match forwarded {
         Some(f) => queue_for_ami(&tx, f),
@@ -479,7 +481,7 @@ fn queue_for_ami(tx: &Arc<Transaction>, f: Forwarded) {
 
 /// Authenticate and run the request; the response (or error) goes to
 /// `buf`.  Some when the request was forwarded to AMI.
-fn asterisk_request(tx: &Arc<Transaction>, buf: &mut String) -> Option<Forwarded> {
+fn asterisk_request(tx: &Arc<Transaction>, buf: &mut Vec<u8>) -> Option<Forwarded> {
     use dpma_proto::errors::request as rq;
     let mut body = body_cstr(tx).to_vec();
     let marker = dpma_proto::headers::DIGEST_AUTH_MARKER.as_bytes();
@@ -517,10 +519,10 @@ fn asterisk_request(tx: &Arc<Transaction>, buf: &mut String) -> Option<Forwarded
         cred_end -= 1;
         body[cred_end] = 0;
     }
-    let credentials = String::from_utf8_lossy(&body[cred_start..cred_end]).into_owned();
+    let credentials = body[cred_start..cred_end].to_vec();
     let Some(phone) = authenticate(&credentials) else {
         dpma_log!("Authentication failed for user credentials: {}", credentials);
-        error_response_json(buf, "", rq::AUTH_FAILED, &format!("authentication failed for {}", credentials));
+        error_response_json(buf, "", rq::AUTH_FAILED, &bformat!("authentication failed for {}", credentials));
         return None;
     };
     let text = cstr_at(&body, start);
@@ -532,7 +534,7 @@ fn asterisk_request(tx: &Arc<Transaction>, buf: &mut String) -> Option<Forwarded
 }
 
 /// `handle_request_xml` (inlined in FUN_00176a60).
-fn xml_request(tx: &Arc<Transaction>, phone: &str, text: &[u8], buf: &mut String) -> Option<Forwarded> {
+fn xml_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<u8>) -> Option<Forwarded> {
     use dpma_proto::errors::request as rq;
     let Some(doc) = astxml::Doc::read_memory(text) else {
         error_response_xml(buf, "", rq::PARSE);
@@ -547,7 +549,7 @@ fn xml_request(tx: &Arc<Transaction>, phone: &str, text: &[u8], buf: &mut String
     // without one crashes it); a missing one is treated as empty here.
     let method = root.attribute("method").unwrap_or_default();
     dpma_debug!(3, "Asterisk {} method '{}' is using XML body", name, method);
-    if !name.eq_ignore_ascii_case("request") {
+    if !name.eq_ignore_ascii_case(b"request") {
         return None;
     }
     let code = 'code: {
@@ -561,7 +563,7 @@ fn xml_request(tx: &Arc<Transaction>, phone: &str, text: &[u8], buf: &mut String
         if let Some(f) = method::find_xml(&method) {
             // Methods get the <parameters> element as markup.
             let markup = doc.node_markup(&params).unwrap_or_default();
-            let call = MethodCall { phone: phone.to_string(), method: method.clone(), tx: Some(tx.clone()) };
+            let call = MethodCall { phone: phone.to_vec(), method: method.clone(), tx: Some(tx.clone()) };
             f(&call, &markup, buf);
             if !buf.is_empty() {
                 return None;
@@ -570,7 +572,7 @@ fn xml_request(tx: &Arc<Transaction>, phone: &str, text: &[u8], buf: &mut String
         }
         if method::is_ami(&method) {
             let text = params.text();
-            crate::ami::messages::raise_event(&tx.key, &method, "XML", text.as_deref().unwrap_or("(null)"));
+            crate::ami::messages::raise_event(&tx.key, &method, "XML", text.as_deref().unwrap_or(b"(null)"));
             return Some(Forwarded { method });
         }
         rq::METHOD_NOT_FOUND
@@ -583,7 +585,7 @@ fn xml_request(tx: &Arc<Transaction>, phone: &str, text: &[u8], buf: &mut String
 /// with Asterisk's JSON library (jansson), as the original does, so the
 /// same documents are accepted and AMI sees the same parameter text;
 /// methods get the parameters as a `serde_json::Value`.
-fn json_request(tx: &Arc<Transaction>, phone: &str, text: &[u8], buf: &mut String) -> Option<Forwarded> {
+fn json_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<u8>) -> Option<Forwarded> {
     use dpma_proto::errors::request as rq;
     let Some(doc) = json::Json::load(text) else {
         error_response_json(buf, "", rq::PARSE, "json body");
@@ -608,7 +610,7 @@ fn json_request(tx: &Arc<Transaction>, phone: &str, text: &[u8], buf: &mut Strin
             .ok()
             .and_then(|mut v| v.get_mut("request")?.get_mut("parameters").map(serde_json::Value::take))
             .unwrap_or(serde_json::Value::Null);
-        let call = MethodCall { phone: phone.to_string(), method: method.clone(), tx: Some(tx.clone()) };
+        let call = MethodCall { phone: phone.to_vec(), method: method.clone(), tx: Some(tx.clone()) };
         f(&call, &value, buf);
         if buf.is_empty() {
             error_response_json(buf, &method, rq::PARSE, "empty response body");

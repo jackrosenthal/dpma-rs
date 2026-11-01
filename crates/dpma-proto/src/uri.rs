@@ -15,10 +15,11 @@
 
 use crate::cbuf::{c_bytes, contains_ignore_case, eq_ignore_case, CBuf, EMPTY};
 use crate::LogLevel;
+use dpma_bytes::bformat;
 
 const FILE: &str = "reqresp_parser.c";
 
-fn log(line: u32, func: &str, msg: &str) {
+fn log(line: u32, func: &str, msg: &[u8]) {
     crate::log(LogLevel::Dpma, FILE, line, func, msg);
 }
 
@@ -31,11 +32,11 @@ pub fn parser_init() -> crate::Result<()> {
 /// `struct uriparams`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UriParams {
-    pub transport: String,
-    pub user: String,
-    pub method: String,
-    pub ttl: String,
-    pub maddr: String,
+    pub transport: Vec<u8>,
+    pub user: Vec<u8>,
+    pub method: Vec<u8>,
+    pub ttl: Vec<u8>,
+    pub maddr: Vec<u8>,
     pub lr: bool,
 }
 
@@ -69,12 +70,12 @@ pub struct ParsedUri {
     /// The return value was -1 (empty URI, or none of the schemes
     /// matched; in the latter case the other fields are still filled).
     pub error: bool,
-    pub user: String,
-    pub pass: String,
-    pub hostport: String,
+    pub user: Vec<u8>,
+    pub pass: Vec<u8>,
+    pub hostport: Vec<u8>,
     pub params: UriParams,
-    pub headers: String,
-    pub residue: String,
+    pub headers: Vec<u8>,
+    pub residue: Vec<u8>,
 }
 
 impl ParsedUri {
@@ -126,8 +127,8 @@ impl Pos {
         ParsedUri {
             error: self.error,
             user: b.get(self.user),
-            pass: if opts.pass { b.get(self.pass) } else { String::new() },
-            hostport: if opts.hostport { b.get(self.hostport) } else { String::new() },
+            pass: if opts.pass { b.get(self.pass) } else { Vec::new() },
+            hostport: if opts.hostport { b.get(self.hostport) } else { Vec::new() },
             params: if opts.params {
                 UriParams {
                     transport: b.get(self.transport),
@@ -175,7 +176,7 @@ fn parse_uri_full_buf(b: &mut CBuf, start: usize, scheme: Option<&str>, opts: Pa
             log(
                 0x60,
                 "parse_uri_full",
-                &format!("No supported scheme found in '{}' using the scheme[s] {}\n", b.get(uri), scheme),
+                &bformat!("No supported scheme found in '{}' using the scheme[s] {}\n", b.get(uri), scheme),
             );
             r.error = true;
         }
@@ -305,15 +306,15 @@ fn parse_uri_full_buf(b: &mut CBuf, start: usize, scheme: Option<&str>, opts: Pa
 /// of the comma separated `scheme` list (e.g., "sip:,sips:"; the scheme
 /// text, including any colon, is stripped).  With `None` no scheme is
 /// expected.
-pub fn parse_uri_full(uri: &str, scheme: Option<&str>, opts: ParseOpts) -> ParsedUri {
-    let mut b = CBuf::new(uri.as_bytes());
+pub fn parse_uri_full(uri: impl AsRef<[u8]>, scheme: Option<&str>, opts: ParseOpts) -> ParsedUri {
+    let mut b = CBuf::new(uri.as_ref());
     let p = parse_uri_full_buf(&mut b, 0, scheme, opts);
     p.read(&b, opts)
 }
 
 /// `parse_uri` (FUN_001876a0): `parse_uri_full` with parameters parsed;
 /// callers use `params.transport`.
-pub fn parse_uri(uri: &str, scheme: Option<&str>, pass: bool, hostport: bool) -> ParsedUri {
+pub fn parse_uri(uri: impl AsRef<[u8]>, scheme: Option<&str>, pass: bool, hostport: bool) -> ParsedUri {
     parse_uri_full(uri, scheme, ParseOpts { pass, hostport, params: true })
 }
 
@@ -361,7 +362,7 @@ fn get_calleridname_buf(b: &CBuf, input: usize, outputsize: usize) -> (Vec<u8>, 
             i += 1;
         }
         if b.at(i) != b'"' {
-            log(0x146, "get_calleridname", "No ending quote for display-name was found\n");
+            log(0x146, "get_calleridname", b"No ending quote for display-name was found\n");
             return (Vec::new(), input);
         }
         (out, i + 1)
@@ -399,10 +400,10 @@ fn get_calleridname_buf(b: &CBuf, input: usize, outputsize: usize) -> (Vec<u8>, 
 /// `outputsize` bytes: returns the display name of a From/To/Contact value
 /// (quoted-string or token form) and the rest of the input after it (the
 /// whole input when there is no display name).
-pub fn get_calleridname(input: &str, outputsize: usize) -> (String, String) {
-    let b = CBuf::new(input.as_bytes());
+pub fn get_calleridname(input: impl AsRef<[u8]>, outputsize: usize) -> (Vec<u8>, Vec<u8>) {
+    let b = CBuf::new(input.as_ref());
     let (name, rest) = get_calleridname_buf(&b, 0, outputsize);
-    (String::from_utf8_lossy(&name).into_owned(), b.get(rest))
+    (name, b.get(rest))
 }
 
 /// `find_closing_quote(start, NULL)`.
@@ -433,7 +434,7 @@ fn get_in_brackets_full_buf(b: &mut CBuf, tmp: usize) -> (i32, usize, usize) {
                 // The bracket is within quotes, so skip the quoted part.
                 let s = find_closing_quote(b, q + 1);
                 if b.at(s) == 0 {
-                    log(0x195, "get_in_brackets_full", &format!("No closing quote found in '{}'\n", b.get(tmp)));
+                    log(0x195, "get_in_brackets_full", &bformat!("No closing quote found in '{}'\n", b.get(tmp)));
                     return (-1, EMPTY, EMPTY);
                 }
                 parse = s + 1;
@@ -447,7 +448,7 @@ fn get_in_brackets_full_buf(b: &mut CBuf, tmp: usize) -> (i32, usize, usize) {
         return (0, p, sb + 1);
     }
     if first_bracket.is_some() {
-        log(0x1b0, "get_in_brackets_full", &format!("No closing bracket found in '{}'\n", b.get(tmp)));
+        log(0x1b0, "get_in_brackets_full", &bformat!("No closing bracket found in '{}'\n", b.get(tmp)));
         return (-1, EMPTY, EMPTY);
     }
     (1, tmp, EMPTY)
@@ -459,41 +460,38 @@ pub struct InBrackets {
     /// 0: found `<...>`; 1: no brackets (`out` is the whole input, or
     /// empty for empty input); -1: unbalanced quote or bracket (logged).
     pub result: i32,
-    pub out: String,
+    pub out: Vec<u8>,
     /// What follows the closing `>`.
-    pub residue: String,
+    pub residue: Vec<u8>,
 }
 
 /// `get_in_brackets_full` (FUN_001878c0): the part of a header value
 /// between `<` and `>`, skipping brackets inside quotes.
-pub fn get_in_brackets_full(s: &str) -> InBrackets {
-    let mut b = CBuf::new(s.as_bytes());
+pub fn get_in_brackets_full(s: impl AsRef<[u8]>) -> InBrackets {
+    let mut b = CBuf::new(s.as_ref());
     let (result, out, residue) = get_in_brackets_full_buf(&mut b, 0);
     InBrackets { result, out: b.get(out), residue: b.get(residue) }
 }
 
 /// `get_in_brackets` (FUN_00187a50): the bracketed part, or the input
 /// unchanged when there is none or it is malformed.
-pub fn get_in_brackets(s: &str) -> String {
+pub fn get_in_brackets(s: impl AsRef<[u8]>) -> Vec<u8> {
+    let s = s.as_ref();
     let r = get_in_brackets_full(s);
     if r.result == 0 {
         r.out
     } else {
         // C returns the input pointer, which may have been cut at '>' only
         // on success, so it is the original text.
-        c_str_lossy(s)
+        c_bytes(s).to_vec()
     }
-}
-
-fn c_str_lossy(s: &str) -> String {
-    String::from_utf8_lossy(c_bytes(s.as_bytes())).into_owned()
 }
 
 /// Result of [`parse_name_andor_addr`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NameAddr {
     /// The display name (empty when not asked for or absent).
-    pub name: String,
+    pub name: Vec<u8>,
     /// The URI parts; `uri.error` is the return value.
     pub uri: ParsedUri,
 }
@@ -501,8 +499,8 @@ pub struct NameAddr {
 /// `parse_name_andor_addr` (FUN_00187a80): an optional display name, then
 /// a URI in brackets (whose trailing parameters are returned in
 /// `residue`, past the first `;`) or bare (parsed by `parse_uri_full`).
-pub fn parse_name_andor_addr(value: &str, scheme: Option<&str>, want_name: bool, opts: ParseOpts) -> NameAddr {
-    let mut b = CBuf::new(value.as_bytes());
+pub fn parse_name_andor_addr(value: impl AsRef<[u8]>, scheme: Option<&str>, want_name: bool, opts: ParseOpts) -> NameAddr {
+    let mut b = CBuf::new(value.as_ref());
     let mut uri = 0;
     let mut name = Vec::new();
     if want_name {
@@ -528,14 +526,14 @@ pub fn parse_name_andor_addr(value: &str, scheme: Option<&str>, want_name: bool,
     if bracketed {
         p.residue = residue;
     }
-    NameAddr { name: if want_name { b.get(name_pos) } else { String::new() }, uri: p.read(&b, opts) }
+    NameAddr { name: if want_name { b.get(name_pos) } else { Vec::new() }, uri: p.read(&b, opts) }
 }
 
 /// The `To` header handling of `incoming_check_finalize`:
 /// `parse_name_andor_addr(to, "sip,sips", ...)` for the host and port,
 /// then `ast_sockaddr_split_hostport`.  `None` when the parse fails (the
 /// transaction then keeps empty values).
-pub fn to_host_port(to: &str) -> Option<(String, Option<String>)> {
+pub fn to_host_port(to: impl AsRef<[u8]>) -> Option<(Vec<u8>, Option<Vec<u8>>)> {
     let r = parse_name_andor_addr(to, Some("sip,sips"), false, ParseOpts { pass: false, hostport: true, params: false });
     if r.uri.error {
         return None;
@@ -546,9 +544,9 @@ pub fn to_host_port(to: &str) -> Option<(String, Option<String>)> {
 /// `ast_sockaddr_split_hostport(str, &host, &port, 0)`: `[v6]:port`,
 /// `host:port`, or `host`; a host with more than one colon (bare IPv6) has
 /// no port.
-pub fn split_hostport(s: &str) -> (String, Option<String>) {
-    let (h, p) = split_hostport_bytes(c_bytes(s.as_bytes()));
-    (String::from_utf8_lossy(h).into_owned(), p.map(|p| String::from_utf8_lossy(p).into_owned()))
+pub fn split_hostport(s: impl AsRef<[u8]>) -> (Vec<u8>, Option<Vec<u8>>) {
+    let (h, p) = split_hostport_bytes(c_bytes(s.as_ref()));
+    (h.to_vec(), p.map(<[u8]>::to_vec))
 }
 
 fn split_hostport_bytes(s: &[u8]) -> (&[u8], Option<&[u8]>) {
@@ -846,9 +844,9 @@ fn cut(s: &[u8], c: u8) -> (&[u8], Option<&[u8]>) {
 /// `sip_uri_cmp` (FUN_00187bd0): 0 when two sip/sips URIs are equivalent
 /// per RFC 3261 19.1.4 (as chan_sip implements it), 1 otherwise.  Used by
 /// `validate_session` on the Contact.
-pub fn sip_uri_cmp(input1: &str, input2: &str) -> i32 {
-    let d1 = uri_decode(input1.as_bytes());
-    let d2 = uri_decode(input2.as_bytes());
+pub fn sip_uri_cmp(input1: impl AsRef<[u8]>, input2: impl AsRef<[u8]>) -> i32 {
+    let d1 = uri_decode(input1.as_ref());
+    let d2 = uri_decode(input2.as_ref());
     let (scheme1, uri1) = cut(&d1, b':');
     let (scheme2, uri2) = cut(&d2, b':');
     if scheme1 != scheme2 {
@@ -934,23 +932,23 @@ pub fn phone_utils_parse_uri_in_place(buf: &mut [u8], want_transport: bool) -> (
 /// `phone_utils_parse_uri` (0x1737f0): the address part of a contact or
 /// URI and the `transport` parameter value, if any (the C function
 /// returns `""` for none).
-pub fn phone_utils_parse_uri(uri: &str) -> (String, Option<String>) {
-    let mut b = c_bytes(uri.as_bytes()).to_vec();
+pub fn phone_utils_parse_uri(uri: impl AsRef<[u8]>) -> (Vec<u8>, Option<Vec<u8>>) {
+    let mut b = c_bytes(uri.as_ref()).to_vec();
     b.push(0);
     let (addr, transport) = phone_utils_parse_uri_in_place(&mut b, true);
-    let get = |p: Option<usize>| p.map(|i| String::from_utf8_lossy(c_bytes(&b[i..])).into_owned());
+    let get = |p: Option<usize>| p.map(|i| c_bytes(&b[i..]).to_vec());
     (get(addr).unwrap_or_default(), get(transport))
 }
 
 /// Compare two URIs the way FUN_00152570 (phone_users.c) does: equal
 /// addresses (case insensitive) and transports, where a missing transport
 /// is "udp".
-pub fn same_uri(a: &str, b: &str) -> bool {
+pub fn same_uri(a: impl AsRef<[u8]>, b: impl AsRef<[u8]>) -> bool {
     let (addr1, t1) = phone_utils_parse_uri(a);
     let (addr2, t2) = phone_utils_parse_uri(b);
-    let t1 = t1.filter(|t| !t.is_empty()).unwrap_or_else(|| "udp".into());
-    let t2 = t2.filter(|t| !t.is_empty()).unwrap_or_else(|| "udp".into());
-    eq_ignore_case(addr1.as_bytes(), addr2.as_bytes()) && eq_ignore_case(t1.as_bytes(), t2.as_bytes())
+    let t1 = t1.filter(|t| !t.is_empty()).unwrap_or_else(|| b"udp".to_vec());
+    let t2 = t2.filter(|t| !t.is_empty()).unwrap_or_else(|| b"udp".to_vec());
+    eq_ignore_case(&addr1, &addr2) && eq_ignore_case(&t1, &t2)
 }
 
 #[cfg(test)]

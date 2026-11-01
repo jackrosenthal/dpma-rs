@@ -250,7 +250,7 @@ pub unsafe extern "C" fn dpma_pjsip_endpoint_is_dphone(endpoint: *const c_char) 
 ///
 /// # Safety
 /// `chan` must be a live channel the caller holds a reference on.
-pub unsafe fn info_send(chan: *mut AstChannel, headers: &[(&str, &str)], content_type: &str, body: &str) -> i32 {
+pub unsafe fn info_send(chan: *mut AstChannel, headers: &[(&str, &str)], content_type: &str, body: &[u8]) -> i32 {
     let mut list: *mut AstVariable = std::ptr::null_mut();
     for (name, value) in headers.iter().rev() {
         let (n, v) = (cstr(name), cstr(value));

@@ -35,6 +35,8 @@ pub mod util;
 pub mod vm;
 pub mod xml;
 
+pub use dpma_bytes;
+pub use dpma_bytes::{bformat, bwrite, bwriteln};
 pub use util::{cstr, from_ptr};
 
 /// Opaque Asterisk types.
@@ -67,12 +69,12 @@ pub fn fully_booted() -> bool {
 }
 
 /// The Asterisk variable data directory (normally /var/lib/asterisk).
-pub fn var_dir() -> String {
+pub fn var_dir() -> Vec<u8> {
     unsafe { from_ptr(ffi::dpma_glue_var_dir()).unwrap_or_default() }
 }
 
 /// The Asterisk configuration directory (normally /etc/asterisk).
-pub fn config_dir() -> String {
+pub fn config_dir() -> Vec<u8> {
     unsafe { from_ptr(ffi::dpma_glue_config_dir()).unwrap_or_default() }
 }
 
@@ -101,7 +103,7 @@ pub fn guard<R>(default: R, f: impl FnOnce() -> R) -> R {
                 file!(),
                 line!(),
                 "guard",
-                &format!("Internal error (panic): {}\n", what),
+                format!("Internal error (panic): {}\n", what).as_bytes(),
             );
             default
         }

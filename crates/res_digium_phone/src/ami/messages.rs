@@ -24,7 +24,7 @@ use super::AmiAction;
 use crate::session::{self, Outgoing, Transaction};
 use dpma_ast::manager::{self, Request};
 use dpma_ast::sched::Context;
-use dpma_ast::{dpma_debug, dpma_log};
+use dpma_ast::{bformat, dpma_debug, dpma_log};
 use std::os::raw::{c_int, c_void};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
@@ -46,12 +46,12 @@ pub const HTTP_PREAMBLE: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/xm
 pub struct QueuedMsg {
     /// The transaction key, `"<AppServer-ID>-<MAC>"`: the event's
     /// `RequestID` and the container key (case insensitive) (+0x00).
-    pub request_id: String,
+    pub request_id: Vec<u8>,
     /// The method as the phone requested it (+0x08).
-    pub method: String,
+    pub method: Vec<u8>,
     /// Id of the session the request came in on; the reply goes to the
     /// session found under this id when it is answered (+0x10).
-    pub session_id: String,
+    pub session_id: Vec<u8>,
     /// The transaction's reply, taken from the transaction (+0x18).
     pub outgoing: Option<Outgoing>,
     /// The expiry's scheduler entry, or -1 (+0x20).
@@ -62,12 +62,12 @@ pub struct QueuedMsg {
 }
 
 impl QueuedMsg {
-    pub fn new(request_id: &str, method: &str, session_id: &str, outgoing: Option<Outgoing>) -> QueuedMsg {
+    pub fn new(request_id: &[u8], method: &[u8], session_id: &[u8], outgoing: Option<Outgoing>) -> QueuedMsg {
         static NEXT: AtomicUsize = AtomicUsize::new(1);
         QueuedMsg {
-            request_id: request_id.to_string(),
-            method: method.to_string(),
-            session_id: session_id.to_string(),
+            request_id: request_id.to_vec(),
+            method: method.to_vec(),
+            session_id: session_id.to_vec(),
             outgoing,
             sched_id: -1,
             token: NEXT.fetch_add(1, Ordering::Relaxed),
@@ -177,7 +177,7 @@ pub fn queue_link(msg: QueuedMsg) -> Result<(), ()> {
 
 /// Find (`queued_msg_find`, FUN_00174bc0) and unlink the oldest queued
 /// request with this RequestID (case insensitive).
-pub fn queue_unlink(request_id: &str) -> Option<QueuedMsg> {
+pub fn queue_unlink(request_id: &[u8]) -> Option<QueuedMsg> {
     let mut g = queue();
     let q = g.as_mut()?;
     let i = q.iter().position(|m| m.request_id.eq_ignore_ascii_case(request_id))?;
@@ -202,14 +202,14 @@ fn unlink_token(token: usize) -> Option<QueuedMsg> {
 /// "XML" or "JSON", and `params` the request's parameters: for XML the
 /// text content of the `<parameters>` element (`ast_xml_get_text`), for
 /// JSON the compact dump of the `"parameters"` value.
-pub fn raise_event(request_id: &str, method: &str, format: &str, params: &str) {
+pub fn raise_event(request_id: &[u8], method: &[u8], format: &str, params: &[u8]) {
     manager::event_at(
         DPMA_MESSAGE_CATEGORY,
         "DPMAMessage",
         "phone_request.c",
         0x192,
         "__handle_request_ami",
-        &format!("RequestID: {}\r\nMethod: {}\r\nFormat: {}\r\nParameters: {}\r\n", request_id, method, format, params),
+        bformat!("RequestID: {}\r\nMethod: {}\r\nFormat: {}\r\nParameters: {}\r\n", request_id, method, format, params),
     );
 }
 
@@ -219,7 +219,7 @@ pub fn raise_event(request_id: &str, method: &str, format: &str, params: &str) {
 /// must not send the reply when this succeeds; on Err the reply is left in
 /// the transaction for the handler to send (`send_and_destroy`), as the
 /// original does when the expiry cannot be scheduled.
-pub fn queue_request(tx: &Arc<Transaction>, method: &str) -> Result<(), ()> {
+pub fn queue_request(tx: &Arc<Transaction>, method: &[u8]) -> Result<(), ()> {
     let session_id = tx.session.as_ref().map(|s| s.id.clone()).unwrap_or_default();
     let outgoing = tx.outgoing.lock().unwrap_or_else(|e| e.into_inner()).take();
     let mut msg = QueuedMsg::new(&tx.key, method, &session_id, outgoing);
@@ -250,7 +250,7 @@ pub fn queue_request(tx: &Arc<Transaction>, method: &str) -> Result<(), ()> {
 /// `snprintf(idtext, 0x100, "ActionID: %s\r\n", id)` when the request has
 /// a non-empty ActionID, else "".
 fn action_id_text(r: &Request) -> Vec<u8> {
-    let id = r.header_bytes("ActionID");
+    let id = r.header("ActionID");
     if id.is_empty() {
         return Vec::new();
     }
@@ -264,10 +264,10 @@ fn action_id_text(r: &Request) -> Vec<u8> {
 /// `astman_append(s, "Response: %s\r\n%s\r\n", ...)`: every action here
 /// answers with exactly this (no `Message` header).
 fn reply(r: &Request, ok: bool, idtext: &[u8]) {
-    let mut t = format!("Response: {}\r\n", if ok { "Success" } else { "Failure" }).into_bytes();
+    let mut t = bformat!("Response: {}\r\n", if ok { "Success" } else { "Failure" });
     t.extend_from_slice(idtext);
     t.extend_from_slice(b"\r\n");
-    r.append_bytes(&t);
+    r.append(&t);
 }
 
 /// `action_dpma_message_send` (FUN_00174a00): send event `Method` with
@@ -307,9 +307,10 @@ fn action_message_register(r: &Request) -> i32 {
 /// neither `Response` nor both `ErrorNum` and `ErrorMsg`, or with text
 /// jansson refuses (invalid UTF-8).  Any `Format` other than JSON and XML
 /// (ignoring case) gives an empty document.
-fn response_document(method: &str, format: &str, response: &[u8], num: &[u8], msg: &[u8]) -> Result<Vec<u8>, ()> {
+fn response_document(method: &[u8], format: &[u8], response: &[u8], num: &[u8], msg: &[u8]) -> Result<Vec<u8>, ()> {
     let has_error = !num.is_empty() && !msg.is_empty();
-    if format.eq_ignore_ascii_case("JSON") {
+    if format.eq_ignore_ascii_case(b"JSON") {
+        let method = std::str::from_utf8(method).map_err(|_| ())?;
         let v = if !response.is_empty() {
             let result = std::str::from_utf8(response).map_err(|_| ())?;
             serde_json::json!({"response": {"method": method, "result": result}})
@@ -317,14 +318,14 @@ fn response_document(method: &str, format: &str, response: &[u8], num: &[u8], ms
             let message = std::str::from_utf8(msg).map_err(|_| ())?;
             // The original packs the ErrorNum string's address with "i"
             // (low 32 bits of a pointer); its value is used instead.
-            let code = dpma_proto::framing::parse_sequence(&String::from_utf8_lossy(num));
+            let code = dpma_proto::framing::parse_sequence(num);
             serde_json::json!({"response": {"method": method, "errors": {"error": {"code": code, "message": message}}}})
         } else {
             return Err(());
         };
         Ok(format!("\r\n\r\n{}\r\n", dpma_proto::json::dump(&v)).into_bytes())
-    } else if format.eq_ignore_ascii_case("XML") {
-        let mut b = format!("\r\n\r\n<response method=\"{}\">\r\n", method).into_bytes();
+    } else if format.eq_ignore_ascii_case(b"XML") {
+        let mut b = bformat!("\r\n\r\n<response method=\"{}\">\r\n", method);
         if !response.is_empty() {
             b.extend_from_slice(b"<result>");
             b.extend_from_slice(response);
@@ -344,7 +345,7 @@ fn response_document(method: &str, format: &str, response: &[u8], num: &[u8], ms
 }
 
 /// Complete and send the queued request `request_id`.
-fn respond(request_id: &str, format: &str, response: &[u8], num: &[u8], msg: &[u8]) -> Result<(), ()> {
+fn respond(request_id: &[u8], format: &[u8], response: &[u8], num: &[u8], msg: &[u8]) -> Result<(), ()> {
     if request_id.is_empty() {
         return Err(());
     }
@@ -369,9 +370,9 @@ fn respond(request_id: &str, format: &str, response: &[u8], num: &[u8], msg: &[u
 fn action_message_response(r: &Request) -> i32 {
     let request_id = r.header("RequestID");
     let format = r.header("Format");
-    let response = r.header_bytes("Response");
-    let num = r.header_bytes("ErrorNum");
-    let msg = r.header_bytes("ErrorMsg");
+    let response = r.header("Response");
+    let num = r.header("ErrorNum");
+    let msg = r.header("ErrorMsg");
     let idtext = action_id_text(r);
     let ok = respond(&request_id, &format, &response, &num, &msg).is_ok();
     reply(r, ok, &idtext);
@@ -408,15 +409,15 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         };
         for m in q {
             let (kind, len) = match m.outgoing.as_ref() {
-                Some(o) => (o.response_type.as_str(), o.body.len()),
-                None => ("(none)", 0),
+                Some(o) => (o.response_type.as_slice(), o.body.len()),
+                None => (&b"(none)"[..], 0),
             };
-            a.out(&format!(
+            a.out(bformat!(
                 "RequestID: {}  Method: {}  Session: {}  SchedID: {}  Reply: {} ({} bytes)\n",
                 m.request_id, m.method, m.session_id, m.sched_id, kind, len
             ));
         }
-        a.out(&format!("{} queued\n", q.len()));
+        a.out(bformat!("{} queued\n", q.len()));
         CliResult::Success
     }
 
@@ -428,7 +429,7 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         }
         let n = SCHED.read().unwrap_or_else(|e| e.into_inner()).as_ref().map(|c| c.runq());
         match n {
-            Some(n) => a.out(&format!("{} scheduled entries ran\n", n)),
+            Some(n) => a.out(bformat!("{} scheduled entries ran\n", n)),
             None => a.out("No scheduler context\n"),
         }
         CliResult::Success
@@ -443,13 +444,13 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             return CliResult::ShowUsage;
         }
         let Some(s) = session::find(&a.argv[3]) else {
-            a.out(&format!("No session '{}'\n", a.argv[3]));
+            a.out(bformat!("No session '{}'\n", a.argv[3]));
             return CliResult::Failure;
         };
         let (uri, id, format, method) = (&a.argv[4], &a.argv[5], &a.argv[6], &a.argv[7]);
-        let params = a.argv[8..].join(" ");
+        let params = a.argv[8..].join(&b" "[..]);
         if !crate::method::is_ami(method) {
-            a.out(&format!("'{}' is not registered by AMI\n", method));
+            a.out(bformat!("'{}' is not registered by AMI\n", method));
             return CliResult::Failure;
         }
         let mac = s.mac();
@@ -459,7 +460,7 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         out.response_type = "AsteriskResponse".into();
         out.append_str(HTTP_PREAMBLE);
         let tx = Arc::new(Transaction {
-            key: format!("{}-{}", id, if mac.is_empty() { "unknown" } else { mac.as_str() }),
+            key: bformat!("{}-{}", id, if mac.is_empty() { &b"unknown"[..] } else { mac.as_slice() }),
             app_server_id: id.clone(),
             request_type: "AsteriskRequest".into(),
             response_uri: uri.clone(),
@@ -468,12 +469,12 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             outgoing: Mutex::new(Some(out)),
             ..Default::default()
         });
-        raise_event(&tx.key, method, &format.to_ascii_uppercase(), &params);
+        raise_event(&tx.key, method, &String::from_utf8_lossy(format).to_ascii_uppercase(), &params);
         match queue_request(&tx, method) {
-            Ok(()) => a.out(&format!("Queued {}\n", tx.key)),
+            Ok(()) => a.out(bformat!("Queued {}\n", tx.key)),
             Err(()) => {
                 session::send_and_destroy(&tx);
-                a.out(&format!("Not queued; sent {}\n", tx.key));
+                a.out(bformat!("Not queued; sent {}\n", tx.key));
             }
         }
         CliResult::Success

@@ -18,7 +18,7 @@ use dpma_proto::headers as h;
 use std::sync::Arc;
 
 /// `prune_session_by_mac`: drop every other session of `mac`.
-fn prune_session_by_mac(mac: &str) {
+fn prune_session_by_mac(mac: &[u8]) {
     for s in store::all() {
         let contact = {
             let st = s.lock();
@@ -52,7 +52,7 @@ pub(crate) fn set_common_password(out: &mut Outgoing, session: &Arc<Session>) ->
     let password = dpma_proto::crypto::new_common_password().map_err(|_| ())?;
     st.common_password = password.clone();
     // RSA_public_encrypt's -1 on failure becomes an empty base64 string.
-    out.password = dpma_proto::crypto::encrypt_common_password(&key, &password).unwrap_or_default();
+    out.password = dpma_proto::crypto::encrypt_common_password(&key, &password).unwrap_or_default().into_bytes();
     Ok(())
 }
 
@@ -66,7 +66,7 @@ pub(crate) fn set_auth_requirements(out: &mut Outgoing, flags: u32) {
     } else {
         "none"
     }
-    .to_string();
+    .into();
     let mut list: Vec<&str> = Vec::new();
     if flags & auth::MAC != 0 {
         list.push("mac");
@@ -80,7 +80,7 @@ pub(crate) fn set_auth_requirements(out: &mut Outgoing, flags: u32) {
     if flags & auth::GLOBALPIN != 0 {
         list.push("configpass");
     }
-    out.token_auth_requirements = if list.is_empty() { "user".to_string() } else { list.join(",") };
+    out.token_auth_requirements = if list.is_empty() { "user".into() } else { list.join(",").into_bytes() };
 }
 
 /// Request handler for "Handshake" (`handle_request_handshake`,

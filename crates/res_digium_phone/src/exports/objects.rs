@@ -52,7 +52,7 @@ const BUCKETS: i32 = 257;
 pub struct LineObj {
     name: [c_char; NAME_LEN],
     /// The registry's name for the line (the C name may be truncated).
-    key: String,
+    key: Vec<u8>,
     /// `phone_users_line_get_pjsip_auth`: never NULL.  Earlier values are
     /// kept in `LineState::retired` until the object goes away so that
     /// pointers handed out stay valid.
@@ -71,7 +71,7 @@ struct LineState {
 #[repr(C)]
 pub struct UserObj {
     name: [c_char; NAME_LEN],
-    key: String,
+    key: Vec<u8>,
     /// Whether the object is the registry's (in the users container).
     linked: AtomicBool,
 }
@@ -126,10 +126,10 @@ pub fn destroy_containers() {
     }
 }
 
-fn c_name(name: &str) -> [c_char; NAME_LEN] {
+fn c_name(name: &[u8]) -> [c_char; NAME_LEN] {
     // ast_copy_string(obj->name, name, sizeof(obj->name))
     let mut out = [0 as c_char; NAME_LEN];
-    for (d, s) in out.iter_mut().zip(name.bytes().take(NAME_LEN - 1)) {
+    for (d, &s) in out.iter_mut().zip(dpma_ast::dpma_bytes::c_view(name).iter().take(NAME_LEN - 1)) {
         *d = s as c_char;
     }
     out
@@ -150,7 +150,7 @@ unsafe extern "C" fn user_destructor(obj: *mut c_void) {
 
 /// A new line object (one reference), detached with `line` as its
 /// settings, or attached (None).
-pub fn new_line(key: &str, pjsip_auth: &str, detached: Option<Line>) -> *mut LineObj {
+pub fn new_line(key: &[u8], pjsip_auth: &[u8], detached: Option<Line>) -> *mut LineObj {
     let obj = ao2::alloc(std::mem::size_of::<LineObj>(), Some(line_destructor)) as *mut LineObj;
     if obj.is_null() {
         return obj;
@@ -161,7 +161,7 @@ pub fn new_line(key: &str, pjsip_auth: &str, detached: Option<Line>) -> *mut Lin
             obj,
             LineObj {
                 name: c_name(key),
-                key: key.to_string(),
+                key: key.to_vec(),
                 pjsip_auth: AtomicPtr::new(auth),
                 state: Mutex::new(LineState { detached, retired: Vec::new() }),
             },
@@ -170,19 +170,19 @@ pub fn new_line(key: &str, pjsip_auth: &str, detached: Option<Line>) -> *mut Lin
     obj
 }
 
-fn new_user(key: &str) -> *mut UserObj {
+fn new_user(key: &[u8]) -> *mut UserObj {
     let obj = ao2::alloc(std::mem::size_of::<UserObj>(), Some(user_destructor)) as *mut UserObj;
     if obj.is_null() {
         return obj;
     }
     unsafe {
-        std::ptr::write(obj, UserObj { name: c_name(key), key: key.to_string(), linked: AtomicBool::new(true) });
+        std::ptr::write(obj, UserObj { name: c_name(key), key: key.to_vec(), linked: AtomicBool::new(true) });
     }
     obj
 }
 
 impl LineObj {
-    pub fn key(&self) -> &str {
+    pub fn key(&self) -> &[u8] {
         &self.key
     }
 
@@ -191,9 +191,9 @@ impl LineObj {
     }
 
     /// Update the cached `pjsip_auth` string if it changed.
-    fn refresh_auth(&self, st: &mut LineState, value: &str) {
+    fn refresh_auth(&self, st: &mut LineState, value: &[u8]) {
         let cur = self.pjsip_auth.load(Ordering::SeqCst);
-        let same = !cur.is_null() && unsafe { std::ffi::CStr::from_ptr(cur) }.to_bytes() == value.as_bytes();
+        let same = !cur.is_null() && unsafe { std::ffi::CStr::from_ptr(cur) }.to_bytes() == value;
         if same {
             return;
         }
@@ -232,7 +232,7 @@ impl LineObj {
 }
 
 impl UserObj {
-    pub fn key(&self) -> &str {
+    pub fn key(&self) -> &[u8] {
         &self.key
     }
 
@@ -265,8 +265,10 @@ pub fn sync(swept: Vec<Line>) {
     if lines_c.is_null() || users_c.is_null() {
         return;
     }
-    // Snapshot the registry (lower-cased name -> (name, pjsip_auth)).
-    let (lines, phones): (Vec<(String, String)>, Vec<String>) = {
+    // Snapshot the registry: (name, pjsip_auth) of each line, and the
+    // phone names.
+    type Snapshot = (Vec<(Vec<u8>, Vec<u8>)>, Vec<Vec<u8>>);
+    let (lines, phones): Snapshot = {
         let g = users::read();
         let Some(reg) = g.as_ref() else { return };
         (
@@ -274,11 +276,11 @@ pub fn sync(swept: Vec<Line>) {
             reg.phones.values().map(|p| p.name.clone()).collect(),
         )
     };
-    let mut swept: HashMap<String, Line> = swept.into_iter().map(|l| (l.name.to_ascii_lowercase(), l)).collect();
+    let mut swept: HashMap<Vec<u8>, Line> = swept.into_iter().map(|l| (l.name.to_ascii_lowercase(), l)).collect();
 
     unsafe {
         // ---- lines ----
-        let want: HashMap<String, &str> = lines.iter().map(|(n, a)| (n.to_ascii_lowercase(), a.as_str())).collect();
+        let want: HashMap<Vec<u8>, &[u8]> = lines.iter().map(|(n, a)| (n.to_ascii_lowercase(), a.as_slice())).collect();
         let mut have = std::collections::HashSet::new();
         for o in ao2::collect(lines_c) {
             let obj = o as *mut LineObj;
@@ -307,7 +309,7 @@ pub fn sync(swept: Vec<Line>) {
         }
 
         // ---- phones ----
-        let want: std::collections::HashSet<String> = phones.iter().map(|n| n.to_ascii_lowercase()).collect();
+        let want: std::collections::HashSet<Vec<u8>> = phones.iter().map(|n| n.to_ascii_lowercase()).collect();
         let mut have = std::collections::HashSet::new();
         for o in ao2::collect(users_c) {
             let obj = o as *mut UserObj;
@@ -368,7 +370,7 @@ fn lock_objects(mut objs: Vec<*mut c_void>) -> LineLocks {
 /// Lock the objects of the lines named `names` (those that have one) for a
 /// consistent read or update of those lines; see "Line locks" above.  Must
 /// be called without the registry lock.
-pub fn lock_lines<'a>(names: impl IntoIterator<Item = &'a str>) -> LineLocks {
+pub fn lock_lines<'a>(names: impl IntoIterator<Item = &'a [u8]>) -> LineLocks {
     let c = lines_container();
     let mut objs = Vec::new();
     if !c.is_null() {
@@ -384,15 +386,15 @@ pub fn lock_lines<'a>(names: impl IntoIterator<Item = &'a str>) -> LineLocks {
 }
 
 /// Lock the objects of every line of `phone` (`lock_lines`).
-pub fn lock_phone_lines(phone: &str) -> LineLocks {
-    let names: Vec<String> = {
+pub fn lock_phone_lines(phone: &[u8]) -> LineLocks {
+    let names: Vec<Vec<u8>> = {
         let g = users::read();
         g.as_ref()
             .and_then(|reg| reg.phones.get(phone))
             .map(|p| p.lines.iter().map(|l| l.name.clone()).collect())
             .unwrap_or_default()
     };
-    lock_lines(names.iter().map(String::as_str))
+    lock_lines(names.iter().map(Vec::as_slice))
 }
 
 /// Lock every line object (`lock_lines`).

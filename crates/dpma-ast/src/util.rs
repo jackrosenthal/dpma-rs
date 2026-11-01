@@ -1,23 +1,21 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-/// Convert a Rust string to a C string, dropping any interior NUL bytes.
-pub fn cstr(s: &str) -> CString {
-    match CString::new(s) {
-        Ok(c) => c,
-        Err(_) => CString::new(s.replace('\0', "")).unwrap_or_default(),
-    }
+/// A C string with the bytes of `s` up to its first NUL (where C would
+/// see the string end).
+pub fn cstr(s: impl AsRef<[u8]>) -> CString {
+    dpma_bytes::cstring(s)
 }
 
-/// Copy a (possibly NULL) C string into an owned Rust string.
+/// Copy a (possibly NULL) C string's bytes.
 ///
 /// # Safety
 /// `p` must be NULL or point to a NUL terminated string.
-pub unsafe fn from_ptr(p: *const c_char) -> Option<String> {
+pub unsafe fn from_ptr(p: *const c_char) -> Option<Vec<u8>> {
     if p.is_null() {
         None
     } else {
-        Some(CStr::from_ptr(p).to_string_lossy().into_owned())
+        Some(CStr::from_ptr(p).to_bytes().to_vec())
     }
 }
 
@@ -25,35 +23,28 @@ pub unsafe fn from_ptr(p: *const c_char) -> Option<String> {
 ///
 /// # Safety
 /// `p` must be NULL or a string allocated by the Asterisk allocator.
-pub unsafe fn take_ast_string(p: *mut c_char) -> Option<String> {
-    if p.is_null() {
-        return None;
-    }
-    let s = CStr::from_ptr(p).to_string_lossy().into_owned();
+pub unsafe fn take_ast_string(p: *mut c_char) -> Option<Vec<u8>> {
+    let s = from_ptr(p)?;
     crate::ffi::dpma_glue_free(p as *mut _);
     Some(s)
 }
 
 /// Duplicate a string with the Asterisk allocator (for values handed to C).
-pub fn ast_strdup(s: &str) -> *mut c_char {
+pub fn ast_strdup(s: impl AsRef<[u8]>) -> *mut c_char {
     let c = cstr(s);
     unsafe { crate::ffi::dpma_glue_strdup(c.as_ptr()) }
 }
 
-/// Asterisk's notion of a true value (yes, true, y, t, 1, on).
-pub fn ast_true(s: &str) -> bool {
-    matches!(
-        s.trim().to_ascii_lowercase().as_str(),
-        "yes" | "true" | "y" | "t" | "1" | "on"
-    )
+/// Asterisk's `ast_true`: "yes", "true", "y", "t", "1", or "on", in any
+/// case.
+pub fn ast_true(s: &[u8]) -> bool {
+    [&b"yes"[..], b"true", b"y", b"t", b"1", b"on"].iter().any(|t| dpma_bytes::eq_ic(s, t))
 }
 
-/// Asterisk's notion of a false value (no, false, n, f, 0, off).
-pub fn ast_false(s: &str) -> bool {
-    matches!(
-        s.trim().to_ascii_lowercase().as_str(),
-        "no" | "false" | "n" | "f" | "0" | "off"
-    )
+/// Asterisk's `ast_false`: "no", "false", "n", "f", "0", or "off", in any
+/// case.
+pub fn ast_false(s: &[u8]) -> bool {
+    [&b"no"[..], b"false", b"n", b"f", b"0", b"off"].iter().any(|t| dpma_bytes::eq_ic(s, t))
 }
 
 extern "C" {

@@ -17,7 +17,7 @@
 use super::{now, Session, DB_FAMILY};
 use crate::util::NamedMap;
 use dpma_ast::cli::CliGroup;
-use dpma_ast::{db, dpma_log};
+use dpma_ast::{bformat, db, dpma_log};
 use dpma_proto::cert::{CaStore, ClientInfo};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -56,7 +56,7 @@ pub(crate) fn with_trust<R>(f: impl FnOnce(Option<&Trust>) -> R) -> R {
 /// what could be read is kept.
 fn load_trust() -> Trust {
     let g = crate::config::get();
-    let ca = match std::fs::read(&g.phone_ca_file) {
+    let ca = match std::fs::read(crate::util::path(&g.phone_ca_file)) {
         Ok(pem) => match CaStore::from_pem(&pem) {
             Ok(s) => Some(s),
             Err(e) => {
@@ -69,7 +69,7 @@ fn load_trust() -> Trust {
             None
         }
     };
-    let appserver_pem = match std::fs::read(&g.appserver_certificate) {
+    let appserver_pem = match std::fs::read(crate::util::path(&g.appserver_certificate)) {
         Ok(pem) => pem,
         Err(e) => {
             dpma_log!("Cannot read appserver_certificate '{}': {}", g.appserver_certificate, e);
@@ -82,7 +82,7 @@ fn load_trust() -> Trust {
 /// `phone_msg_load` (FUN_00150440): load the CA store, create the
 /// containers, set the global auth flags, register `digium_phones show
 /// sessions`, restore sessions from AstDB, then `transport::load()`.
-pub fn load(_config_file: &str) -> Result<(), ()> {
+pub fn load(_config_file: &[u8]) -> Result<(), ()> {
     let g = crate::config::get();
     crate::config::check_trust_material(&g);
     *TRUST.write().unwrap_or_else(|e| e.into_inner()) = Some(load_trust());
@@ -97,7 +97,7 @@ pub fn load(_config_file: &str) -> Result<(), ()> {
 /// `phone_msg_reload` (FUN_00150420): refresh the global auth flags.  The
 /// trust material is read again too (the original's is built in); what
 /// cannot be read keeps its previous value.
-pub fn reload(_config_file: &str) -> Result<(), ()> {
+pub fn reload(_config_file: &[u8]) -> Result<(), ()> {
     set_global_auth_flags(crate::config::get().auth_flags);
     if TRUST.read().unwrap_or_else(|e| e.into_inner()).is_some() {
         let new = load_trust();
@@ -129,14 +129,14 @@ pub fn unload() {
 
 /// `phone_msg_session_find` (FUN_00149d60): the session with id `id`
 /// (case insensitive; the id is cut to 127 bytes first).
-pub fn find(id: &str) -> Option<Arc<Session>> {
+pub fn find(id: &[u8]) -> Option<Arc<Session>> {
     let id = crate::util::truncate(id, 0x80);
     SESSIONS.lock().unwrap_or_else(|e| e.into_inner()).as_ref()?.get(&id).cloned()
 }
 
 /// `phone_msg_session_find_by_mac` (FUN_00149e30): the first session (in
 /// container order) whose MAC equals `mac`, ignoring case.
-pub fn find_by_mac(mac: &str) -> Option<Arc<Session>> {
+pub fn find_by_mac(mac: &[u8]) -> Option<Arc<Session>> {
     all().into_iter().find(|s| {
         let st = s.lock();
         !st.mac.is_empty() && st.mac.eq_ignore_ascii_case(mac)
@@ -173,13 +173,13 @@ fn unlink(s: &Arc<Session>) {
 /// `phone_msg_session_mark_authenticated` (FUN_0014c230): set
 /// authenticated (clearing inactive), replace the response URI when
 /// `response_uri` is not empty, and save the session to AstDB.
-pub fn mark_authenticated(s: &Arc<Session>, response_uri: Option<&str>) {
+pub fn mark_authenticated(s: &Arc<Session>, response_uri: Option<&[u8]>) {
     {
         let mut st = s.lock();
         st.authenticated = true;
         st.inactive = false;
         if let Some(uri) = response_uri.filter(|u| !u.is_empty()) {
-            st.response_uri = uri.to_string();
+            st.response_uri = uri.to_vec();
         }
     }
     super::persist::update_db_info(s);
@@ -194,7 +194,7 @@ pub fn mark_inactive(s: &Arc<Session>) {
 
 /// `phone_msg_session_mark_unconfigured_by_mac` (FUN_0014c160): clear the
 /// configured flag of the MAC's session and save it when it was set.
-pub fn mark_unconfigured_by_mac(mac: &str) {
+pub fn mark_unconfigured_by_mac(mac: &[u8]) {
     let Some(s) = find_by_mac(mac) else { return };
     let changed = {
         let mut st = s.lock();
@@ -225,27 +225,27 @@ pub fn global_auth_flags() -> u32 {
 /// The session id the original generates: `"%d%ld"` of the djb2 hash
 /// (`h * 33 ^ c`, seed 5381, masked to 31 bits) of `"%ld%s"` (time,
 /// contact; at most 127 bytes) and `ast_random()`.
-fn new_session_id(time: i64, contact: &str) -> String {
-    let seed = crate::util::truncate(&format!("{}{}", time, contact), 0x80);
+fn new_session_id(time: i64, contact: &[u8]) -> Vec<u8> {
+    let seed = crate::util::truncate(&bformat!("{}{}", time, contact), 0x80);
     let mut h: u32 = 5381;
-    for b in seed.bytes() {
+    for &b in &seed {
         h = h.wrapping_mul(33) ^ u32::from(b);
     }
-    let id = format!("{}{}", h & 0x7fff_ffff, dpma_ast::util::random());
+    let id = bformat!("{}{}", h & 0x7fff_ffff, dpma_ast::util::random());
     crate::util::truncate(&id, 0x80)
 }
 
 /// What `phone_msg_session_alloc` gets.
 pub(crate) struct NewSession<'a> {
-    pub mac: Option<&'a str>,
-    pub contact: &'a str,
-    pub response_uri: &'a str,
+    pub mac: Option<&'a [u8]>,
+    pub contact: &'a [u8],
+    pub response_uri: &'a [u8],
     /// The certificate PEM from the Handshake body (or AstDB).
-    pub client_cert: &'a str,
+    pub client_cert: &'a [u8],
     /// A restored session's id; None generates one.
-    pub id: Option<&'a str>,
-    pub user_agent: Option<&'a str>,
-    pub origination_network: Option<&'a str>,
+    pub id: Option<&'a [u8]>,
+    pub user_agent: Option<&'a [u8]>,
+    pub origination_network: Option<&'a [u8]>,
 }
 
 /// `phone_msg_session_alloc` (FUN_0014b450) as both of the original's
@@ -284,18 +284,18 @@ pub(crate) fn alloc(n: &NewSession) -> Option<Arc<Session>> {
     let s = Arc::new(Session::new(&id));
     {
         let mut st = s.lock();
-        st.mac = mac.unwrap_or("").to_string();
-        st.contact = n.contact.to_string();
-        st.response_uri = n.response_uri.to_string();
-        st.user_agent = ua.to_string();
-        st.origination_network = n.origination_network.unwrap_or("").to_string();
+        st.mac = mac.unwrap_or(b"").to_vec();
+        st.contact = n.contact.to_vec();
+        st.response_uri = n.response_uri.to_vec();
+        st.user_agent = ua.to_vec();
+        st.origination_network = n.origination_network.unwrap_or(b"").to_vec();
         st.auth_flags = global_auth_flags();
         st.created = time;
         st.last_activity = time;
         st.intermediate_serial = verified.intermediate_serial;
         st.public_key = verified.public_key;
         st.certificate = Some(verified.certificate);
-        st.client_cert_pem = n.client_cert.to_string();
+        st.client_cert_pem = n.client_cert.to_vec();
     }
     link(&s);
     Some(s)
@@ -308,7 +308,7 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
     fn session_arg(a: &CliArgs, i: usize) -> Option<Arc<Session>> {
         let s = find(a.argv.get(i)?);
         if s.is_none() {
-            a.out(&format!("No session '{}'\n", a.argv[i]));
+            a.out(bformat!("No session '{}'\n", a.argv[i]));
         }
         s
     }
@@ -319,17 +319,17 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             return CliResult::ShowUsage;
         }
         let Some(s) = session_arg(a, 3) else { return CliResult::Failure };
-        match a.argv[4].as_str() {
-            "authenticated" => mark_authenticated(&s, None),
-            "inactive" => mark_inactive(&s),
-            "unconfigured" => mark_unconfigured_by_mac(&s.mac()),
-            "configured" => {
+        match a.argv[4].as_slice() {
+            b"authenticated" => mark_authenticated(&s, None),
+            b"inactive" => mark_inactive(&s),
+            b"unconfigured" => mark_unconfigured_by_mac(&s.mac()),
+            b"configured" => {
                 s.lock().configured = true;
                 super::persist::update_db_info(&s);
             }
             _ => return CliResult::ShowUsage,
         }
-        a.out(&format!("Session {} marked {}\n", s.id, a.argv[4]));
+        a.out(bformat!("Session {} marked {}\n", s.id, a.argv[4]));
         CliResult::Success
     }
 
@@ -340,10 +340,10 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             return CliResult::ShowUsage;
         }
         let Some(s) = session_arg(a, 3) else { return CliResult::Failure };
-        let Ok(secs) = a.argv[4].parse::<i64>() else { return CliResult::ShowUsage };
+        let Ok(secs) = crate::util::parse::<i64>(&a.argv[4]) else { return CliResult::ShowUsage };
         s.lock().last_activity = now() - secs;
         super::incoming::force_prune();
-        a.out(&format!("Session {} last activity set {} s ago\n", s.id, secs));
+        a.out(bformat!("Session {} last activity set {} s ago\n", s.id, secs));
         CliResult::Success
     }
 
@@ -353,26 +353,26 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             return CliResult::ShowUsage;
         }
         let Some(s) = session_arg(a, 3) else { return CliResult::Failure };
-        let body = match (a.argc(), a.argv[5].parse::<usize>()) {
+        let body = match (a.argc(), crate::util::parse::<usize>(&a.argv[5])) {
             (6, Ok(n)) => {
-                let mut b = String::from("<config>");
-                let filler = "0123456789abcdefghijklmnopqrstuvwxyz";
+                let mut b = b"<config>".to_vec();
+                let filler = b"0123456789abcdefghijklmnopqrstuvwxyz";
                 while b.len() + 9 < n {
                     let take = (n - 9 - b.len()).min(filler.len());
-                    b.push_str(&filler[..take]);
+                b.extend_from_slice(&filler[..take]);
                 }
-                b.push_str("</config>");
+                b.extend_from_slice(b"</config>");
                 b
             }
-            _ => a.argv[5..].join(" "),
+            _ => a.argv[5..].join(&b" "[..]),
         };
         let res = super::outgoing::send_event(&s, &a.argv[4], &body);
-        a.out(&format!(
+        a.out(bformat!(
             "send_event {} ({} bytes): {}\n",
             a.argv[4],
             body.len(),
             match res {
-                Ok(()) => "ok".to_string(),
+                Ok(()) => b"ok".to_vec(),
                 Err(e) => e,
             }
         ));
@@ -385,7 +385,7 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             return CliResult::ShowUsage;
         }
         super::persist::restore_all();
-        a.out(&format!("{} session(s)\n", all().len()));
+        a.out(bformat!("{} session(s)\n", all().len()));
         CliResult::Success
     }
 
