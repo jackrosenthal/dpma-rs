@@ -4,6 +4,12 @@
 //! with `cargo test -p dpma-proto`.  The Asterisk side (ast_msg handling,
 //! sessions, dialplan routing) lives in `res_digium_phone`.
 //!
+//! The original logs from inside several of the functions ported here
+//! (phone_crypto.c, reqresp_parser.c, `session_verify_cert`).  Those
+//! messages are passed, with the original's file, line, and function
+//! names, to a hook that the module installs with [`set_log_hook`]; without
+//! a hook (for example, in unit tests) they are dropped.
+//!
 //! Owner: package P1 "proto" (wave 1).  See dev/notes/port-plan.md.
 
 pub mod cert;
@@ -16,6 +22,10 @@ pub mod types;
 pub mod uri;
 pub mod xml;
 
+mod cbuf;
+
+use std::sync::RwLock;
+
 /// Errors from this crate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProtoError {
@@ -23,8 +33,19 @@ pub enum ProtoError {
     NotImplemented,
     /// Invalid input (bad hex, bad base64, wrong length, ...).
     Invalid(String),
-    /// An OpenSSL operation failed; the text is the OpenSSL error string.
+    /// An OpenSSL operation failed; the text is what the original logs
+    /// (format string filled in, no trailing newline).
     Crypto(String),
+}
+
+impl ProtoError {
+    /// The bare message, without the variant prefix of `Display`.
+    pub fn message(&self) -> &str {
+        match self {
+            ProtoError::NotImplemented => "not implemented",
+            ProtoError::Invalid(s) | ProtoError::Crypto(s) => s,
+        }
+    }
 }
 
 impl std::fmt::Display for ProtoError {
@@ -40,3 +61,56 @@ impl std::fmt::Display for ProtoError {
 impl std::error::Error for ProtoError {}
 
 pub type Result<T> = std::result::Result<T, ProtoError>;
+
+/// Where a log message goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    /// The module's custom `DPMA` logger level (`DAT_005e7e38`).
+    Dpma,
+    /// `ast_debug(n, ...)`: the hook must check the debug level itself.
+    Debug(i32),
+}
+
+/// Receives log messages: level, the original's source file, line, and
+/// function, and the message exactly as the original formats it
+/// (including its trailing newline, or the lack of one).
+pub type LogHook = fn(level: LogLevel, file: &str, line: u32, func: &str, msg: &str);
+
+static LOG_HOOK: RwLock<Option<LogHook>> = RwLock::new(None);
+
+/// Install (or, with `None`, remove) the log hook.
+pub fn set_log_hook(hook: Option<LogHook>) {
+    if let Ok(mut h) = LOG_HOOK.write() {
+        *h = hook;
+    }
+}
+
+pub(crate) fn log(level: LogLevel, file: &str, line: u32, func: &str, msg: &str) {
+    let hook = LOG_HOOK.read().ok().and_then(|h| *h);
+    if let Some(hook) = hook {
+        hook(level, file, line, func, msg);
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod testlog {
+    //! Captures log messages in unit tests (per thread).
+    use std::cell::RefCell;
+
+    thread_local! {
+        static LINES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn hook(_level: super::LogLevel, _file: &str, _line: u32, _func: &str, msg: &str) {
+        LINES.with(|l| l.borrow_mut().push(msg.to_string()));
+    }
+
+    /// Run `f` and return what it logged on this thread.
+    pub fn capture<T>(f: impl FnOnce() -> T) -> (T, Vec<String>) {
+        super::set_log_hook(Some(hook));
+        LINES.with(|l| l.borrow_mut().clear());
+        let r = f();
+        let lines = LINES.with(|l| std::mem::take(&mut *l.borrow_mut()));
+        (r, lines)
+    }
+}

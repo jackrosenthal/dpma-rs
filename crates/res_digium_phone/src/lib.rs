@@ -195,6 +195,19 @@ fn load_full() -> Result<Full, ()> {
     })
 }
 
+/// Log hook for dpma-proto: its messages carry the original's file, line,
+/// and function names.
+fn proto_log(level: dpma_proto::LogLevel, file: &str, line: u32, func: &str, msg: &str) {
+    match level {
+        dpma_proto::LogLevel::Dpma => dpma_ast::log::log(dpma_ast::log::custom_level(), file, line, func, msg),
+        dpma_proto::LogLevel::Debug(n) => {
+            if dpma_ast::log::debug_atleast(n) {
+                dpma_ast::log::log(dpma_ast::log::LOG_DEBUG, file, line, func, msg);
+            }
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn dpma_rust_load() -> i32 {
     dpma_ast::guard(1, || {
@@ -202,12 +215,14 @@ pub extern "C" fn dpma_rust_load() -> i32 {
             ast_log!(LOG_ERROR, "Failed to register LOG_DPMA_NAME");
             return 1;
         }
+        dpma_proto::set_log_hook(Some(proto_log));
         let settings_cli = CliGroup::register(&settings_cli::commands());
         let full = match load_full() {
             Ok(f) => f,
             Err(()) => {
                 unload_components(None);
                 drop(settings_cli);
+                dpma_proto::set_log_hook(None);
                 dpma_ast::log::unregister_custom_level(LOG_LEVEL_NAME);
                 return 1;
             }
@@ -225,6 +240,7 @@ pub extern "C" fn dpma_rust_unload() -> i32 {
                 unload_components(Some(full));
             }
         }
+        dpma_proto::set_log_hook(None);
         dpma_ast::log::unregister_custom_level(LOG_LEVEL_NAME);
         0
     })
