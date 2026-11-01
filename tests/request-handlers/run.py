@@ -254,17 +254,24 @@ def test_file():
         expect("empty body", p.request("FileRequest", ""), "FileResponse", -98)
         # An empty name opens the directory itself, which reads as nothing.
         expect("file:// with no name", p.request("FileRequest", "file://"), "FileResponse", None, b"empty body")
-        # Subdirectories of file_directory are served; names that could
-        # leave it are refused like a missing file (plan section 8, item
-        # 14), although the files exist.  Absolute names are refused too,
-        # although the original looks them up inside file_directory
-        # ("<dir>//p12-small.txt").
+        # Subdirectories of file_directory are served; names with a ".."
+        # component are refused like a missing file (plan section 8, item
+        # 14), although the files exist.  Absolute names are looked up
+        # inside file_directory, as the original does ("<dir>//p12-small.txt").
         for fname in ("sub/p12-sub.txt", "./sub/./p12-sub.txt", "..p12-dots.txt", "sub/..p12-dots.txt"):
             with open(os.path.join(FILES, fname), "rb") as f:
                 expect("file://%s" % fname, p.file(fname), "FileResponse", None, f.read())
+        with open(os.path.join(FILES, "p12-small.txt"), "rb") as f:
+            small = f.read()
+        for fname in ("/p12-small.txt", "//p12-small.txt"):
+            expect("file://%s (inside file_directory)" % fname, p.file(fname), "FileResponse", None, small)
         outside = os.path.join(os.path.dirname(FILES), "p12-outside.txt")
+        for fname in (outside, "//etc/hostname"):
+            mark = log_mark()
+            expect("file://%s (not inside file_directory)" % fname, p.file(fname), "FileResponse", -98)
+            logged("file://%s (log)" % fname, mark, "Failed to open file %s/%s\n" % (FILES, fname))
         for fname in ("../p12-outside.txt", "sub/../../p12-outside.txt", "sub/../p12-small.txt", "..", "sub/..",
-                      outside, "/p12-small.txt", "//etc/hostname"):
+                      "/../p12-outside.txt"):
             mark = log_mark()
             expect("file://%s refused" % fname, p.file(fname), "FileResponse", -98)
             logged("file://%s refused (log)" % fname, mark,

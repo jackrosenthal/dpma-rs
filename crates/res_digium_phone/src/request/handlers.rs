@@ -171,12 +171,13 @@ const NULL_CONTACTS: &str = "<contacts group_name=\"null\" editable=\"0\" />\n";
 /// as it is.  A body without `file://` or a file that cannot be opened is
 /// answered with error -98 (File Not Found).
 ///
-/// Deviation (plan section 8, item 14): a name that could leave
-/// `file_directory` (an absolute path or one with a `..` component) is
+/// Deviation (plan section 8, item 14): a name with a `..` component is
 /// answered with the same error as a missing file.  The original opens
 /// `<file_directory>/<name>` whatever the name, so `..` reaches any file
-/// the Asterisk process can read.  Names in subdirectories of
-/// `file_directory` are served as before.
+/// the Asterisk process can read.  Every other name is served as the
+/// original serves it: names in subdirectories, and absolute names, which
+/// the join keeps inside `file_directory` (`file:///x.xml` reads
+/// `<file_directory>//x.xml`).
 pub fn handle_file(tx: Arc<Transaction>) -> i32 {
     file_reply(&tx);
     crate::session::send_and_destroy(&tx);
@@ -233,11 +234,11 @@ fn file_reply(tx: &Transaction) {
     }
 }
 
-/// True for a FileRequest name that is absolute or has a `..` component.
-/// (The original joins any name to the file directory with a `/`, so an
-/// absolute name stays inside it there; it is refused all the same.)
+/// True for a FileRequest name with a `..` component, the only kind that
+/// can leave the file directory: the original joins every name to it with
+/// a `/`, so an absolute name stays inside.
 fn escapes_file_dir(name: &str) -> bool {
-    name.starts_with('/') || name.split('/').any(|c| c == "..")
+    name.split('/').any(|c| c == "..")
 }
 
 // ---------------------------------------------------------------------------

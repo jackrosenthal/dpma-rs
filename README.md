@@ -196,11 +196,16 @@ deliberate exceptions:
     `DPMAMessageRegister`) expire after 300 seconds without a
     `DPMAMessageResponse`, with the log message "No response to request
     (...), expired."  The original never expires them.
-14. File requests from phones cannot leave `file_directory`: paths with
-    `..` components and absolute paths are answered as if the file did
-    not exist (files in subdirectories are still served).  With `..`, the
-    original serves any file the Asterisk process can read; it looks up
-    absolute paths inside `file_directory`.
+14. File requests from phones cannot leave `file_directory`: names with
+    a `..` component are answered as if the file did not exist.  With
+    `..`, the original serves any file the Asterisk process can read.
+    Other names are served as by the original, files in subdirectories
+    included; absolute names are looked up inside `file_directory`.
+15. `digium_phones show line` shows the line's `authname` as `AuthName`,
+    and `digium_phones show application` shows a queue application's
+    `logout_exten` as `Logout Extension` and a status application's
+    `send486=yes` as `Send486: Yes`.  The original shows the secondary
+    server port, the login extension, and "No" there.
 
 Beyond these, a number of inputs that crash the original modules (for
 example, some NULL arguments to the C API, and PJSIP AOR changes while a

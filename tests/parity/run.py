@@ -32,13 +32,13 @@ Captured, each to its own file in the capture directory:
   actions where no phone is involved).
 
 Each item is reported as "same", "DIFF" (with both outputs),
-"deviation" (a documented difference, plan section 8: show version and
-license status), or "not in the original".  The original without a
-license (no licenses under <astvardir>/licenses) loads disabled: it
-registers only show settings, show version, and license status, and its
-show settings crashes Asterisk because no configuration is loaded, so
-that capture skips everything else ("not in the original").  Exit status
-0 when nothing differs.
+"deviation" (a documented difference, plan section 8: show version,
+license status, and the fields of item 15), or "not in the original".
+The original without a license (no licenses under <astvardir>/licenses)
+loads disabled: it registers only show settings, show version, and
+license status, and its show settings crashes Asterisk because no
+configuration is loaded, so that capture skips everything else ("not in
+the original").  Exit status 0 when nothing differs.
 
 --capture ours|original captures the module currently running in the
 instance into --keep DIR (no install, start, or configuration change);
@@ -85,6 +85,12 @@ DEVIATIONS = {
     "cli: digium_phones show version": "section 8, item 5",
     "cli: digium_phones license status": "section 8, item 1",
     "help: digium_phones license status": "section 8, item 1",
+    # AuthName, Logout Extension, and Send486 (the test configuration's
+    # external line with a server, its queue application, and its status
+    # application with send486=yes).
+    "cli: digium_phones show line ext1234": "section 8, item 15",
+    "cli: digium_phones show application queue-app": "section 8, item 15",
+    "cli: digium_phones show application status-app": "section 8, item 15",
 }
 
 ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])

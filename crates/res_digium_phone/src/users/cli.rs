@@ -365,9 +365,10 @@ fn show_line(a: &CliArgs) -> CliResult {
         let _ = writeln!(o, "Secondary Server Port: {}", l.secondary_server_port);
         let _ = writeln!(o, "Secondary Server Transport: {}", l.secondary_server_transport.type_str());
         let _ = writeln!(o, "Secondary Media Encryption: {}", l.secondary_media_encryption);
-        // The original prints the secondary server port here by mistake
-        // (the field at +0x120, not authname's at +0x128).
-        let _ = writeln!(o, "AuthName: {}", l.secondary_server_port);
+        // Deviation (plan section 8, item 15): the original prints the
+        // secondary server port here (the field at +0x120, not authname's
+        // at +0x128).
+        let _ = writeln!(o, "AuthName: {}", l.authname);
         let _ = writeln!(o, "UserID: {}", l.userid);
         let _ = writeln!(o, "Register: {}", if l.no_register { "NO" } else { "YES" });
     }
@@ -520,14 +521,16 @@ fn show_application(a: &CliArgs) -> CliResult {
                 }
             );
             let _ = writeln!(o, "Login Extension: {}", q.login_exten);
-            // The original shows the login extension here: it prints the
-            // login field when the logout field's pointer is set, and
-            // string fields are never NULL.
-            let _ = writeln!(o, "Logout Extension: {}", q.login_exten);
+            // Deviation (plan section 8, item 15): the original shows the
+            // login extension here (it prints the login field when the
+            // logout field's pointer is set).
+            let _ = writeln!(o, "Logout Extension: {}", q.logout_exten);
         }
         Some(AppKind::Status(s)) => {
             o.push_str("Status Application\n-------------------\n");
             let _ = writeln!(o, "Status: {}", dpma_ast::presence::state2str(s.status));
+            // Deviation (plan section 8, item 15): the original shows
+            // send486=yes as "No".
             let _ = writeln!(
                 o,
                 "Send486: {}",
