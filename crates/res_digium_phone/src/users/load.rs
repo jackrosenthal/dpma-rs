@@ -79,9 +79,6 @@ fn set_and_process(which: &str, cats: Option<Vec<Category>>) {
         }
     }
     let _ = process(which);
-    if which == "SIP" {
-        check_sip_message_config();
-    }
 }
 
 fn hook_sip(c: Option<Vec<Category>>) {
@@ -184,51 +181,6 @@ fn sip_general<'a>(cats: &'a Option<Vec<Category>>, var: &str) -> Option<&'a str
         .iter()
         .find(|c| c.name.eq_ignore_ascii_case("general"))?
         .get(var)
-}
-
-/// Warn about sip.conf settings chan_sip needs for phone messaging and
-/// hand the chan_sip message context to the transport layer, which
-/// (re)builds its dialplan routing (`process_message_config`).  Only
-/// relevant when sip.conf exists.
-fn check_sip_message_config() {
-    if let Some(context) = sip_message_context() {
-        crate::transport::sip_message_context_changed(&context);
-    }
-}
-
-/// sip.conf's `outofcall_message_context` ("" when unset), logging the
-/// settings chan_sip needs; None when sip.conf is not loaded.
-fn sip_message_context() -> Option<String> {
-    let g = SOURCES.lock().unwrap();
-    let src = g.as_ref()?;
-    let sip = src.sip.as_ref()?;
-    let Some(general) = sip.iter().find(|c| c.name.eq_ignore_ascii_case("general")) else {
-        return Some(String::new());
-    };
-    let mut context = String::new();
-    let mut accept = false;
-    let mut no_auth = false;
-    for v in &general.vars {
-        if v.name.eq_ignore_ascii_case("outofcall_message_context") {
-            if !v.value.is_empty() {
-                context = v.value.clone();
-            }
-        } else if v.name.eq_ignore_ascii_case("accept_outofcall_message") {
-            accept = ast_true(&v.value);
-        } else if v.name.eq_ignore_ascii_case("auth_message_requests") {
-            no_auth = ast_false(&v.value);
-        }
-    }
-    if context.is_empty() {
-        dpma_log!("outofcall_message_context must be configured in sip.conf for res_digium_phone to function properly.");
-    }
-    if !accept {
-        dpma_log!("accept_outofcall_message must be enabled in sip.conf for res_digium_phone to function properly");
-    }
-    if !no_auth {
-        dpma_log!("auth_message_requests must be disabled in sip.conf for res_digium_phone to function properly");
-    }
-    Some(context)
 }
 
 /// Side effects collected while the registry is locked and performed after.
