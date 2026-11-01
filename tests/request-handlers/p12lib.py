@@ -82,9 +82,12 @@ def log_mark():
 
 
 def log_since(mark):
+    """The log written since `mark` (all of it when the file was started
+    again, as "ast.sh start" does)."""
     time.sleep(0.2)
     with open(MSGLOG, errors="replace") as f:
-        f.seek(mark)
+        if os.path.getsize(MSGLOG) >= mark:
+            f.seek(mark)
         return f.read()
 
 
