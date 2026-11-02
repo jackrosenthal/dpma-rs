@@ -22,11 +22,12 @@
 //!   releases never clash.  Root in the container (an `exec` as user 0,
 //!   with `--cap-add NET_ADMIN`) turns multicast on for `lo` and routes
 //!   224.0.0.0/4 through it, for the apps-discovery suite's mDNS.
-//! - Mounts ([`SRC`], [`OUT`], and [`CARGO_HOME`]): the repository;
-//!   `target/container/<release>/` for what the run writes; and
+//! - Mounts ([`SRC`], [`OUT`], [`CARGO_HOME`], and [`PKI`]): the
+//!   repository; `target/container/<release>/` for what the run writes;
 //!   `target/container/cargo/` as `CARGO_HOME`, the registry cache that
-//!   the releases share.  The container has no network, so the host
-//!   fetches the crates into that cache first.
+//!   the releases share; and a temporary directory for the test PKI,
+//!   removed when the run ends.  The container has no network, so the
+//!   host fetches the crates into that cache first.
 //! - `--security-opt label=disable`, so that SELinux hosts let the
 //!   container read and write the mounts without relabeling them.
 //! - The work runs as the container user that is the host user: the
@@ -52,6 +53,8 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
 
+use dpma_tests::harness::fixtures::TempDir;
+
 use crate::pins::Pin;
 use crate::{repo_root, run};
 
@@ -61,6 +64,9 @@ pub const SRC: &str = "/src";
 pub const OUT: &str = "/out";
 /// `target/container/cargo/` (`CARGO_HOME`), in the container.
 pub const CARGO_HOME: &str = "/cargo";
+/// The run's test PKI (`DPMA_PKI`), a temporary directory, in the
+/// container.
+pub const PKI: &str = "/pki";
 /// The configured headers in the image (`ASTERISK_SOURCE_DIR`).
 const HEADERS: &str = "/opt/asterisk-headers";
 /// The image's name; the tag is [`image_tag`].
@@ -341,6 +347,8 @@ pub struct Run {
     release: String,
     mounts: Vec<Mount>,
     env: Vec<(&'static str, String)>,
+    /// Mounted at [`PKI`]; removed with the run.
+    _pki: TempDir,
 }
 
 impl Run {
@@ -359,12 +367,18 @@ impl Run {
         run(crate::cargo()
             .args(["fetch", "--locked"])
             .env("CARGO_HOME", &cargo_home))?;
-        let mounts: Vec<Mount> = vec![(repo_root(), SRC), (out, OUT), (cargo_home, CARGO_HOME)];
+        let pki = TempDir::new("dpma-rs-pki").context("making the test PKI directory")?;
+        let mounts: Vec<Mount> = vec![
+            (repo_root(), SRC),
+            (out, OUT),
+            (cargo_home, CARGO_HOME),
+            (pki.path().to_path_buf(), PKI),
+        ];
         let env = vec![
             ("CARGO_HOME", CARGO_HOME.to_string()),
             ("CARGO_TARGET_DIR", format!("{OUT}/target")),
             ("CARGO_NET_OFFLINE", "true".to_string()),
-            ("DPMA_PKI", format!("{OUT}/pki")),
+            ("DPMA_PKI", PKI.to_string()),
         ];
         Ok(Run {
             engine,
@@ -372,6 +386,7 @@ impl Run {
             release: pin.version.clone(),
             mounts,
             env,
+            _pki: pki,
         })
     }
 
