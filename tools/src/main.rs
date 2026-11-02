@@ -1,17 +1,8 @@
 //! `cargo xtask`: the development tasks of dpma-rs (see `tests/README.md`).
 //!
-//! ```text
-//! cargo xtask test [--asterisk VERSION] [-j N] [SUITE... | all]
-//! cargo xtask ci [--asterisk VERSION] [-j N]
-//! cargo xtask headers [--asterisk VERSION]
-//! cargo xtask majors
-//! ```
-//!
-//! A VERSION is a major version (`22`) or a release (`22.11.0`) pinned in
-//! `tools/asterisk-versions`; the default is the newest.  `test` and `ci`
-//! run in fresh containers of the release's test image ([`container`]):
-//! one builds, then every suite runs in one of its own ([`suites`]).
-//! `cargo xtask inside` (hidden) does the work inside.
+//! `test` and `ci` run in fresh containers of the release's test image
+//! ([`container`]): one builds, then every suite runs in one of its own
+//! ([`suites`]).  `cargo xtask inside` (hidden) does the work inside.
 
 // The doc comments below are the command-line help (clap), not rustdoc.
 #![allow(rustdoc::invalid_html_tags)]
@@ -60,10 +51,8 @@ enum Cmd {
         /// Suites to run, or "all".
         suites: Vec<String>,
     },
-    /// The CI job: in containers of the release's test image, build,
-    /// lint, and test dpma-rs, run every suite, and build, check, and
-    /// smoke-test the module for publishing
-    /// (target/container/<release>/res_dpma_rs-asterisk<major>-<arch>.so).
+    /// The CI job of .github/workflows/ci.yml, in containers of the
+    /// release's test image.
     Ci {
         /// The Asterisk release: a major version or a pinned release
         /// (default: the newest).

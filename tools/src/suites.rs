@@ -1,19 +1,16 @@
 //! The suites: which ones `cargo xtask test` runs, and how.
 //!
 //! Each suite is a test target of dpma-tests of the same name, run as
-//! `<test binary> --ignored`; it prepares the test instance itself (fresh
-//! configuration, its setup, the module installed, Asterisk restarted).
-//! A run has two steps:
+//! `<test binary> --ignored`; it prepares the test instance itself.  A run
+//! has two steps:
 //!
 //! 1. One container builds the devtest module and the suites' test
-//!    binaries (`cargo xtask inside build`, [`build`]), makes the test PKI,
-//!    and lists the binaries in `target/container/<release>/test-binaries`.
-//! 2. Every suite then runs in a fresh container of its own, with its own
-//!    Asterisk and network namespace, several at a time ([`run_suites`]):
-//!    the prebuilt binary runs directly, without Cargo, so that the
-//!    suites do not wait for each other on the target directory's lock.
-//!    The longest suites start first, so that the run takes little longer
-//!    than the longest suite.
+//!    binaries, and makes the test PKI ([`build`]).
+//! 2. Every suite then runs in a fresh container of its own, several at a
+//!    time ([`run_suites`]): the prebuilt binary runs directly, without
+//!    Cargo, so that the suites do not wait for each other on the target
+//!    directory's lock.  The longest suites start first, so that the run
+//!    takes little longer than the longest suite.
 //!
 //! The results are reported in the order of the selection, each suite's
 //! output going to `target/container/<release>/logs/<suite>.log`.  A suite
@@ -116,9 +113,9 @@ fn test_targets() -> Result<Vec<String>> {
 }
 
 /// `cargo xtask inside build SUITE...`, in the build container: the
-/// devtest module (which every suite's preparation installs), the test
-/// binaries of the suites (listed in [`BINARIES`]), and the test PKI
-/// (made here once, since the suites share it).
+/// devtest module, the test binaries of the suites (listed in
+/// [`BINARIES`]), and the test PKI (made here once, since the suites share
+/// it).
 pub fn build(suites: &[String]) -> Result<u8> {
     run(crate::cargo().args(["build", "-p", "res_dpma_rs", "--features", "devtest"]))?;
     let existing = test_targets()?;
@@ -218,10 +215,9 @@ fn run_one(run: &Run, s: &str, binary: Option<&String>, log: &Path) -> Outcome {
     result.unwrap_or_else(|e| fail(0, format!("{e:#}")))
 }
 
-/// Builds the suites' binaries in one container, then runs the suites
-/// (names checked with [`target`]), each in a container of its own, up to
-/// `jobs` at a time; the exit status (0 when every suite passed, 1 when
-/// one failed).
+/// Builds the suites' binaries in one container, then runs the suites,
+/// each in a container of its own, up to `jobs` at a time; the exit status
+/// (0 when every suite passed, 1 when one failed).
 pub fn run_suites(run: &Run, out: &Path, suites: &[String], jobs: usize) -> Result<u8> {
     let logdir = out.join("logs");
     if logdir.exists() {

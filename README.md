@@ -89,5 +89,4 @@ what each CI job runs.
 
 CI runs `cargo xtask ci` for each pinned Asterisk major version on x86_64
 and aarch64.  Pushing a tag `vX.Y.Z` matching the workspace version
-publishes a GitHub Release with the six modules, `SHA256SUMS`, and
-`LICENSE`.
+publishes a GitHub Release.

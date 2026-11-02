@@ -1,5 +1,4 @@
-; P4 test configuration: exercises every phone, line, network,
-; application, ringtone, alert, firmware, and multicast page option that
+; Test configuration of the config-xml suite: exercises every option that
 ; the configuration document uses.  Installed as res_digium_phone.conf
 ; (@INSTANCE@ is the instance directory) by
 ; dpma_tests::harness::setup::config_xml.

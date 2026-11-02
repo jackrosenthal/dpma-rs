@@ -1,4 +1,3 @@
-# cargo xtask: the test suites in containers, CI, and Asterisk headers
-# (tools/, see tests/README.md).
+# cargo xtask (tools/, see tests/README.md).
 [alias]
 xtask = "run --package xtask --"
