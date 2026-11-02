@@ -116,7 +116,7 @@ impl SipUa {
         self.server
     }
 
-    /// Sends raw bytes to the server.
+    /// Sends bytes to the server.
     pub fn send(&self, data: &[u8]) {
         let _ = self.sock.send_to(data, self.server);
     }

@@ -1,6 +1,6 @@
-//! The raw-bytes test configuration: text in Latin-1 (bytes that are not
-//! UTF-8) in every kind of user-visible field, plus a phone whose texts
-//! are UTF-8 with non-ASCII characters.
+//! The `bytes` suite's test configuration: text in Latin-1 (bytes that
+//! are not UTF-8) in every kind of user-visible field, plus a phone whose
+//! texts are UTF-8 with non-ASCII characters.
 
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
@@ -90,7 +90,7 @@ fn join(parts: &[&[u8]]) -> Vec<u8> {
 /// `res_digium_phone.conf`.
 pub fn conf() -> Vec<u8> {
     let lines: Vec<Vec<u8>> = vec![
-        b"; dpma-rs raw-bytes test (tests/suites/raw-bytes): Latin-1 text".to_vec(),
+        b"; dpma-rs bytes test (tests/suites/bytes): Latin-1 text".to_vec(),
         b"[general]".to_vec(),
         join(&[b"globalpin=", GLOBALPIN]),
         b"userlist_auth=globalpin".to_vec(),
@@ -195,7 +195,7 @@ pub fn conf() -> Vec<u8> {
 }
 
 /// `voicemail.conf`.
-pub const VOICEMAIL_CONF: &[u8] = b"; dpma-rs raw-bytes test (tests/suites/raw-bytes)
+pub const VOICEMAIL_CONF: &[u8] = b"; dpma-rs bytes test (tests/suites/bytes)
 [general]
 format=wav
 

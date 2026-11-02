@@ -40,7 +40,7 @@ pub const SUITES: [&str; 10] = [
     "request-handlers",
     "ami",
     "apps-discovery",
-    "raw-bytes",
+    "bytes",
 ];
 
 /// The suites that take longest, longest first: they start first.

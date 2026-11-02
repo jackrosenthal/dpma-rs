@@ -21,7 +21,7 @@
 //! # Bytes
 //!
 //! Text is bytes from end to end (`Vec<u8>` or [`bstr::BString`]), so
-//! text that is not UTF-8 (Latin-1 in the raw-bytes tests) goes out and
+//! text that is not UTF-8 (Latin-1 in the `bytes` suite) goes out and
 //! comes back unchanged.
 
 #![warn(missing_docs)]

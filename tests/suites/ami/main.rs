@@ -73,7 +73,7 @@ type Shared = Rc<RefCell<Option<State>>>;
 // ---------------------------------------------------------------------------
 
 /// Sends an action exactly as given (no ActionID unless `action_id`) and
-/// returns the raw bytes of the next response.
+/// returns the bytes of the next response.
 fn raw(
     ami: &AmiClient,
     name: &str,

@@ -146,7 +146,7 @@ several cannot share it, so each suite prepares the instance itself.
 | `request-handlers` | Every request type in every authentication mode, and the phone users' runtime over real sessions |
 | `ami` | The DPMAMessage actions, requests forwarded to AMI, and reconfigure |
 | `apps-discovery` | The dialplan applications, the mDNS responder, and unloading and loading the module |
-| `raw-bytes` | Latin-1 (not UTF-8) text comes out byte for byte, except on the JSON and XML paths, which fail on it as in the official DPMA |
+| `bytes` | Latin-1 (not UTF-8) text comes out byte for byte, except on the JSON and XML paths, which fail on it as in the official DPMA |
 
 Each suite is the test target of its name, and keeps its output in
 `target/container/<release>/logs/<suite>.log`.  Each suite's rustdoc (at

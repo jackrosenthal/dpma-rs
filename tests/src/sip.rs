@@ -1,4 +1,4 @@
-//! SIP messages as raw bytes, shared by the phone simulator
+//! SIP messages as bytes, shared by the phone simulator
 //! ([`crate::sim`]) and the test user agents ([`crate::sipua`]).
 
 use std::fmt;

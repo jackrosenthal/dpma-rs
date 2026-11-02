@@ -1,13 +1,13 @@
-//! The raw-bytes suite: text that is not UTF-8 passes through unchanged.
+//! The `bytes` suite: text that is not UTF-8 passes through unchanged.
 //!
 //! ```text
-//! cargo xtask test raw-bytes
+//! cargo xtask test bytes
 //! ```
 //!
 //! runs it in the test container after building the devtest module, as
 //!
 //! ```text
-//! cargo test -p dpma-tests --test raw-bytes -- --ignored [--no-prepare] [-v] [PART...]
+//! cargo test -p dpma-tests --test bytes -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
 //! The suite prepares the instance with the configuration of [`fixtures`]
@@ -95,7 +95,7 @@ impl Ami {
     }
 
     /// Sends an action; returns its response and, for list actions, the
-    /// events up to `EventList: Complete`, as raw bytes.
+    /// events up to `EventList: Complete`, as bytes.
     fn action(
         &self,
         fields: &[(&[u8], &[u8])],
@@ -881,7 +881,7 @@ fn check_utf8_phone(ctx: &mut Ctx, sessions: &mut Vec<BString>) -> Result<()> {
 }
 
 fn main() -> std::process::ExitCode {
-    Suite::new("raw-bytes")
+    Suite::new("bytes")
         .prepare(|inst| {
             harness::fixtures::prepare(inst, |inst| {
                 harness::fixtures::sim_setup(inst)?;

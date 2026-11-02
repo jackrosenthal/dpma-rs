@@ -79,6 +79,6 @@ path = "suites/apps-discovery/main.rs"
 harness = false
 
 [[test]]
-name = "raw-bytes"
-path = "suites/raw-bytes/main.rs"
+name = "bytes"
+path = "suites/bytes/main.rs"
 harness = false

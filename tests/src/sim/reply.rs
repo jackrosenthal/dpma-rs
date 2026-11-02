@@ -228,8 +228,8 @@ impl Reply {
         rest
     }
 
-    /// A human-readable description (raw bytes: header values are written
-    /// as received).  `verbose` 1 adds every header, 2 the SIP ones too.
+    /// A human-readable description (header values are written as
+    /// received).  `verbose` 1 adds every header, 2 the SIP ones too.
     pub fn describe(&self, verbose: i32) -> BString {
         let mut out: Vec<u8> = Vec::new();
         let opt = |v: &Option<BString>| {

@@ -1,7 +1,7 @@
 //! A small Asterisk Manager Interface client.
 //!
 //! Text is bytes: action fields are sent as given and every message keeps
-//! both its parsed fields and the raw bytes Asterisk sent, so responses
+//! both its parsed fields and the bytes Asterisk sent, so responses
 //! and events can be compared byte for byte.
 //!
 //! ```no_run
@@ -26,7 +26,7 @@ use bstr::{BString, ByteSlice};
 use regex::bytes::Regex;
 
 /// One AMI message: its fields in order (keys may repeat, for example
-/// `Output` in a Command response) and the raw bytes it arrived as.
+/// `Output` in a Command response) and the bytes it arrived as.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AmiMessage {
     fields: Vec<(BString, BString)>,
@@ -34,7 +34,7 @@ pub struct AmiMessage {
 }
 
 impl AmiMessage {
-    /// A message from fields (no raw bytes).
+    /// A message from fields (not parsed from bytes).
     pub fn from_fields(fields: Vec<(BString, BString)>) -> AmiMessage {
         AmiMessage {
             fields,

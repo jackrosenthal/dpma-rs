@@ -36,7 +36,7 @@ enum Cmd {
     ///
     /// Suites (default, or "all": all of these, in this order): session
     /// config-xml users-runtime methods-vm methods-calls pjsip-helpers
-    /// request-handlers ami apps-discovery raw-bytes.  Each suite's output
+    /// request-handlers ami apps-discovery bytes.  Each suite's output
     /// goes to target/container/<release>/logs/<suite>.log.  Exit status 0
     /// when every suite passes.
     Test {

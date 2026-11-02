@@ -148,7 +148,7 @@ impl Logger {
         }
     }
 
-    /// Writes `text` (raw bytes) regardless of the verbosity.
+    /// Writes `text` regardless of the verbosity.
     pub fn print(&self, text: &[u8]) {
         (self.sink)(text);
     }
