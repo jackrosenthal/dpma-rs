@@ -1,7 +1,6 @@
-//! RSA public keys and the two operations the module performs with them,
-//! with the checks OpenSSL 1.1.1t makes (`crypto/rsa/rsa_ossl.c`,
-//! `rsa_pk1.c`, `rsa_sign.c`): PKCS#1 v1.5 encryption of the common
-//! password and PKCS#1 v1.5 signature verification for certificates.
+//! RSA public keys and PKCS#1 v1.5 encryption of the common password to
+//! a phone's key, with the checks OpenSSL 1.1.1t makes
+//! (`crypto/rsa/rsa_ossl.c`, `rsa_pk1.c`) and its error texts.
 //!
 //! The modular exponentiation is the `rsa` crate's (its `hazmat`
 //! primitive on an unchecked key); the key checks and the padding are
@@ -134,53 +133,6 @@ impl RsaKey {
             }
         }
     }
-
-    /// `RSA_verify` with PKCS#1 v1.5 padding: `sig` must be exactly
-    /// [`Self::size`] octets, below the modulus, and decrypt to
-    /// `00 01 FF.. 00 || digest_info` with at least eight FF octets.
-    pub(crate) fn verify_pkcs1(&self, digest_info: &[u8], sig: &[u8]) -> bool {
-        let num = self.size();
-        if sig.len() != num || self.check().is_err() {
-            return false;
-        }
-        let s = BigUint::from_bytes_be(sig);
-        if &s >= self.key.n() {
-            return false;
-        }
-        let Some(em) = self.public_op(&s) else { return false };
-        if num < PKCS1_PADDING_SIZE || digest_info.len() + PKCS1_PADDING_SIZE > num {
-            return false;
-        }
-        let ps = num - 3 - digest_info.len();
-        em[0] == 0
-            && em[1] == 1
-            && em[2..2 + ps].iter().all(|&b| b == 0xff)
-            && em[2 + ps] == 0
-            && &em[3 + ps..] == digest_info
-    }
-
-    /// DER `SubjectPublicKeyInfo` (rsaEncryption, NULL parameters).
-    pub fn spki_der(&self) -> Vec<u8> {
-        use crate::x509::asn1::der_tlv;
-        let int = |v: &[u8]| {
-            let mut c = Vec::new();
-            if v.is_empty() || v[0] & 0x80 != 0 {
-                c.push(0);
-            }
-            c.extend_from_slice(v);
-            der_tlv(false, 0, 2, &c)
-        };
-        let mut rsa_key = int(&self.n());
-        rsa_key.extend(int(&self.e()));
-        let rsa_key = der_tlv(true, 0, 16, &rsa_key);
-        let mut alg = der_tlv(false, 0, 6, crate::x509::key::OID_RSA_ENCRYPTION);
-        alg.extend([0x05, 0x00]);
-        let mut bits = vec![0u8];
-        bits.extend(rsa_key);
-        let mut spki = der_tlv(true, 0, 16, &alg);
-        spki.extend(der_tlv(false, 0, 3, &bits));
-        der_tlv(true, 0, 16, &spki)
-    }
 }
 
 fn trimmed(b: &[u8]) -> Vec<u8> {
@@ -194,24 +146,26 @@ mod tests {
 
     #[test]
     fn key_checks() {
+        // The first error of a failed encryption.
+        let error = |k: &RsaKey, from: &[u8]| {
+            let mut errs = Errs::new();
+            assert!(k.encrypt_pkcs1(from, &mut errs).is_none());
+            errstack::error_string(errs.peek())
+        };
         // e >= n, and an even modulus.
-        let mut errs = Errs::new();
-        assert!(RsaKey::from_be_bytes(&[0x0b], &[0x11]).encrypt_pkcs1(b"x", &mut errs).is_none());
         assert_eq!(
-            errstack::error_string(errs.get()),
+            error(&RsaKey::from_be_bytes(&[0x0b], &[0x11]), b"x"),
             "error:04068065:rsa routines:rsa_ossl_public_encrypt:bad e value"
         );
         let even = RsaKey::from_be_bytes(&[0xc0; 64], &[0x01, 0x00, 0x01]);
-        assert!(even.encrypt_pkcs1(b"x", &mut errs).is_none());
-        assert_eq!(errstack::error_string(errs.get()), "error:0306E06C:bignum routines:BN_mod_inverse:no inverse");
+        assert_eq!(error(&even, b"x"), "error:0306E06C:bignum routines:BN_mod_inverse:no inverse");
         // Too much data for the key.
         let k = RsaKey::from_be_bytes(&[0xc1; 50], &[0x03]);
-        assert!(k.encrypt_pkcs1(&[1; 40], &mut errs).is_none());
         assert_eq!(
-            errstack::error_string(errs.get()),
+            error(&k, &[1; 40]),
             "error:0406D06E:rsa routines:RSA_padding_add_PKCS1_type_2:data too large for key size"
         );
-        assert_eq!(k.encrypt_pkcs1(&[1; 39], &mut errs).unwrap().len(), 50);
+        assert_eq!(k.encrypt_pkcs1(&[1; 39], &mut Errs::new()).unwrap().len(), 50);
         assert_eq!(k.size(), 50);
         assert_eq!(RsaKey::from_be_bytes(&[0, 0, 1, 0], &[3]).n(), [1, 0]);
     }

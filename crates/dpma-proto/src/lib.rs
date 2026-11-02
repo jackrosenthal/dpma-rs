@@ -4,10 +4,12 @@
 //! -p dpma-proto`.  The Asterisk side (ast_msg handling, sessions, dialplan
 //! routing) lives in `res_digium_phone`.
 //!
-//! Cryptography uses the RustCrypto crates.  Where the original depends on
-//! the behavior of the OpenSSL 1.1.1t it links statically (reading and
-//! verifying certificates, the error texts it logs), that behavior is
-//! reproduced here from 1.1.1t's source ([`cert`], [`x509`], [`errstack`]).
+//! Cryptography uses the RustCrypto crates, and certificates are decoded
+//! with `x509-cert` ([`cert`] documents what phone certificate
+//! verification checks).  Where the original's message encryption and
+//! common password depend on the behavior of the OpenSSL 1.1.1t it links
+//! statically (key checks, the error texts it logs), that behavior is
+//! reproduced here from 1.1.1t's source ([`crypto`], [`errstack`]).
 //!
 //! The original logs from inside several of the functions ported here
 //! (phone_crypto.c, reqresp_parser.c, `session_verify_cert`).  Those
@@ -24,7 +26,6 @@ pub mod headers;
 pub mod json;
 pub mod types;
 pub mod uri;
-pub mod x509;
 pub mod xml;
 
 mod cbuf;

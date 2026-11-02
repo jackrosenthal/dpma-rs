@@ -54,8 +54,7 @@ pub struct SessionState {
     pub client_cert_pem: Vec<u8>,
     /// The verified phone certificate (+0xe18).
     pub certificate: Option<Certificate>,
-    /// Its public key; None when the original's OpenSSL 1.1.1t could not
-    /// decode it.
+    /// Its public key; None when it is an RSA key that does not decode.
     pub public_key: Option<PublicKey>,
     /// Intermediate certificate serial, 0 for legacy certificates (+0xe20).
     pub intermediate_serial: i64,

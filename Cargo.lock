@@ -339,7 +339,6 @@ dependencies = [
  "getrandom",
  "hex",
  "libc",
- "md-5",
  "rand",
  "rand_chacha",
  "rsa",
