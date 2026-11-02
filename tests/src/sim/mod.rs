@@ -1,16 +1,11 @@
 //! The phone simulator: the phone side of the DPMA AppServer protocol
 //! over SIP MESSAGE (UDP or TCP).
 //!
-//! It plays a Digium phone against an Asterisk instance: handshake with a
-//! certificate of the test PKI (legacy or chain form), AES-128-CBC
-//! encryption, chunking and reassembly, every request type, and events.
-//! It is written from the decompile of the official DPMA (the phone
-//! side of `phone_message.c`, `phone_crypto.c`, and `phone_request.c`)
-//! and is deliberately independent of the module's own crates (no
-//! dpma-proto: its protocol code is its own, and it shares only the
-//! RustCrypto primitive crates, `aes`, `cbc`, `sha1`, and `rsa`), so that
-//! it cross-checks them: see [`selftest`] and the vectors in
-//! `tests/data/vectors.json`.
+//! It plays a Digium phone against an Asterisk instance.  It is written
+//! from the decompile of the official DPMA and is deliberately
+//! independent of the module's own crates (it shares only the RustCrypto
+//! primitive crates), so that it cross-checks them: see [`selftest`] and
+//! the vectors in `tests/data/vectors.json`.
 //!
 //! ```no_run
 //! use dpma_tests::sim::{Options, Phone};
@@ -24,10 +19,6 @@
 //! let ev = phone.next_event(std::time::Duration::from_secs(30), Some("digium.config.update"));
 //! # Ok(()) }
 //! ```
-//!
-//! Text is bytes from end to end: bodies, header values, the user agent,
-//! user names, and passwords go on the wire exactly as given, and replies
-//! keep the bytes they arrived with.
 //!
 //! Against an instance, the simulator needs the test PKI's trust material
 //! and the simulator's test configuration in it
@@ -68,8 +59,7 @@
 //!   with `pem_cuts`): res_pjsip_messaging strips trailing CR and LF from
 //!   every MESSAGE body, so a line break at a chunk boundary would be
 //!   lost.  It also keeps at most 1023 bytes of a body, so keep the chunk
-//!   size (default 600 bytes over UDP, 900 over TCP) at or below 1022
-//!   bytes of wire body.
+//!   size at or below 1022 bytes of wire body.
 //!
 //! Server to phone ([`Reassembler`], [`Reply`]):
 //!

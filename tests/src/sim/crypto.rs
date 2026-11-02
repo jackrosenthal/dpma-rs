@@ -1,17 +1,5 @@
 //! The phone side of the protocol's cryptography (`phone_crypto.c`),
 //! written independently of the module with RustCrypto crates.
-//!
-//! - Key and IV: `EVP_BytesToKey(aes-128-cbc, SHA-1, salt, common
-//!   password, 1)` ([`evp_bytes_to_key`]).
-//! - Bodies and header fields: AES-128-CBC with PKCS#7 padding
-//!   ([`encrypt`], [`decrypt`], [`StreamEncryptor`]), base64 encoded
-//!   without line breaks ([`b64encode`]).
-//! - Salts: 8 bytes, sent as 16 uppercase hex digits ([`salt_hex`]) and
-//!   parsed like the official DPMA's `set_hex` ([`set_hex`]).
-//! - The common password of a HandshakeResponse: RSA PKCS#1 v1.5
-//!   ([`rsa_decrypt_common_password`]).
-//! - Asterisk's `ast_base64decode`, quirks included
-//!   ([`ast_base64decode`]), for emulating the server side.
 
 use std::path::Path;
 

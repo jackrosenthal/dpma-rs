@@ -1,5 +1,4 @@
-//! A small Asterisk Manager Interface client (the Rust form of the former
-//! `tests/sim/ami.py`).
+//! A small Asterisk Manager Interface client.
 //!
 //! Text is bytes: action fields are sent as given and every message keeps
 //! both its parsed fields and the raw bytes Asterisk sent, so responses
@@ -112,8 +111,7 @@ impl AmiMessage {
         out.into()
     }
 
-    /// This message's fields followed by those of `others` (as `ami.py`'s
-    /// script conditions see a list action's response and events).
+    /// This message's fields followed by those of `others`.
     pub fn merged<'a>(&self, others: impl IntoIterator<Item = &'a AmiMessage>) -> AmiMessage {
         let mut fields = self.fields.clone();
         for o in others {
@@ -591,8 +589,7 @@ mod tests {
     use std::io::Read;
     use std::net::TcpListener;
 
-    /// A fake AMI server: answers Login, a list action, a Command, and
-    /// sends an event with Latin-1 bytes.
+    /// A fake AMI server.
     fn fake_server() -> u16 {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();

@@ -1,6 +1,4 @@
-//! The simulator's view of the test PKI (made by [`crate::mkpki`]): the
-//! handshake bundles of `bundles.json` and the check of the AppServer
-//! certificate in a HandshakeResponse.
+//! The simulator's view of the test PKI (made by [`crate::mkpki`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -155,9 +153,8 @@ pub fn public_key(cert: &Certificate) -> Result<RsaPublicKey> {
 }
 
 /// Whether `cert` names `issuer` as its issuer and carries a valid
-/// signature by its key (RSA PKCS#1 v1.5 with SHA-1, SHA-256, SHA-384, or
-/// SHA-512), like `cryptography`'s `verify_directly_issued_by`.  No
-/// validity period, extension, or policy checks.
+/// signature by its key.  No validity period, extension, or policy
+/// checks.
 pub fn verify_directly_issued_by(cert: &Certificate, issuer: &Certificate) -> Result<()> {
     use rsa::pkcs1v15::{Signature, VerifyingKey};
     use rsa::signature::Verifier;

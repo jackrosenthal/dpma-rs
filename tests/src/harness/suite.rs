@@ -35,7 +35,7 @@ use super::log::Log;
 use crate::ami::AmiClient;
 use crate::sim::{self, Output};
 
-/// What a test part gets: the instance, a checker, and an AMI connection.
+/// What a test part gets.
 pub struct Ctx {
     /// The instance.
     pub inst: Instance,

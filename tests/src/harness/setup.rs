@@ -1,7 +1,4 @@
-//! Test setups that suites install into the instance: configuration
-//! snippets included from a main configuration file, and the
-//! configuration document test setup (`tests/data/config-xml`) of the
-//! config-xml suite.
+//! Test setups that suites install into the instance.
 
 use std::path::Path;
 
@@ -23,10 +20,8 @@ pub fn install_snippet(inst: &Instance, name: &str, main: &str, text: &[u8]) -> 
 /// the instance directory.
 pub const CONFIG_XML_CONF: &str = include_str!("../../data/config-xml/res_digium_phone.conf.in");
 
-/// The files the configuration document test configuration refers to
-/// (contacts, display rules, a `config_file`, a logo, and a firmware
-/// package file), by their path under its `file_directory`
-/// (`<instance>/var/lib/asterisk/digium_phones`).
+/// The files the configuration document test configuration refers to, by
+/// their path under its `file_directory`.
 pub const CONFIG_XML_FILES: [(&str, &[u8]); 5] = [
     (
         "cfgphone.xml",
@@ -50,14 +45,10 @@ pub const CONFIG_XML_FILES: [(&str, &[u8]); 5] = [
     ),
 ];
 
-/// Installs the configuration document test setup (package P4; was
-/// `tests/config-xml/setup.sh`): replaces the instance's
-/// `res_digium_phone.conf` with phones, lines, networks, applications,
-/// ringtones, alerts, firmware, and multicast pages that use every
-/// option the configuration document emits, and copies the files it
-/// refers to into `<instance>/var/lib/asterisk/digium_phones`.
-/// network2's alias is deliberately not valid XML; altphone gets merged
-/// display rules; cfgphone has a `config_file`.
+/// Installs the configuration document test setup: replaces the
+/// instance's `res_digium_phone.conf` with one that uses every option the
+/// configuration document emits, and copies the files it refers to into
+/// place.  network2's alias is deliberately not valid XML.
 pub fn config_xml(inst: &Instance) -> Result<()> {
     let dir = inst.dir.to_string_lossy();
     write_file(

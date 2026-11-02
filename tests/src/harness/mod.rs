@@ -1,6 +1,4 @@
-//! What the test suites share: the instance and its CLI, check
-//! reporting, the log, configuration editing, the suite runner, and
-//! fixtures.
+//! What the test suites share.
 //!
 //! A suite is a Cargo test target (`harness = false`) whose `main` builds
 //! a [`Suite`] of parts:

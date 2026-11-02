@@ -1,5 +1,4 @@
-//! Protocol constants (section 4.2 of `dev/notes/port-plan.md`) and the
-//! documents of the request types.
+//! Protocol constants and the documents of the request types.
 
 /// The prefix of the AppServer headers.
 pub const P: &str = "X-Digium-AppServer-";
@@ -106,8 +105,7 @@ pub enum DocFormat {
 }
 
 /// A JSON method call document: `{"request": {"method": M, "parameters":
-/// P}}` (no parameters when `params` is `None`), written like Python's
-/// `json.dumps` (`", "` and `": "` separators, non-ASCII escaped).
+/// P}}` (no parameters when `params` is `None`).
 pub fn method_request_json(method: &str, params: Option<&serde_json::Value>) -> String {
     let mut req = serde_json::Map::new();
     req.insert("method".into(), serde_json::Value::String(method.into()));

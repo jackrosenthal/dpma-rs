@@ -15,10 +15,9 @@
 //! dpma-ami --listen 30
 //! ```
 //!
-//! Logs in to AMI as test/test, by default on 127.0.0.1:15038, the test
-//! instance's (inside the test container).  For list actions it waits for
-//! `EventList: Complete`; otherwise it prints the events of the next
-//! `--events` seconds.  Exit status 0 when the response is `Success`.
+//! Logs in to the test instance's AMI by default.  For list actions it
+//! waits for `EventList: Complete`; otherwise it prints the events of the
+//! next `--events` seconds.  Exit status 0 when the response is `Success`.
 
 use std::io::Write;
 use std::process::ExitCode;
