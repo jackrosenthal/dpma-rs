@@ -30,7 +30,7 @@ use crate::container::{Run, OUT, SRC};
 use crate::run;
 
 /// The suites, in order: a default run (or `all`) runs them all.
-pub const SUITES: [&str; 10] = [
+pub const SUITES: [&str; 9] = [
     "session",
     "config-xml",
     "users-runtime",
