@@ -51,3 +51,13 @@ harness = false
 name = "request-handlers"
 path = "suites/request-handlers/main.rs"
 harness = false
+
+[[test]]
+name = "methods-vm"
+path = "suites/methods-vm/main.rs"
+harness = false
+
+[[test]]
+name = "methods-calls"
+path = "suites/methods-calls/main.rs"
+harness = false
