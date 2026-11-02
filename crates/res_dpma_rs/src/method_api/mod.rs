@@ -2,8 +2,8 @@
 //! 0x5bcec0 registered by `phone_method_internal_load` (FUN_00186920) and
 //! removed by `phone_method_internal_cleanup` (FUN_00186840).
 //!
-//! The table and load order match the original.  The handlers live in
-//! `voicemail.rs` (voicemail), `calls.rs` (queues, parking, recording,
+//! The table and load order match the official DPMA's.  The handlers live
+//! in `voicemail.rs` (voicemail), `calls.rs` (queues, parking, recording,
 //! phonebook, and echo), and `presence.rs` (presence).
 
 pub mod calls;
@@ -22,7 +22,7 @@ const fn json(name: &'static str, f: JsonMethod) -> Entry {
     Entry { name, xml: None, json: Some(f) }
 }
 
-/// The original table, in order.
+/// The official DPMA's table, in order.
 const TABLE: &[Entry] = &[
     json("switchvox.users.presence.getInfo", presence::get_info),
     json("switchvox.users.presence.update", presence::update),

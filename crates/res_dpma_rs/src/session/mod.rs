@@ -7,7 +7,7 @@
 //! MESSAGEs); handlers answer it by filling in its [`Outgoing`] and calling
 //! [`outgoing::send_and_destroy`].
 //!
-//! | File | Original |
+//! | File | Official DPMA |
 //! |---|---|
 //! | `store.rs` | the session container, `phone_msg_session_alloc`, `phone_msg_session_find*`, `phone_msg_session_mark_*`, `phone_msg_session_invalidate`, the global auth flags, `phone_msg_load`, `phone_msg_unload`, the trust material (`load_castore`) |
 //! | `incoming.rs` | `incoming_build_transaction`, `validate_message`, `validate_session`, `incoming_add_msg`, `incoming_check_finalize`, `prune_inactive` |
@@ -40,7 +40,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 pub const DB_FAMILY: &str = "DigiumPhoneSessions";
 
 /// Mutable session state (`struct phone_session`, 0xe60 bytes).  Empty
-/// strings stand for the original's NULL pointers.
+/// strings stand for the official DPMA's NULL pointers.
 #[derive(Default)]
 pub struct SessionState {
     /// Contact URI from the handshake, without brackets (+0xdf8).
@@ -84,7 +84,7 @@ pub struct SessionState {
 
 /// A phone session.  Looked up by `id` (`X-Digium-AppServer-Session`).
 /// The state's lock is held for the whole of an outgoing send, as the
-/// original holds the session's ao2 lock.
+/// official DPMA holds the session's ao2 lock.
 pub struct Session {
     /// Session id (+0xd78): `"%d%ld"` of a djb2 hash of time+contact and
     /// `ast_random()`, unless restored.
@@ -195,8 +195,8 @@ pub struct Transaction {
     /// [7].
     pub mac: Vec<u8>,
     /// The user agent (`X-Digium-User-Agent`, else `User-Agent`).  Not a
-    /// field of the original's transaction; handlers there read it from
-    /// the message.
+    /// field of the official DPMA's transaction; handlers there read it
+    /// from the message.
     pub user_agent: Vec<u8>,
     /// Decrypted `X-Digium-AppServer-Password` ([8]).
     pub password: Vec<u8>,
@@ -211,7 +211,7 @@ pub struct Transaction {
     /// Phone model from the user agent (`phone_utils_get_model`, [13]).
     pub model: Vec<u8>,
     /// `X-Origination-Network` of the first message (not a field of the
-    /// original's transaction).
+    /// official DPMA's transaction).
     pub origination_network: Vec<u8>,
     /// Reassembled (and decrypted) body.
     pub body: Vec<u8>,

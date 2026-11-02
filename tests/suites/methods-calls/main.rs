@@ -22,7 +22,7 @@
 //! this).  The instance's `pjsip.conf` must have the endpoints 1001 (auth
 //! 1001/secret1001) and 1002, as the scratch configuration has.
 //!
-//! The expected documents are the ones the original's
+//! The expected documents are the ones the official DPMA's
 //! `phone_method_internal_api.c` builds.  The methods are called with
 //! `dpmadev method call` (JSON) and `dpmadev calls xml` (XML) through the
 //! CLI, and their return codes are checked too.  (The method code does

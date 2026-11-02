@@ -25,7 +25,7 @@
 //!
 //! | Part | Checks |
 //! |---|---|
-//! | `config` | The configuration documents of fullphone, minphone, altphone, and nolinephone (the original does not escape network aliases or `idle_company_text`, and the setup has markup in network2's alias and fullphone's `idle_company_text`: those values are checked unescaped and escaped before the well-formedness check); altphone's with the merged display rules (an XML declaration); cfgphone's from its `config_file` |
+//! | `config` | The configuration documents of fullphone, minphone, altphone, and nolinephone (the official DPMA does not escape network aliases or `idle_company_text`, and the setup has markup in network2's alias and fullphone's `idle_company_text`: those values are checked unescaped and escaped before the well-formedness check); altphone's with the merged display rules (an XML declaration); cfgphone's from its `config_file` |
 //! | `contacts` | The contacts document |
 //! | `userlist` | The user list without and with the global pin |
 
@@ -36,7 +36,7 @@ use bstr::{BString, ByteSlice};
 use dpma_tests::harness::{fixtures, setup, Ctx, Suite};
 use dpma_tests::xml;
 
-/// Values the original writes unescaped (attribute text as in the
+/// Values the official DPMA writes unescaped (attribute text as in the
 /// document), by phone.
 const UNESCAPED: [(&str, &[&str]); 2] = [
     (

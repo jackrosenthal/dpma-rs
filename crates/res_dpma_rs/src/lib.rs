@@ -3,7 +3,7 @@
 //! helper modules in one module.
 //!
 //! This file declares the module to Asterisk's loader and wires the
-//! subsystems together in the original's order (res_digium_phone.c:
+//! subsystems together in the official DPMA's order (res_digium_phone.c:
 //! `load_module`, `load_full_components`, `unload_full_components`,
 //! `reload`), followed by the PJSIP side (`pjsip`), which Asterisk loaded
 //! after res_digium_phone as two helper modules.
@@ -109,8 +109,8 @@ fn load_config() -> Result<(), ()> {
 
 /// `unload_full_components` (FUN_00146bd0) for loaded or partly loaded
 /// components.  Every step tolerates subsystems that were never loaded.
-/// (On a failed load the original skips this and leaves the partly loaded
-/// components registered; here they are always unloaded.)
+/// (On a failed load the official DPMA skips this and leaves the partly
+/// loaded components registered; here they are always unloaded.)
 fn unload_components(full: Option<Full>) {
     phone_main::stop();
     avahi::stop();
@@ -162,7 +162,7 @@ fn load_full() -> Result<Full, ()> {
     }
     if users::load::load(CONFIG_FILE.as_bytes()).is_err() {
         // A missing or invalid res_digium_phone.conf is reported by the
-        // config layer; the module still loads, as the original does.
+        // config layer; the module still loads, as the official DPMA does.
         dpma_log!("No phones configured from {}", CONFIG_FILE);
     }
     if firmware::load().is_err() {
@@ -171,7 +171,7 @@ fn load_full() -> Result<Full, ()> {
 
     // The phone users and translation CLI commands and the reconfigure
     // actions (registered by phone_users_load and the translation loader
-    // in the original).
+    // in the official DPMA).
     let mut cmds = users::cli::commands();
     cmds.extend(users::status::commands());
     cmds.extend(translation::commands());
@@ -203,8 +203,8 @@ fn load_full() -> Result<Full, ()> {
     })
 }
 
-/// Log hook for dpma-proto: its messages carry the original's file, line,
-/// and function names.
+/// Log hook for dpma-proto: its messages carry the official DPMA's file,
+/// line, and function names.
 fn proto_log(level: dpma_proto::LogLevel, file: &str, line: u32, func: &str, msg: &[u8]) {
     match level {
         dpma_proto::LogLevel::Dpma => dpma_ast::log::log(dpma_ast::log::custom_level(), file, line, func, msg),
@@ -254,7 +254,7 @@ fn unload_main() {
 /// helpers' (`pjsip::load`).  When the PJSIP side fails, the rest is
 /// unloaded again and its result returned (AST_MODULE_LOAD_FAILURE when
 /// there is no default outbound endpoint, which stops Asterisk from
-/// starting, as the original helper's failure does).
+/// starting, as the official DPMA helper's failure does).
 unsafe extern "C" fn load_module() -> sys::ast_module_load_result {
     dpma_ast::module::reopen_if_restarted();
     dpma_ast::guard(sys::AST_MODULE_LOAD_DECLINE, || {
@@ -279,9 +279,9 @@ unsafe extern "C" fn unload_module() -> c_int {
     })
 }
 
-/// `reload` (FUN_00147420), without the original's license re-check.  (The
-/// helpers have none; the PJSIP side follows res_digium_phone.conf through
-/// its config hook.)
+/// `reload` (FUN_00147420), without the official DPMA's license re-check.
+/// (The helpers have none; the PJSIP side follows res_digium_phone.conf
+/// through its config hook.)
 unsafe extern "C" fn reload_module() -> c_int {
     dpma_ast::guard(0, || {
         let g = MODULE.lock().unwrap();

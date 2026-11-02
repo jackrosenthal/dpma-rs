@@ -1,10 +1,10 @@
 //! Asterisk's JSON API (`ast_json_*`, main/json.c, a wrapper around
 //! jansson).
 //!
-//! The original module builds the user list and parses the JSON phone
+//! The official DPMA builds the user list and parses the JSON phone
 //! requests with it, so wherever key order, escaping, or number formatting
-//! must match the original, the same library is used.  Values are raw
-//! `struct ast_json *` pointers; [`Json`] and [`Value`] wrap
+//! must match the official DPMA's, the same library is used.  Values are
+//! raw `struct ast_json *` pointers; [`Json`] and [`Value`] wrap
 //! the parsing side.
 
 use crate::sys;
@@ -12,7 +12,7 @@ use crate::util::{cstr, from_ptr};
 use std::marker::PhantomData;
 use std::os::raw::{c_int, c_void};
 
-/// The raw API, for building documents as the original does
+/// The raw API, for building documents as the official DPMA does
 /// (`ast_json_object_set` and `ast_json_array_append` take over the
 /// value's reference, also on failure).
 pub use sys::{

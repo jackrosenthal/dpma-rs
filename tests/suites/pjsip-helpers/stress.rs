@@ -1,6 +1,6 @@
 //! The line locking stress test (`stress.py`) for the module's PJSIP
-//! side (the original's endpoint identifier helper) and the rest of the
-//! module.
+//! side (the official DPMA's endpoint identifier helper) and the rest of
+//! the module.
 //!
 //! Phase 1 (`seconds`): ARI updates of auth 2005-auth (password pwA and
 //! pwB) and endpoint 2005 (caller ID A and B) make the PJSIP side's
@@ -14,7 +14,7 @@
 //!
 //! Phase 2 (`seconds`): the same plus res_dpma_rs and res_pjsip reloads
 //! (full processing passes, also from a sorcery thread).  A pass has its
-//! own intermediate states (as in the original), so only deadlocks are
+//! own intermediate states (as in the official DPMA), so only deadlocks are
 //! checked: every CLI command and ARI request must answer within 20
 //! seconds.
 

@@ -431,7 +431,8 @@ pub fn get_list(vm: &mut Vm) -> Result<()> {
         27168,
         "must have line with mailbox",
     )?;
-    // Deviations (the original crashes): no folder, zero items_per_page.
+    // Deviations (the official DPMA crashes): no folder, zero
+    // items_per_page.
     vm.expect_error(
         "getList no folder (deviation)",
         "vmphone",
@@ -669,8 +670,8 @@ pub fn move_(vm: &mut Vm) -> Result<()> {
     }
     let (a, bb) = (msgs[0].clone(), msgs[1].clone());
     // Two messages to Work (translated as Arbeit).  The response ids come
-    // from the original's reused buffer: the first gets the folder of the
-    // last id parsed, the rest "(null)".
+    // from the official DPMA's reused buffer: the first gets the folder of
+    // the last id parsed, the rest "(null)".
     vm.expect_ok(
         "move two to Arbeit",
         "vmphone",

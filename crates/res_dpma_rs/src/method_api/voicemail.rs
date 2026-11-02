@@ -20,10 +20,11 @@
 //! Every handler answers with `{"response":{"method":M,"result":...}}`
 //! appended to `out` and returns 0, or replaces `out` with an error
 //! document (`request::error_response_json`) and returns -1, as the
-//! original does (its caller ignores the value).
+//! official DPMA does (its caller ignores the value).
 //!
-//! The original works on fixed-size C buffers; the same truncations are
-//! applied here (message ids 127 bytes, mailboxes 1023, caller ids 255).
+//! The official DPMA works on fixed-size C buffers; the same truncations
+//! are applied here (message ids 127 bytes, mailboxes 1023, caller ids
+//! 255).
 
 use crate::method::MethodCall;
 use crate::request::error_response_json;
@@ -60,7 +61,7 @@ const LISTED_FOLDERS: u32 = 0x21d;
 const RECORDINGS: &[u8] = b"Recordings";
 const CUST5: &[u8] = b"Cust5";
 
-/// Sizes of the original's buffers.
+/// Sizes of the official DPMA's buffers.
 const MSG_ID_BUF: usize = 0x80;
 const MAILBOX_BUF: usize = 0x400;
 const CALLERID_BUF: usize = 0x100;
@@ -84,8 +85,8 @@ struct MsgTracker {
     folder: Vec<u8>,
 }
 
-/// `vm_phone_user_tracker`: one phone's message trackers.  The original's
-/// container allows duplicate ids and finds the first one linked; a
+/// `vm_phone_user_tracker`: one phone's message trackers.  The official
+/// DPMA's container allows duplicate ids and finds the first one linked; a
 /// vector searched from the front does the same.
 #[derive(Debug, Default)]
 struct UserTracker {
@@ -101,7 +102,7 @@ fn user_tracker_find_or_create(name: &[u8]) -> Arc<UserTracker> {
     let mut g = USER_TRACKERS.lock().unwrap();
     match g.as_mut() {
         Some(map) => map.entry(name.to_vec()).or_default().clone(),
-        // No container: the original's link fails but the tracker is
+        // No container: the official DPMA's link fails but the tracker is
         // still used for the request.
         None => Arc::new(UserTracker::default()),
     }
@@ -164,8 +165,9 @@ fn tracker_find(ut: &UserTracker, id: &[u8], folder: &[u8], mailbox: &[u8]) -> O
             t
         }
     };
-    // The original compares a NULL name (a folder it does not know) and
-    // crashes; such a tracker cannot be made, so it simply does not match.
+    // The official DPMA compares a NULL name (a folder it does not know)
+    // and crashes; such a tracker cannot be made, so it simply does not
+    // match.
     match canonical(&t.folder) {
         Some(c) if c.as_bytes() == folder => Some(t),
         _ => None,
@@ -291,7 +293,8 @@ fn fail(out: &mut Vec<u8>, method: &[u8], code: i32, detail: impl AsRef<[u8]>) -
 }
 
 /// Append `{"response":{"method":M,"result":R}}` to `out` (nothing when
-/// the method is not UTF-8, where the original's `ast_json_pack` fails).
+/// the method is not UTF-8, where the official DPMA's `ast_json_pack`
+/// fails).
 fn respond(out: &mut Vec<u8>, method: &[u8], result: Value) {
     let Some(method) = dpma_proto::json::utf8(method) else { return };
     let doc = json!({"response": {"method": method, "result": result}});
@@ -299,7 +302,8 @@ fn respond(out: &mut Vec<u8>, method: &[u8], result: Value) {
 }
 
 /// `phone_user_get_application_settings(user, voicemail)` and its folder
-/// translation table (logs "Failed to find application" like the original).
+/// translation table (logs "Failed to find application" like the official
+/// DPMA).
 fn vm_translation(phone: &[u8]) -> Option<Arc<Table>> {
     let g = users::read();
     let reg = g.as_ref()?;
@@ -354,7 +358,7 @@ fn own_mailbox(phone: &[u8], line: &[u8]) -> Option<Vec<u8>> {
     line_mailbox(line)
 }
 
-/// `phone_mailbox_by_line` into the original's 0x400-byte buffer.
+/// `phone_mailbox_by_line` into the official DPMA's 0x400-byte buffer.
 fn line_mailbox(line: &[u8]) -> Option<Vec<u8>> {
     users::runtime::mailbox_by_line(line).map(|m| copy_trunc(&m, MAILBOX_BUF))
 }
@@ -454,7 +458,8 @@ pub fn get_list(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
     let ut = user_tracker_find_or_create(&c.phone);
     list_reset(&ut);
 
-    // Deviation: the original dereferences a missing folder and crashes.
+    // Deviation: the official DPMA dereferences a missing folder and
+    // crashes.
     let Some(folder) = json_str(p, "folder") else {
         return fail(out, m, PARAMS_NOT_FOUND, "folder");
     };
@@ -478,7 +483,7 @@ pub fn get_list(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
         );
     };
 
-    // Deviation: the original divides by zero (SIGFPE) for a zero (or
+    // Deviation: the official DPMA divides by zero (SIGFPE) for a zero (or
     // non-integer) items_per_page.
     let Some(pages) = snap.total_msg_num.checked_div(per_page) else {
         return fail(out, m, PARAMS_NOT_FOUND, "items_per_page");
@@ -657,9 +662,10 @@ pub fn move_message(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
                     show(Some(&g.last_buf))
                 );
             }
-            // The original rebuilds the id in the buffer that still holds
-            // the folder part of the last id parsed, so only the first
-            // moved message gets a folder name; the others get "(null)".
+            // The official DPMA rebuilds the id in the buffer that still
+            // holds the folder part of the last id parsed, so only the
+            // first moved message gets a folder name; the others get
+            // "(null)".
             g.last_buf = make_id(canonical(&g.last_buf), old);
             let Some(id) = jstr(&g.last_buf) else {
                 return fail(out, m, PARSE, "append message");
@@ -867,7 +873,7 @@ pub fn play(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
 }
 
 /// The user data of a playback call (`dial_phone_event_app_data`; the
-/// original's result callback is always NULL and is left out).
+/// official DPMA's result callback is always NULL and is left out).
 struct DialData {
     app_and_args: Vec<u8>,
 }
@@ -929,7 +935,7 @@ fn dial_phone_event_app(phone: &[u8], out: &mut Vec<u8>, method: &[u8], app: &[u
         if res != 0 {
             fail(out, method, PHONE_EVENT_APP_FAILED, "dial thread did not start");
             drop(Box::from_raw(data));
-            // The original reads the name after destroying the dial.
+            // The official DPMA reads the name after destroying the dial.
             let name = channel::name(chan);
             dial::destroy(d);
             dpma_log!("Failed to start thread for call to {}", name);
@@ -944,8 +950,8 @@ unsafe extern "C" fn dial_phone_event_app_thread(data: *mut c_void) -> *mut c_vo
         let d = data as *mut AstDial;
         let ud = dial::get_user_data(d) as *mut DialData;
         let chan = dial::get_channel(d, 0);
-        // Read before the run: the original reads it afterwards, when an
-        // unanswered channel may already be gone.
+        // Read before the run: the official DPMA reads it afterwards, when
+        // an unanswered channel may already be gone.
         let name = channel::name(chan);
         if ud.is_null() {
             dpma_log!("Unable to get userdata during dial thread to {}", name);

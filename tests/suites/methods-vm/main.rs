@@ -24,7 +24,7 @@
 //! It leaves a message with the dialplan (a Local channel into
 //! `VoiceMail()`), copies it into more messages and adds hand-made ones
 //! for unusual caller ids, and calls every method.  Each response is
-//! compared, as text, with the document the original builds (key order
+//! compared, as text, with the document the official DPMA builds (key order
 //! included), computed from the spool and a model of the decompile; the
 //! spool and the message trackers (`dpmadev vm trackers`) are checked
 //! after each change.
@@ -47,7 +47,7 @@
 //! |---|---|
 //! | `messages` | Empties the test mailboxes, leaves one message through `VoiceMail()`, and copies it into five more (one urgent, one for 1002, one for 2001@other) with their own caller ids and times (no checks) |
 //! | `folder-list` | getFolderList: translated and plain names, counts, another voicemail context, the errors |
-//! | `get-list` | getList: translated folders, sort orders, paging, caller id forms, the trackers, the errors (and the deviations from the original's crashes) |
+//! | `get-list` | getList: translated folders, sort orders, paging, caller id forms, the trackers, the errors (and the deviations from the official DPMA's crashes) |
 //! | `mark` | markRead and markUnread: moves between INBOX and Old, Urgent, translated ids, Friends refused, the errors |
 //! | `move` | move: the response ids, stale trackers, Recordings (Cust5), the errors |
 //! | `forward` | forward: copies to other mailboxes and contexts, the errors |

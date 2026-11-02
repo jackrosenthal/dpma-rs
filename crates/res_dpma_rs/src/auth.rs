@@ -16,7 +16,7 @@ use dpma_ast::manager::{self, Request};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Buckets of the original's ao2 hash container; listing order follows
+/// Buckets of the official DPMA's ao2 hash container; listing order follows
 /// the buckets, then insertion order within a bucket.
 const BUCKETS: usize = 37;
 
@@ -109,7 +109,7 @@ pub fn unload() {
 /// the dialplan from the receiving address): the URI's address part as
 /// `phone_utils_parse_uri` returns it, with the brackets and the port
 /// stripped as `ast_sockaddr_split_hostport` does.  (Deviation: the
-/// original cuts the address at its first `:`, which keys every IPv6
+/// official DPMA cuts the address at its first `:`, which keys every IPv6
 /// address as, e.g., `[2001`; IPv4 addresses come out the same.)
 pub fn issue_alert(tx: &Transaction, reason: &str) {
     let _ = record(tx, reason);
@@ -196,8 +196,8 @@ pub fn expire_problems() {
     }
 }
 
-/// "ActionID: <id>\r\n" as the original formats it into a 256-byte buffer
-/// (at most 255 bytes kept), or "" when there is no ActionID.
+/// "ActionID: <id>\r\n" as the official DPMA formats it into a 256-byte
+/// buffer (at most 255 bytes kept), or "" when there is no ActionID.
 fn action_id_text(id: &[u8]) -> Vec<u8> {
     if id.is_empty() {
         return Vec::new();
@@ -230,7 +230,7 @@ fn action_show_incidents(r: &Request) -> i32 {
             now.diff_sec(p.last) as i32,
             p.count,
             p.reason,
-            // The original's string really has a leading space.
+            // The official DPMA's string really has a leading space.
             if p.count >= ALERT_COUNT { " Yes" } else { "No" },
             if p.alert_sent { "Yes" } else { "No" },
         ));
@@ -247,9 +247,9 @@ fn action_show_incidents(r: &Request) -> i32 {
 /// `action_dpma_remove_incident` (FUN_00178110).
 fn action_remove_incident(r: &Request) -> i32 {
     let idtext = action_id_text(&r.header("ActionID"));
-    // astman_get_header never returns NULL, so the original's "AMI remove
-    // incident missing IPAddress" branch is unreachable; a missing header
-    // is looked up as "".
+    // astman_get_header never returns NULL, so the official DPMA's "AMI
+    // remove incident missing IPAddress" branch is unreachable; a missing
+    // header is looked up as "".
     let ip = r.header("IPAddress");
     let removed = {
         let mut g = PROBLEMS.lock().unwrap();

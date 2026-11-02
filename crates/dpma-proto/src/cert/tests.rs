@@ -134,8 +134,8 @@ fn chain_form() {
 
 #[test]
 fn validity_period_ignored() {
-    // The original's callback ignores "not yet valid" and "expired", for
-    // every certificate, the trust anchor too.
+    // The official DPMA's callback ignores "not yet valid" and "expired",
+    // for every certificate, the trust anchor too.
     let p = pki();
     let s = store_of(&[&p.root]);
     let expired = Spec::new("CN=old phone", 7).validity(time(2001, 1, 1), time(2002, 1, 1)).issue(Some(&p.root));
@@ -536,8 +536,8 @@ fn wrong_chain_lengths() {
 fn intermediate_serials() {
     let p = pki();
     let s = store_of(&[&p.root]);
-    // A zero serial on the intermediate makes the original read the next
-    // certificate's serial.
+    // A zero serial on the intermediate makes the official DPMA read the
+    // next certificate's serial.
     let inter0 = Spec::new("CN=Inter0", 130).serial(0).ca().issue(Some(&p.root));
     let phone = Spec::new("CN=phone", 99).issue(Some(&inter0));
     let (r, logs) = testlog::capture(|| verify(&s, pem(&[&p.legacy, &inter0, &phone])));
@@ -613,7 +613,7 @@ fn no_panics_on_damaged_input() {
     }
 }
 
-/// The original's CA certificates and AppServer certificate, which the
+/// The official DPMA's CA certificates and AppServer certificate, which the
 /// module embeds (crates/res_dpma_rs/src/trust).
 const EMBEDDED_CA: &[u8] = include_bytes!("../../../res_dpma_rs/src/trust/phone_ca.pem");
 const EMBEDDED_APPSERVER: &[u8] = include_bytes!("../../../res_dpma_rs/src/trust/appserver.pem");

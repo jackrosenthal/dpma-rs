@@ -7,15 +7,15 @@
 //! still marked.
 //!
 //! chan_sip is not supported (port plan, section 8, item 6): unlike the
-//! original, no lines are read from sip.conf or from users.conf `hassip`
-//! users, and there are no `digium_phones_sip` or `digium_phones_users_sip`
-//! config hooks.  PJSIP lines get their settings from the PJSIP side of
-//! the module (`crate::pjsip`, the original's
+//! official DPMA, no lines are read from sip.conf or from users.conf
+//! `hassip` users, and there are no `digium_phones_sip` or
+//! `digium_phones_users_sip` config hooks.  PJSIP lines get their settings
+//! from the PJSIP side of the module (`crate::pjsip`, the official DPMA's
 //! res_pjsip_endpoint_identifier_dpma helper), whose lines pass runs in the
-//! middle of each pass (the original's config handler).
+//! middle of each pass (the official DPMA's config handler).
 //!
-//! Line locks: where the original locks a line object while it reads or
-//! writes it, the pass holds every line object's ao2 lock (see
+//! Line locks: where the official DPMA locks a line object while it reads
+//! or writes it, the pass holds every line object's ao2 lock (see
 //! `users::objects`), so it never works on a line that the PJSIP side is
 //! halfway through updating from a sorcery observer thread.
 
@@ -220,7 +220,7 @@ fn users_context(voicemail: &Cfg) -> Vec<u8> {
 /// side, `users::objects::process_line`), first part: the mailboxes to set
 /// (`set_mailbox`), in order, as (line, mailbox).  Each variable of a
 /// voicemail.conf context named after `line` sets the mailbox of the line
-/// named after the variable (as in the original), and a users.conf
+/// named after the variable (as in the official DPMA), and a users.conf
 /// (app_voicemail) section named after `line` with voicemail sets that
 /// line's mailbox.
 pub fn line_mailboxes(line: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
@@ -290,7 +290,7 @@ pub fn process(trigger: &[u8]) -> Result<(), ()> {
     let mut fx = Effects::default();
     {
         // Every line object stays locked while lines are marked and phones
-        // claim theirs (the original locks each line in
+        // claim theirs (the official DPMA locks each line in
         // phone_line_mark_delme_cb and set_user_option).
         let _lines = crate::users::objects::lock_all_lines();
         let mut g = write();
@@ -339,17 +339,17 @@ pub fn process(trigger: &[u8]) -> Result<(), ()> {
 
     // ---- the config handlers: the PJSIP lines pass ----
     // It updates lines through their objects, which take the registry lock
-    // themselves, so it is released meanwhile (the original holds no global
-    // lock here either; this pass is still serialized by PROCESS).  The
-    // PJSIP side locks each line itself while it updates it.  The line and
-    // phone objects are brought in step with the registry first.
+    // themselves, so it is released meanwhile (the official DPMA holds no
+    // global lock here either; this pass is still serialized by PROCESS).
+    // The PJSIP side locks each line itself while it updates it.  The line
+    // and phone objects are brought in step with the registry first.
     super::objects::sync(Vec::new());
     crate::pjsip::process_lines();
 
     let hints;
     {
         // As above: process_lines_dp, set_mailbox, and phone_line_hint_cb
-        // lock each line in the original.
+        // lock each line in the official DPMA.
         let _lines = crate::users::objects::lock_all_lines();
         let mut g = write();
         let Some(reg) = g.as_mut() else { return Err(()) };

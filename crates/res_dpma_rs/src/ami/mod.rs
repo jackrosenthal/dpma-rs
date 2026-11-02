@@ -2,7 +2,7 @@
 //! FUN_00175840) plus the AMI scheduler and queued-message container
 //! (phone_ami.c, phone_request.c).
 //!
-//! The original registers seven actions in one place, all with
+//! The official DPMA registers seven actions in one place, all with
 //! authority `call` (EVENT_FLAG_CALL).  `DPMALicenseStatus` is not
 //! implemented (no license handling in this rewrite); the other six are:
 //!
@@ -16,9 +16,9 @@
 //! | DPMARemoveIncident  | `auth`          |
 //!
 //! Each of those modules returns its actions from an `actions()`
-//! function; this module registers them in the original's order.  Unlike
-//! the original, which unregisters only some of them at unload (leaving
-//! dangling handlers), every registered action is unregistered.
+//! function; this module registers them in the official DPMA's order.
+//! Unlike the official DPMA, which unregisters only some of them at unload
+//! (leaving dangling handlers), every registered action is unregistered.
 
 pub mod messages;
 
@@ -34,7 +34,7 @@ pub struct AmiAction {
 
 static REGISTERED: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
 
-/// The original's registration order.
+/// The official DPMA's registration order.
 const ORDER: &[&str] = &[
     "DPMAShowPhones",
     "DPMAMessageRegister",

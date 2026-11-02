@@ -2,7 +2,7 @@
 //! it (`ast_pthread_create_detached_stack`).
 //!
 //! A dial is a raw pointer whose ownership the caller manages, because the
-//! original hands it to a detached thread that runs and destroys it.
+//! official DPMA hands it to a detached thread that runs and destroys it.
 
 use crate::sys;
 use crate::vm::c_bytes;

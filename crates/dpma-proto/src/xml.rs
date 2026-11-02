@@ -46,8 +46,8 @@ pub fn escape_bounded(input: &[u8], size: usize) -> Vec<u8> {
 }
 
 /// `phone_utils_xml_escape` with unlimited room: escape `&`, `<`, `>`,
-/// `"`, and `'` exactly as the original does (bytewise; every other byte
-/// is copied).
+/// `"`, and `'` exactly as the official DPMA does (bytewise; every other
+/// byte is copied).
 pub fn escape(s: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(s.len());
     for &c in s {

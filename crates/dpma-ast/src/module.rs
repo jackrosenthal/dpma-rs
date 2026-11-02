@@ -152,7 +152,7 @@ macro_rules! asterisk_module {
                 description: concat!($description, "\0").as_ptr().cast(),
                 key: $crate::sys::ASTERISK_GPL_KEY.as_ptr().cast(),
                 flags: $flags as ::std::os::raw::c_uint,
-                // Empty, as in the original module: Asterisk's loader
+                // Empty, as in the official DPMA: Asterisk's loader
                 // compares the build options checksum only when a module
                 // has one (`!ast_strlen_zero(mod->info->buildopt_sum) &&
                 // strcmp(...)`, main/loader.c:1836 in 22, 23, and 24), so

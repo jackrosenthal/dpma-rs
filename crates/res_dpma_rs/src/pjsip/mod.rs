@@ -1,4 +1,4 @@
-//! The PJSIP side of the module: what the original distribution ships as
+//! The PJSIP side of the module: what the official DPMA ships as
 //! two helper modules, res_pjsip_endpoint_identifier_dpma.so
 //! (`identifier.rs`) and res_pjsip_dialog_info_digium_body_supplement.so
 //! (`dialog_info.rs`), loaded after and unloaded before the rest of the
@@ -10,8 +10,8 @@
 //! channels, and the "is this endpoint a Digium phone" function.  Here
 //! they are plain Rust calls (`process_lines`, `info_send`, and
 //! `endpoint_is_dphone`), each active between the identifier side's
-//! registration and its cleanup, as the original's registrations were;
-//! outside that window they behave as the original does with nothing
+//! registration and its cleanup, as the official DPMA's registrations were;
+//! outside that window they behave as the official DPMA does with nothing
 //! registered.  The registries' locks are kept: a processing pass holds
 //! the config handler lock while the PJSIP lines pass runs, and an INFO is
 //! sent under the info handler lock, so unloading waits for both.
@@ -33,7 +33,8 @@ use std::sync::RwLock;
 static CONFIG_HANDLER: RwLock<bool> = RwLock::new(false);
 /// The "PJSIP" info handler is registered.
 static INFO_HANDLER: RwLock<bool> = RwLock::new(false);
-/// `pjsip_endpoint_is_dphone` is registered (no lock, as in the original).
+/// `pjsip_endpoint_is_dphone` is registered (no lock, as in the official
+/// DPMA).
 static IS_DPHONE: AtomicBool = AtomicBool::new(false);
 
 fn set(lock: &RwLock<bool>, value: bool) {
@@ -68,9 +69,9 @@ fn unregister_is_dphone() {
 }
 
 /// `load_module` of both helpers, in their load order: AST_MODULE_LOAD_*
-/// (the identifier fails with AST_MODULE_LOAD_FAILURE, as the original,
-/// when there is no default outbound endpoint; the supplement declines
-/// when it cannot register).
+/// (the identifier fails with AST_MODULE_LOAD_FAILURE, as in the official
+/// DPMA, when there is no default outbound endpoint; the supplement
+/// declines when it cannot register).
 pub fn load() -> sys::ast_module_load_result {
     let res = identifier::load();
     if res != sys::AST_MODULE_LOAD_SUCCESS {
@@ -91,7 +92,7 @@ pub fn unload() {
 
 /// `dpma_process_config_handlers`, run by every processing pass of the
 /// phone configuration (`users::load::process`): the PJSIP lines pass, if
-/// registered, with the list's write lock held as the original does.
+/// registered, with the list's write lock held as the official DPMA does.
 pub fn process_lines() {
     let registered = CONFIG_HANDLER.write().unwrap_or_else(|e| e.into_inner());
     if *registered {

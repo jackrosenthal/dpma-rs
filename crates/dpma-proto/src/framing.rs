@@ -22,9 +22,9 @@
 //! the literal text "empty body".  A non-zero error code appends
 //! `<error msg="..." />` to whatever body was already there.
 //!
-//! The original sets the message variables of every chunk in this order
-//! (each only when non-empty): RequestType (or ResponseType, which wins),
-//! Handshake-Version, Username, Response-URI, Response-FullContact,
+//! The official DPMA sets the message variables of every chunk in this
+//! order (each only when non-empty): RequestType (or ResponseType, which
+//! wins), Handshake-Version, Username, Response-URI, Response-FullContact,
 //! Token-Auth-Requirements, Userlist-Auth-Requirements, Password
 //! (verbatim), X-Event-Name, Session, X-Origination-Network (from the
 //! session), HTTP-Status, MD5, Error-ID, Password (encrypted),
@@ -56,7 +56,7 @@ pub const COMMAND_PREFIX: &str = "Command: ";
 /// Body sent when there is nothing to send.
 pub const EMPTY_BODY: &str = "empty body";
 
-/// Per-chunk plaintext limits (prefix included), from the original's
+/// Per-chunk plaintext limits (prefix included), from the official DPMA's
 /// buffer sizes (allocation minus the terminating NUL).
 pub const UDP_PLAIN_LIMIT: usize = 0x267;
 pub const UDP_ENCRYPTED_LIMIT: usize = 0x1a4;
@@ -111,7 +111,7 @@ pub struct Chunk {
 /// (the response type is "HandshakeResponse", case insensitive)
 /// suppresses the sequence headers when the whole body fits in one chunk.
 /// A `limit` that leaves no room after the prefix is raised to fit one
-/// byte (the original would loop forever; its limits never do).
+/// byte (the official DPMA would loop forever; its limits never do).
 pub fn split(body: &[u8], prefix: &str, limit: usize, handshake_response: bool) -> Vec<Chunk> {
     let body = if body.is_empty() { EMPTY_BODY.as_bytes() } else { body };
     let prefix = prefix.as_bytes();
@@ -133,8 +133,8 @@ pub fn split(body: &[u8], prefix: &str, limit: usize, handshake_response: bool) 
     chunks
 }
 
-/// Encrypt chunks as the original sends them: one CBC stream over all of
-/// them (fresh from `password`/`salt`), each chunk's ciphertext base64
+/// Encrypt chunks as the official DPMA sends them: one CBC stream over all
+/// of them (fresh from `password`/`salt`), each chunk's ciphertext base64
 /// encoded separately (0x515-byte buffer).  The last chunk includes the
 /// padding.
 pub fn encrypt_chunks(chunks: &[Chunk], password: &[u8], salt: &[u8; SALT_LEN]) -> Result<Vec<String>> {
@@ -468,7 +468,7 @@ mod tests {
         r.add(Some(b"0".as_slice()), false, "x".into());
         assert!(!r.is_complete());
         // A duplicate counts, so a missing part can be papered over, as in
-        // the original.
+        // the official DPMA.
         let mut r = Reassembly::new();
         r.add(Some(b"0".as_slice()), false, "a".into());
         r.add(Some(b"0".as_slice()), false, "a2".into());

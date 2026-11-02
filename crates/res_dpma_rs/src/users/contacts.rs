@@ -8,7 +8,7 @@ use dpma_ast::{bwrite, bwriteln};
 use std::sync::Mutex;
 
 /// The document, built on first use after each load or reload of
-/// res_digium_phone.conf (the original keeps it in a global `ast_str`
+/// res_digium_phone.conf (the official DPMA keeps it in a global `ast_str`
 /// guarded by `users_cfg_lock` and empties it in `phone_user_load_config`).
 static CACHE: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 
@@ -18,7 +18,7 @@ pub fn reset_cache() {
 }
 
 /// Build the document: one contact per phone with a primary line, in
-/// container order.  Values are not XML-escaped, as in the original.
+/// container order.  Values are not XML-escaped, as in the official DPMA.
 fn build(reg: Option<&Registry>, s: &mut Vec<u8>) {
     s.push_str("<contacts group_name=\"Internal Extensions\" editable=\"0\" >\n");
     let phones = reg.into_iter().flat_map(|r| r.phones.values().map(move |p| (r, p)));

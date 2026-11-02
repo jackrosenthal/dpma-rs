@@ -109,7 +109,7 @@ unsafe extern "C" fn action_handler(s: *mut Mansession, m: *const Message) -> c_
 
 /// Raise a manager event that names `file`, `line`, and `func` as its
 /// origin (the `File`, `Line`, and `Func` headers shown with `manager set
-/// debug on`), as the original's `manager_event` calls do.
+/// debug on`), as the official DPMA's `manager_event` calls do.
 pub fn event_at(category: i32, event: &str, file: &str, line: u32, func: &str, body: impl AsRef<[u8]>) {
     let e = cstr(event);
     let f = cstr(file);

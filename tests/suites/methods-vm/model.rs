@@ -1,6 +1,6 @@
-//! A model of the decompile: the documents the original builds from the
-//! spool (app_voicemail's mailbox snapshots, getList's caller id parsing
-//! and paging), and the response documents.
+//! A model of the decompile: the documents the official DPMA builds from
+//! the spool (app_voicemail's mailbox snapshots, getList's caller id
+//! parsing and paging), and the response documents.
 
 use std::cmp::Ordering;
 
@@ -96,7 +96,7 @@ pub fn snapshot(
                 }
                 continue;
             }
-            // The origtimes compare as text, as the original does.
+            // The origtimes compare as text, as the official DPMA does.
             let pos = lst.iter().position(|cur| {
                 let val = msg.msg.get("origtime").cmp(cur.msg.get("origtime"));
                 (descending && val != Ordering::Less) || (!descending && val != Ordering::Greater)

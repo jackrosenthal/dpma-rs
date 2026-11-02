@@ -29,11 +29,11 @@
 //! configuration document, the user list, the default contacts, file
 //! requests, echoes, events and reconfigures sent to the simulator, CLI
 //! output, AMI responses and events, AstDB, and the log.  Where the
-//! original hands such text to jansson (the user list, the method
+//! official DPMA hands such text to jansson (the user list, the method
 //! responses, the JSON error documents, DPMAMessageResponse), the request
-//! fails the way jansson makes the original fail; where it hands it to
+//! fails the way jansson makes the official DPMA fail; where it hands it to
 //! libxml2 (an XML request, the display rules merge), libxml2 refuses it
-//! as it does for the original.
+//! as it does for the official DPMA.
 //!
 //! | Part | Checks |
 //! |---|---|
@@ -471,7 +471,7 @@ fn check_phone(ctx: &mut Ctx, sessions: &mut Vec<BString>) -> Result<()> {
 
     // The user list goes through jansson: the UTF-8 phone's group pin
     // lists it byte for byte; the Latin-1 phone's makes jansson fail,
-    // which the original answers as a bad configuration password.
+    // which the official DPMA answers as a bad configuration password.
     let ex = p.userlist().config_password(fx::U_GROUP_PIN).send()?;
     if let Some(r) = reply_of(&mut ctx.c, "UserlistRequest (UTF-8 phone)", &ex) {
         // "assigned" is "1" when the phone has a session id (a run
@@ -510,7 +510,7 @@ fn check_phone(ctx: &mut Ctx, sessions: &mut Vec<BString>) -> Result<()> {
         b"Failed to build the user list\n",
     );
 
-    // Methods: jansson refuses the Latin-1 values the original packs.
+    // Methods: jansson refuses the Latin-1 values the official DPMA packs.
     let call = |method: &str, params: serde_json::Value| -> Result<Option<BString>> {
         asterisk(&p, method_request_json(method, Some(&params)), None)
     };

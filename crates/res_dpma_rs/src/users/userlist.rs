@@ -2,8 +2,8 @@
 //! (`phone_user_list_build_json` FUN_00161830).
 //!
 //! The JSON is built and serialized with Asterisk's `ast_json` (jansson),
-//! as the original does, so key order, escaping, and the compact format
-//! are the same.
+//! as the official DPMA does, so key order, escaping, and the compact
+//! format are the same.
 
 use super::*;
 use dpma_ast::json::{
@@ -46,17 +46,17 @@ fn user_entry(reg: &Registry, p: &Phone) -> (Vec<u8>, Vec<u8>, &'static str) {
 ///
 /// Every value goes through jansson, which refuses text that is not valid
 /// UTF-8: a phone with such an extension or name makes the whole list
-/// fail (Err), as in the original.
+/// fail (Err), as in the official DPMA.
 ///
 /// `handle_request_userlist` passes `filter_group_pin` when
 /// `userlist_auth=globalpin` is in force and the supplied configuration
 /// password is not the global pin.  Returns the number of users listed;
-/// the caller treats zero as an authentication failure.  (The original's
-/// fourth parameter selects a variant keyed on a phone field that nothing
-/// sets; its only caller passes 0, so that variant is not ported.)
+/// the caller treats zero as an authentication failure.  (The official
+/// DPMA's fourth parameter selects a variant keyed on a phone field that
+/// nothing sets; its only caller passes 0, so that variant is not ported.)
 pub fn build_userlist_json(out: &mut Vec<u8>, filter_group_pin: bool, config_password: &[u8]) -> Result<usize, ()> {
     let entries: Vec<(Vec<u8>, Vec<u8>, &'static str)> = {
-        // The original locks each primary line while it reads it.
+        // The official DPMA locks each primary line while it reads it.
         let _lines = crate::users::objects::lock_all_lines();
         let g = read();
         let Some(reg) = g.as_ref() else { return Err(()) };

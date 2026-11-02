@@ -1,9 +1,9 @@
 //! Phones, lines, and the other objects configured in res_digium_phone.conf
-//! (the original module's phone_users.c).
+//! (the official DPMA's phone_users.c).
 //!
 //! All objects live in one `Registry` behind a global lock.  Objects refer
-//! to each other by name, exactly like the original, so a reload can replace
-//! any of them independently.
+//! to each other by name, exactly as in the official DPMA, so a reload can
+//! replace any of them independently.
 
 pub mod build_config;
 pub mod cli;
@@ -25,7 +25,7 @@ pub const REGISTRAR: &str = "DIGIUM_PHONE_USERS";
 pub const DB_FAMILY: &str = "DigiumPhoneUsers";
 /// Maximum number of lines on one phone.
 pub const MAX_LINES: usize = 12;
-/// Number of buckets in the original's top-level containers.
+/// Number of buckets in the official DPMA's top-level containers.
 const BUCKETS: u32 = 257;
 
 /// Line/network transport.  Index into the `TRANSPORT_*` tables.
@@ -117,7 +117,7 @@ pub enum ParkingTransfer {
     Blind = 2,
 }
 
-/// A `type=phone` section (the original's `phone_user`).
+/// A `type=phone` section (the official DPMA's `phone_user`).
 #[derive(Debug, Clone)]
 pub struct Phone {
     pub name: Vec<u8>,
@@ -221,7 +221,7 @@ pub struct Phone {
     pub show_call_parking: bool,
     pub parking_transfer_type: ParkingTransfer,
     pub allow_insecure_ssl: bool,
-    /// The original never resets this, and it starts out off.
+    /// The official DPMA never resets this, and it starts out off.
     pub enable_check_sync: bool,
     /// -1 when not configured.
     pub transport_tls_allowed: i32,
@@ -261,7 +261,7 @@ impl Phone {
     /// Reset everything that comes from configuration (`set_user_defaults`),
     /// including the presence options (back to the six defaults; the
     /// caller runs `presence::sync_applications` with the previous
-    /// application list, as the original does).
+    /// application list, as the official DPMA does).
     pub fn set_defaults(&mut self) {
         let fresh = Phone {
             name: std::mem::take(&mut self.name),
@@ -457,8 +457,8 @@ impl Line {
     }
 
     /// `set_line_defaults`: applied whenever a phone (re)claims the line.
-    /// The context is "default" (the original uses sip.conf's `[general]`
-    /// `context` when there is one; chan_sip is not supported).
+    /// The context is "default" (the official DPMA uses sip.conf's
+    /// `[general]` `context` when there is one; chan_sip is not supported).
     pub fn set_defaults(&mut self) {
         self.exten.clear();
         self.context = b"default".to_vec();

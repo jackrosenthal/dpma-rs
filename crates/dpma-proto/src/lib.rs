@@ -6,14 +6,14 @@
 //!
 //! Cryptography uses the RustCrypto crates, and certificates are decoded
 //! with `x509-cert` ([`cert`] documents what phone certificate
-//! verification checks).  Where the original's message encryption and
+//! verification checks).  Where the official DPMA's message encryption and
 //! common password depend on the behavior of the OpenSSL 1.1.1t it links
 //! statically (key checks, the error texts it logs), that behavior is
 //! reproduced here from 1.1.1t's source ([`crypto`], [`errstack`]).
 //!
-//! The original logs from inside several of the functions ported here
+//! The official DPMA logs from inside several of the functions ported here
 //! (phone_crypto.c, reqresp_parser.c, `session_verify_cert`).  Those
-//! messages are passed, with the original's file, line, and function
+//! messages are passed, with the official DPMA's file, line, and function
 //! names, to a hook that the module installs with [`set_log_hook`]; without
 //! a hook (for example, in unit tests) they are dropped.
 
@@ -38,7 +38,7 @@ use std::sync::RwLock;
 pub enum ProtoError {
     /// Invalid input (bad hex, bad base64, wrong length, ...).
     Invalid(String),
-    /// A cryptographic operation failed; the text is what the original
+    /// A cryptographic operation failed; the text is what the official DPMA
     /// logs (format string filled in, no trailing newline).
     Crypto(String),
 }
@@ -74,8 +74,8 @@ pub enum LogLevel {
     Debug(i32),
 }
 
-/// Receives log messages: level, the original's source file, line, and
-/// function, and the message exactly as the original formats it
+/// Receives log messages: level, the official DPMA's source file, line, and
+/// function, and the message exactly as the official DPMA formats it
 /// (including its trailing newline, or the lack of one; bytes, as the
 /// message carries text from phones as it came).
 pub type LogHook = fn(level: LogLevel, file: &str, line: u32, func: &str, msg: &[u8]);

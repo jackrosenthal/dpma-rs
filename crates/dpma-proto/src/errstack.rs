@@ -1,14 +1,15 @@
-//! The error codes and texts of OpenSSL 1.1.1t, which the original module
+//! The error codes and texts of OpenSSL 1.1.1t, which the official DPMA
 //! links statically.
 //!
-//! Where the original logs an OpenSSL error of its message encryption or
-//! its common password, it formats an error code from 1.1.1t's per-thread
-//! error queue: `ERR_error_string_n` or `ERR_print_errors` (`log_ssl`).  The functions
-//! ported here that can fail that way record the errors 1.1.1t would push,
-//! with its library, function, and reason codes and its source file and
-//! line, in an error list, and the callers format them the same way.
+//! Where the official DPMA logs an OpenSSL error of its message encryption
+//! or its common password, it formats an error code from 1.1.1t's
+//! per-thread error queue: `ERR_error_string_n` or `ERR_print_errors`
+//! (`log_ssl`).  The functions ported here that can fail that way record
+//! the errors 1.1.1t would push, with its library, function, and reason
+//! codes and its source file and line, in an error list, and the callers
+//! format them the same way.
 //!
-//! One difference: 1.1.1t's queue is per thread and the original never
+//! One difference: 1.1.1t's queue is per thread and the official DPMA never
 //! clears it, so its messages can name an error left over from an earlier
 //! operation on the same thread.  Here each operation starts with an empty
 //! list, so a message names the errors of the failure it reports.

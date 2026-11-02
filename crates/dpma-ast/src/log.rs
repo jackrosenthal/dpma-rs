@@ -1,6 +1,6 @@
 //! Logging helpers.
 //!
-//! The original module logs most of its activity to a custom logger level
+//! The official DPMA logs most of its activity to a custom logger level
 //! named "DPMA"; the same level is registered here so that existing
 //! logger.conf setups keep working.
 
@@ -39,7 +39,7 @@ pub fn custom_level() -> i32 {
     CUSTOM_LEVEL.load(Ordering::Relaxed)
 }
 
-/// Log `msg` (bytes, as the original's `%s` would print them).
+/// Log `msg` (bytes, as the official DPMA's `%s` would print them).
 pub fn log(level: i32, file: &str, line: u32, func: &str, msg: &[u8]) {
     let file = cstr(file.rsplit('/').next().unwrap_or(file));
     let func = cstr(func);
@@ -128,7 +128,7 @@ macro_rules! ast_debug {
     };
 }
 
-/// Debug log routed to the custom DPMA level (the original module does this).
+/// Debug log routed to the custom DPMA level (the official DPMA does this).
 #[macro_export]
 macro_rules! dpma_debug {
     ($level:expr, $($arg:tt)*) => {

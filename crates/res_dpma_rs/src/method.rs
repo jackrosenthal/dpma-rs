@@ -9,12 +9,12 @@
 //!   `DPMAMessage` events.
 //!
 //! Registering a name replaces an earlier registration of the same name
-//! in the same registry only.  (The original's `__phone_method_unregister`
-//! also unlinks the found object from the other containers, but that
-//! object only ever lives in its own container, so those unlinks never
-//! remove anything.)  An XML or JSON method therefore does not remove an
-//! AMI registration of the same name; it shadows it, because
-//! `handle_request_xml` / `handle_request_json` look in their own
+//! in the same registry only.  (The official DPMA's
+//! `__phone_method_unregister` also unlinks the found object from the other
+//! containers, but that object only ever lives in its own container, so
+//! those unlinks never remove anything.)  An XML or JSON method therefore
+//! does not remove an AMI registration of the same name; it shadows it,
+//! because `handle_request_xml` / `handle_request_json` look in their own
 //! registry before the AMI one.
 
 use crate::session::Transaction;
@@ -41,7 +41,7 @@ pub type XmlMethod = fn(call: &MethodCall, params: &[u8], out: &mut Vec<u8>) -> 
 /// A JSON method: `params` is the request's `"parameters"` value.
 pub type JsonMethod = fn(call: &MethodCall, params: &serde_json::Value, out: &mut Vec<u8>) -> i32;
 
-/// Which registry (the original's `phone_method_find` kind argument).
+/// Which registry (the official DPMA's `phone_method_find` kind argument).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Xml = 0,
@@ -69,7 +69,7 @@ fn key(name: &[u8]) -> Vec<u8> {
 pub fn load() -> Result<(), ()> {
     let mut g = REGISTRIES.write().unwrap();
     if g.is_some() {
-        // The original's message has no trailing newline.
+        // The official DPMA's message has no trailing newline.
         dpma_ast::log::log(
             dpma_ast::log::custom_level(),
             file!(),

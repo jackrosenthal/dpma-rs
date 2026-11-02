@@ -1,5 +1,5 @@
 //! A throwaway PKI for the verifier tests, made with x509-cert's
-//! certificate builder (nothing from the original binary).  Keys are
+//! certificate builder (nothing from the official DPMA's binary).  Keys are
 //! generated from fixed seeds and cached; certificates are made per test.
 //! Signatures are made with the `rsa` crate's PKCS#1 v1.5 signer.
 

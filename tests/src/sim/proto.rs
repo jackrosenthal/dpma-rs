@@ -66,7 +66,7 @@ pub fn response_for(request_type: &str) -> Option<&'static str> {
 pub const COMMAND_PREFIX: &[u8] = b"Command: ";
 
 /// The texts of the server's `<error msg=... />` bodies for message error
-/// codes (`X-Digium-AppServer-Error-ID`; the original's table at
+/// codes (`X-Digium-AppServer-Error-ID`; the official DPMA's table at
 /// 0x5bcce8).  Other codes print "Unknown error".
 pub fn msg_error_text(code: i32) -> &'static str {
     match code {

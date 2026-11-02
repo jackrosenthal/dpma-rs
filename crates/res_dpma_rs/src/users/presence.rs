@@ -2,7 +2,7 @@
 //! `phone_presence_*` 0x160740..0x1610e0, `phone_pres_destroy_cb`
 //! 0x151fb0, `phone_presence_user_application_sync` 0x1648d0).
 //!
-//! Every phone has a list of presence options (the original's ao2 hash
+//! Every phone has a list of presence options (the official DPMA's ao2 hash
 //! container at +0x8e8, 57 buckets keyed by the option id): the states a
 //! user can pick on the phone, each with an optional sub-state.
 //! `set_user_defaults` installs the six standard states; the first
@@ -16,7 +16,7 @@ use super::*;
 use dpma_ast::bformat;
 use dpma_ast::presence as ast_presence;
 
-/// Buckets of the original's option container; iteration follows them.
+/// Buckets of the official DPMA's option container; iteration follows them.
 const BUCKETS: u32 = 57;
 
 /// `owner` of an option added by a user (never used in 3.6.13).
@@ -106,7 +106,7 @@ pub fn default_options() -> Vec<PresenceOption> {
 ///
 /// `set_user_defaults` runs this with the phone's previous application
 /// list while every application is marked for deletion, so then it only
-/// logs the missing ones (the original's behavior, kept).
+/// logs the missing ones (the official DPMA's behavior, kept).
 pub fn sync_applications(apps: &NamedMap<Application>, phone: &mut Phone, list: &[Vec<u8>]) {
     if phone.send486_custom {
         return;
@@ -151,7 +151,7 @@ pub fn user_application_sync(phone: &[u8]) {
 }
 
 /// The presence provider of a phone: `CustomPresence:<first line slot>`
-/// (empty when the phone has no lines, as in the original).
+/// (empty when the phone has no lines, as in the official DPMA).
 fn provider(p: &Phone) -> Vec<u8> {
     bformat!("CustomPresence:{}", p.lines.first().map_or(&b""[..], |l| l.name.as_slice()))
 }
@@ -203,7 +203,7 @@ pub fn update(phone: &[u8], id: i32, message: Option<&[u8]>) -> Result<(), ()> {
         );
         (var, crate::util::truncate(&value, 0x200))
     };
-    // The original sets it while holding the phone's lock; the setter
+    // The official DPMA sets it while holding the phone's lock; the setter
     // raises a presence change, so it is done without the registry lock.
     dpma_ast::pbx::set_global(&var, &value);
     Ok(())

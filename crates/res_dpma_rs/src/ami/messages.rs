@@ -15,10 +15,10 @@
 //! Each queued request also gets an expiry entry 300 s out in the AMI
 //! scheduler context, which runs on its own thread: a request nobody
 //! answers is dropped after 300 s (logged "No response to request (...),
-//! expired.").  Deviation (plan section 8, item 13): the original creates
-//! the context but never starts its thread (`ast_sched_start_thread`) or
-//! runs it (`ast_sched_runq`), so its requests never expire and stay
-//! queued until unload.
+//! expired.").  Deviation (plan section 8, item 13): the official DPMA
+//! creates the context but never starts its thread
+//! (`ast_sched_start_thread`) or runs it (`ast_sched_runq`), so its
+//! requests never expire and stay queued until unload.
 
 use super::AmiAction;
 use crate::session::{self, Outgoing, Transaction};
@@ -74,8 +74,8 @@ pub struct QueuedMsg {
     pub outgoing: Option<Outgoing>,
     /// The expiry's scheduler entry, or -1 (+0x20).
     pub sched_id: i32,
-    /// Identifies this entry to the expiry callback (the original passes
-    /// the object itself as the callback data).
+    /// Identifies this entry to the expiry callback (the official DPMA
+    /// passes the object itself as the callback data).
     token: usize,
 }
 
@@ -95,7 +95,7 @@ impl QueuedMsg {
 
 /// The queued message container (0x5f4e50): None while not initialized.
 /// Kept in insertion order, so a lookup finds the oldest of several
-/// entries with the same key, as the original's hash container does.
+/// entries with the same key, as the official DPMA's hash container does.
 static QUEUE: Mutex<Option<Vec<QueuedMsg>>> = Mutex::new(None);
 
 /// The AMI scheduler context (0x5eef30).
@@ -111,7 +111,7 @@ fn queue() -> MutexGuard<'static, Option<Vec<QueuedMsg>>> {
 
 /// FUN_00175880: create the scheduler context ("Failed to create ami
 /// schedule context" on error, logged by the caller) and start its thread
-/// (the original starts none; plan section 8, item 13).
+/// (the official DPMA starts none; plan section 8, item 13).
 pub fn sched_create() -> Result<(), ()> {
     let ctx = Context::create().ok_or(())?;
     if !ctx.start_thread() {
@@ -236,7 +236,7 @@ pub fn raise_event(request_id: &[u8], method: &[u8], format: &str, params: &[u8]
 /// the transaction key, schedule its expiry, and link it.  The handler
 /// must not send the reply when this succeeds; on Err the reply is left in
 /// the transaction for the handler to send (`send_and_destroy`), as the
-/// original does when the expiry cannot be scheduled.
+/// official DPMA does when the expiry cannot be scheduled.
 pub fn queue_request(tx: &Arc<Transaction>, method: &[u8]) -> Result<(), ()> {
     let session_id = tx.session.as_ref().map(|s| s.id.clone()).unwrap_or_default();
     let outgoing = tx.outgoing.lock().unwrap_or_else(|e| e.into_inner()).take();
@@ -253,7 +253,7 @@ pub fn queue_request(tx: &Arc<Transaction>, method: &[u8]) -> Result<(), ()> {
         // No container (unloading): undo the expiry.
         cancel_expiry(sched_id);
     }
-    // The original drops the queued message when the expiry cannot be
+    // The official DPMA drops the queued message when the expiry cannot be
     // scheduled, freeing the reply it shares with the transaction, and
     // then sends the transaction; here the reply is put back so that the
     // caller sends it intact.
@@ -334,8 +334,8 @@ fn response_document(method: &[u8], format: &[u8], response: &[u8], num: &[u8], 
             serde_json::json!({"response": {"method": method, "result": result}})
         } else if has_error {
             let message = std::str::from_utf8(msg).map_err(|_| ())?;
-            // The original packs the ErrorNum string's address with "i"
-            // (low 32 bits of a pointer); its value is used instead.
+            // The official DPMA packs the ErrorNum string's address with
+            // "i" (low 32 bits of a pointer); its value is used instead.
             let code = dpma_proto::framing::parse_sequence(num);
             serde_json::json!({"response": {"method": method, "errors": {"error": {"code": code, "message": message}}}})
         } else {

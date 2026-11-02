@@ -178,9 +178,9 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], value:
 /// `line=` / `external_line=` on a phone.
 fn add_line(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], external: bool) {
     let (line, _) = ctx.lines.get_or_insert_with(name, || Line::new(name, external));
-    // The original leaves the delete mark alone here, so a line that only a
-    // phone refers to (no [line] section or pjsip endpoint) survives the
-    // first load but disappears on every other reload.  Keep it
+    // The official DPMA leaves the delete mark alone here, so a line that
+    // only a phone refers to (no [line] section or pjsip endpoint) survives
+    // the first load but disappears on every other reload.  Keep it
     // consistently instead.
     line.set_defaults();
     line.delme = false;

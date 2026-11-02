@@ -1,10 +1,10 @@
 //! XML documents through libxml2, the library behind Asterisk's `ast_xml_*`
 //! API.
 //!
-//! The original module calls libxml2 directly (it does not link libxml2
+//! The official DPMA calls libxml2 directly (it does not link libxml2
 //! itself; the symbols resolve against the copy Asterisk loads), so this
 //! wrapper does the same: Asterisk's `ast_xml_open` adds XInclude and XSLT
-//! processing and parser options the original never used, which would
+//! processing and parser options the official DPMA never used, which would
 //! change the documents sent to phones.
 //!
 //! libxml2 is not one of the libraries `dpma-sys` binds (its headers are

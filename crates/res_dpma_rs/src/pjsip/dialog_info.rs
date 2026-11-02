@@ -1,4 +1,4 @@
-//! The dialog-info supplement: what the original distribution ships as
+//! The dialog-info supplement: what the official DPMA ships as
 //! res_pjsip_dialog_info_digium_body_supplement.so, "PJSIP Dialog-Info
 //! Digium supplement" (decompile:
 //! `dev/analysis/decomp/helpers/res_pjsip_dialog_info_digium_body_supplement.c`).
@@ -10,10 +10,10 @@
 //! `<target uri=...>` and `<identity display=...>` from the channel's
 //! caller and connected line, so the phone can show who is calling.
 //!
-//! The original refuses to load unless res_digium_phone reports a valid
-//! license (`get_license_status`); this rewrite has no license handling
-//! (port plan, section 8, item 1).  Log messages carry the original's
-//! file and function names.
+//! The official DPMA refuses to load unless res_digium_phone reports a
+//! valid license (`get_license_status`); this rewrite has no license
+//! handling (port plan, section 8, item 1).  Log messages carry the
+//! official DPMA's file and function names.
 
 use dpma_ast::channel::{self, Party};
 use dpma_ast::log::{debug_atleast, LOG_DEBUG, LOG_WARNING};
@@ -25,13 +25,14 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr::null_mut;
 
-/// The original's source file name, used in log messages.
+/// The official DPMA's source file name, used in log messages.
 const FILE: &str = "res_pjsip_dialog_info_digium_body_supplement.c";
 
-/// `PJSIP_MAX_URL_SIZE`: the size of the original's buffers.
+/// `PJSIP_MAX_URL_SIZE`: the size of the official DPMA's buffers.
 const MAX_URL_SIZE: usize = sys::PJSIP_MAX_URL_SIZE as usize;
 
-/// `ast_log` under the original's file name and the given function name.
+/// `ast_log` under the official DPMA's file name and the given function
+/// name.
 macro_rules! log {
     ($level:expr, $func:expr, $($arg:tt)*) => {
         dpma_ast::log::log($level, FILE, line!(), $func, &dpma_ast::bformat!($($arg)*))
@@ -207,9 +208,9 @@ unsafe fn supplement(body: *mut sys::pj_xml_node, st: &sys::ast_sip_exten_state_
         return 0;
     }
 
-    // Deviation: the original iterates the device state container without
-    // checking it, which fails when there is none; that is "no channel"
-    // here.
+    // Deviation: the official DPMA iterates the device state container
+    // without checking it, which fails when there is none; that is "no
+    // channel" here.
     let callee = if st.device_state_info.is_null() { null_mut() } else { find_ringing_channel(st.device_state_info) };
     if callee.is_null() {
         debug!(2, FUNC, "Exten: {} Local: {}  Remote: {} Bail.  No Channel\n", exten, local, remote);
@@ -305,7 +306,7 @@ unsafe extern "C" fn supplement_body(body: *mut c_void, data: *mut c_void) -> c_
     })
 }
 
-/// `load_module` (without the original's license check):
+/// `load_module` (without the official DPMA's license check):
 /// AST_MODULE_LOAD_DECLINE when the supplement cannot be registered.
 pub(super) fn load() -> sys::ast_module_load_result {
     // SAFETY: a static supplement, unregistered by `unload`.

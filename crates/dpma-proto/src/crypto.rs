@@ -15,7 +15,7 @@
 //! fresh CBC stream from the same key and IV; a message body is one stream
 //! across all of its chunks (see `framing`).
 //!
-//! The functions log what the original logs (through the crate's log
+//! The functions log what the official DPMA logs (through the crate's log
 //! hook) and return the same text in [`ProtoError::Crypto`].
 
 use crate::cbuf::c_bytes;
@@ -35,7 +35,7 @@ pub const COMMON_PASSWORD_LEN: usize = 40;
 pub const SALT_LEN: usize = 8;
 /// AES block size.
 pub const BLOCK_LEN: usize = 16;
-/// Size of the buffers the original base64 encodes ciphertext into
+/// Size of the buffers the official DPMA base64 encodes ciphertext into
 /// (`send_encrypt_hdr_helper` and the body chunks): at most 0x514
 /// characters are produced.
 pub const CIPHERTEXT_B64_BUF: usize = 0x515;
@@ -104,7 +104,7 @@ pub fn salt_to_hex(salt: &[u8; SALT_LEN]) -> String {
 /// digits (either case).  `out` is zeroed first and filled from the left,
 /// a nibble per digit, so short (and odd-length) strings leave the rest
 /// zero: "A" gives `A0 00 ...`.  On an invalid digit `out` keeps what was
-/// filled so far, as in the original.
+/// filled so far, as in the official DPMA.
 pub fn set_hex(hex: impl AsRef<[u8]>, out: &mut [u8]) -> Result<()> {
     let digits = c_bytes(hex.as_ref());
     if digits.len() > out.len() * 2 {
@@ -168,7 +168,7 @@ pub struct Encryptor {
 
 impl Encryptor {
     /// Start a stream with `password` and `salt` (`init_encryption`,
-    /// FUN_001515c0).  Fails without a password, as the original does.
+    /// FUN_001515c0).  Fails without a password, as the official DPMA does.
     pub fn new(password: &[u8], salt: &[u8; SALT_LEN]) -> Result<Encryptor> {
         if password.is_empty() {
             return Err(fail(0x98, "init_encryption", "Unable to initialize encryption without common pass"));
@@ -242,7 +242,7 @@ pub fn decrypt(password: &[u8], salt: &[u8; SALT_LEN], cipher: &[u8]) -> Result<
 /// `decrypt_msg_field` (FUN_00151870) with an output buffer of `buf_len`
 /// bytes: base64 decode at most `buf_len - 1` bytes of `field_b64` (as
 /// `ast_base64decode` does), then decrypt with `password` and the hex
-/// `salt`.  Returns the plaintext bytes; the original uses them as a C
+/// `salt`.  Returns the plaintext bytes; the official DPMA uses them as a C
 /// string (see [`c_str`]).
 pub fn decrypt_field_limited(
     password: &[u8],
@@ -296,7 +296,7 @@ pub fn encrypt_field(password: &[u8], salt: &[u8; SALT_LEN], plain: &[u8]) -> Re
     Ok(base64_encode_max(&cipher, CIPHERTEXT_B64_BUF))
 }
 
-/// The part of `bytes` before the first NUL, which is all the original
+/// The part of `bytes` before the first NUL, which is all the official DPMA
 /// sees of a decrypted C string.
 pub fn c_str(bytes: &[u8]) -> &[u8] {
     c_bytes(bytes)
@@ -304,10 +304,10 @@ pub fn c_str(bytes: &[u8]) -> &[u8] {
 
 /// RSA (PKCS#1 v1.5) encrypt the common password with the phone's public
 /// key and base64 encode it (`phone_msg_set_common_password`,
-/// FUN_0014bb00).  Keys that are not RSA fail with the original's text;
-/// keys 1.1.1t's `RSA_public_encrypt` refuses (too small for the password,
-/// an exponent not below the modulus, an even modulus) fail with its
-/// error text.
+/// FUN_0014bb00).  Keys that are not RSA fail with the official DPMA's
+/// text; keys 1.1.1t's `RSA_public_encrypt` refuses (too small for the
+/// password, an exponent not below the modulus, an even modulus) fail with
+/// its error text.
 pub fn encrypt_common_password(phone_key: &PublicKey, password: &[u8]) -> Result<String> {
     let rsa = phone_key.rsa().ok_or_else(|| {
         let msg = "failed to get rsa during common password generation";
@@ -509,7 +509,8 @@ mod tests {
             assert_eq!(decrypt_header_field(PASS40, hexsalt.to_lowercase(), &b64).unwrap(), v.as_bytes());
         }
         // 112 bytes of plaintext need 128 bytes of ciphertext, more than
-        // the 0x80-byte buffer's 127 decoded bytes: the original fails.
+        // the 0x80-byte buffer's 127 decoded bytes: the official DPMA
+        // fails.
         let b64 = encrypt_field(PASS40, &salt, "x".repeat(112).as_bytes()).unwrap();
         assert!(decrypt_header_field(PASS40, &hexsalt, &b64).is_err());
         assert_eq!(decrypt_field(PASS40, &hexsalt, &b64).unwrap(), "x".repeat(112).as_bytes());

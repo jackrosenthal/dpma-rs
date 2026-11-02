@@ -34,7 +34,7 @@
 //! | `applications` | Both applications are registered |
 //! | `controlplayback` | Local channels into extensions that run DigiumControlPlayback and Asterisk's ControlPlayback with the same arguments and DTMF (sent from the other half): the result variables (`CPLAYBACKSTATUS`, `CPLAYBACKSTOPKEY`, `CPLAYBACKOFFSET`, read back from AstDB) agree, have the expected values, and the log has the usage and invalid-key messages and the debug lines of the keys |
 //! | `vm-playback` | A message left in 1001@default, then DigiumVoicemailPlayback with good and bad arguments and DTMF: `VOICEMAIL_PLAYBACKSTATUS` and the usage message |
-//! | `show-settings` | `digium_phones show settings` for several `[general]` configurations, compared with the original's format strings, and `digium_phones show version` |
+//! | `show-settings` | `digium_phones show settings` for several `[general]` configurations, compared with the official DPMA's format strings, and `digium_phones show version` |
 //! | `mdns` | The service, port, TXT records, and address for several configurations (legacy unicast queries through [`dpma_tests::mdns`]); announcements and goodbyes at reload, disable, unload, load, Asterisk shutdown, and startup (this restarts Asterisk); names Avahi refuses; the responder socket |
 //!
 //! The parts that change `[general]` of `res_digium_phone.conf` put the

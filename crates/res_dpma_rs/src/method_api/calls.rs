@@ -2,14 +2,14 @@
 //! the echo test method, plus the AMI hook helper (`amihook_action`) and
 //! the parked-call Stasis router (phone_method_internal_api.c).
 //!
-//! The methods talk to Asterisk the way the original does: through
+//! The methods talk to Asterisk the way the official DPMA does: through
 //! in-process manager actions (`ast_hook_send_action`), whose response
 //! text is split into blocks at every "\r\n\r\n" and searched for
 //! headers with `strcasestr` (so "Name:" also matches "CallerIDName:",
-//! for example).  Those helpers reproduce the original's parsing exactly,
-//! including its quirks:
+//! for example).  Those helpers reproduce the official DPMA's parsing
+//! exactly, including its quirks:
 //!
-//! * Deviation: the original's recording start methods read the
+//! * Deviation: the official DPMA's recording start methods read the
 //!   MixMonitor response into an 8-byte buffer (`sizeof` of a pointer),
 //!   which cannot hold "Success", so they report error 27168 even though
 //!   MixMonitor was started, and never send the
@@ -21,7 +21,7 @@
 //! * `getList` reports `total_members` as a number with the `overview`
 //!   permission and as strings with `details`.
 //!
-//! Deviation (plan section 8, item 6): no chan_sip.  The original also
+//! Deviation (plan section 8, item 6): no chan_sip.  The official DPMA also
 //! looks for recording channels named "SIP/<account>" and handles parker
 //! dial strings "SIP/<peer>" (reading `SIPPEER(<peer>,useragent)`); both
 //! only ever matched chan_sip channels and are left out.
@@ -37,8 +37,8 @@ use dpma_proto::errors::request as rq;
 use dpma_proto::json::{dump, utf8};
 use serde_json::{json, Map, Value};
 
-/// The `ast_str` buffers the original fills from manager responses (and
-/// most of its header value buffers) hold 0x400 bytes.
+/// The `ast_str` buffers the official DPMA fills from manager responses
+/// (and most of its header value buffers) hold 0x400 bytes.
 const BUF: usize = 0x400;
 
 // ---------------------------------------------------------------------
@@ -67,12 +67,12 @@ fn strtol(s: &[u8]) -> i64 {
 }
 
 /// `amihook_action` (FUN_0017adc0): run `action` through the manager hook
-/// and split the response at each "\r\n\r\n".  The original counts the
+/// and split the response at each "\r\n\r\n".  The official DPMA counts the
 /// separators first (searching again from one byte after each match) and
 /// keeps one block per separator: the text before it, starting one byte
 /// after the previous separator (so later blocks begin with "\n\r\n").
 /// Text after the last separator is dropped.  An empty response, or one
-/// without a separator, gives no blocks (the original's failure).
+/// without a separator, gives no blocks (the official DPMA's failure).
 fn amihook_action(action: &[u8]) -> Vec<Vec<u8>> {
     const SEP: &[u8] = b"\r\n\r\n";
     let Some(text) = dpma_ast::manager::hook_action(action) else {
@@ -108,8 +108,8 @@ fn amihook_action(action: &[u8]) -> Vec<Vec<u8>> {
     blocks
 }
 
-/// Where a header's value starts and how long the original thinks it is:
-/// after `key` (found with `strcasestr`), blanks (bytes 1..=0x20) are
+/// Where a header's value starts and how long the official DPMA thinks it
+/// is: after `key` (found with `strcasestr`), blanks (bytes 1..=0x20) are
 /// skipped; the length runs to the first "\r\n" after the key (searched
 /// before skipping, so it is negative when the value is empty) or to the
 /// end of the block.
@@ -158,7 +158,7 @@ fn header_value(block: &[u8], key: &str, size: usize) -> Vec<u8> {
 
 /// `amihook_append_header_value` (FUN_0017bb30): set `obj[name]` to the
 /// value of header `key` (`ast_strndup(value, len + 1)`, trimmed).  A
-/// negative length makes the original copy the rest of the block.  Err
+/// negative length makes the official DPMA copy the rest of the block.  Err
 /// when the header is missing, or when the value is not UTF-8 (jansson's
 /// `ast_json_string_create` refuses it).
 fn append_header_value(obj: &mut Map<String, Value>, name: &str, block: &[u8], key: &str) -> Result<(), ()> {
@@ -214,8 +214,8 @@ struct QueueStatus {
 }
 
 /// `queues_get_status`: every queue with its members and callers, from
-/// the QueueStatus action.  (The original only fails when out of memory;
-/// a failed action gives an empty list.)
+/// the QueueStatus action.  (The official DPMA only fails when out of
+/// memory; a failed action gives an empty list.)
 fn queues_get_status() -> Vec<QueueStatus> {
     let mut queues: Vec<QueueStatus> = Vec::new();
     for b in amihook_action(b"Action: QueueStatus\n") {
@@ -330,7 +330,7 @@ fn param_str<'a>(params: &'a Value, key: &str) -> Option<&'a str> {
 }
 
 /// `{"response": {"method": M, "result": R}}`, appended to `out`.  (A
-/// method that is not UTF-8 makes the original's `ast_json_pack` fail;
+/// method that is not UTF-8 makes the official DPMA's `ast_json_pack` fail;
 /// then nothing is written.)
 fn append_result(out: &mut Vec<u8>, method: &[u8], result: Value) {
     if let Some(method) = utf8(method) {
@@ -492,7 +492,7 @@ fn find_call_channel(account: &[u8], call_id: &[u8]) -> Option<Channel> {
     Channel::find_by_callid(&truncate(bformat!("PJSIP/{}", account), 0x80), call_id)
 }
 
-/// The MixMonitor action of the recording start methods.  The original
+/// The MixMonitor action of the recording start methods.  The official DPMA
 /// reads the response into an 8-byte buffer (`sizeof` of its action
 /// pointer), so "Success" never fits and starting a recording always
 /// fails; dpma-rs uses the 0x80-byte buffer of the stop action instead.
@@ -965,8 +965,8 @@ fn handle_request_json_queue_login(c: &MethodCall, p: &Value, out: &mut Vec<u8>)
 /// queue application matching `call_queue_account_id` ("all" for every
 /// one) whose location is a dynamic member of the queue, QueueRemove (or
 /// dial the logout extension).  Static members stay.  Failures are only
-/// logged.  (The original crashes on an application that does not exist;
-/// here it is skipped.)
+/// logged.  (The official DPMA crashes on an application that does not
+/// exist; here it is skipped.)
 fn handle_request_json_queue_logout(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
     if param_str(p, "account_id").is_none() {
         error_response_json(out, &c.method, rq::PARAMS_NOT_FOUND, "account_id");

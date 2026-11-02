@@ -1,4 +1,4 @@
-//! SIP URI and header parsing: the original's copy of chan_sip's
+//! SIP URI and header parsing: the official DPMA's copy of chan_sip's
 //! reqresp_parser.c (`parse_uri_full`, `parse_uri`, `get_calleridname`,
 //! `get_in_brackets_full`, `get_in_brackets`, `parse_name_andor_addr`,
 //! `sip_uri_cmp` with its parameter, header, and domain helpers), the
@@ -10,7 +10,7 @@
 //! The C functions cut their input apart in place (writing NULs, and
 //! putting `=` and `;` back for parameters they do not know) and return
 //! pointers into it; they are ported on a byte buffer so that every result is exactly
-//! the C string the original's pointer would show.  Unlike chan_sip's
+//! the C string the official DPMA's pointer would show.  Unlike chan_sip's
 //! versions, this copy logs its warnings at the `DPMA` level.
 
 use crate::cbuf::{c_bytes, contains_ignore_case, eq_ignore_case, CBuf, EMPTY};
@@ -24,7 +24,7 @@ fn log(line: u32, func: &str, msg: &[u8]) {
 }
 
 /// `sip_reqresp_parser_init` (FUN_00187f10): nothing to do; kept so the
-/// load order matches the original.
+/// load order matches the official DPMA's.
 pub fn parser_init() -> crate::Result<()> {
     Ok(())
 }
@@ -900,8 +900,8 @@ fn split_headers<'a>(host: &'a [u8], params: Option<&'a [u8]>) -> (&'a [u8], Opt
 }
 
 /// `phone_utils_parse_uri` (0x1737f0) on a NUL-terminated buffer, in
-/// place, as the original's C function works: returns the offsets of the
-/// address and (when `want_transport`) of the transport value; `None`
+/// place, as the official DPMA's C function works: returns the offsets of
+/// the address and (when `want_transport`) of the transport value; `None`
 /// stands for a pointer to a static `""`.
 ///
 /// The address is what follows the first `:` and, if present, the first

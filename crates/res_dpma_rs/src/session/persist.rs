@@ -15,15 +15,15 @@
 //! certificate PEM the phone sent in its handshake.  Inactive sessions are
 //! not saved.
 //!
-//! The storage passphrase is the one embedded in the original, so sessions
-//! saved by the original module restore here.
+//! The storage passphrase is the one embedded in the official DPMA, so
+//! sessions saved by the official DPMA restore here.
 //!
 //! Restoring verifies the stored certificate again exactly as a handshake
-//! does (both of the original's callers of `phone_msg_session_alloc` pass
-//! 0 for its "load an RSA public key instead" argument), links the session
-//! as authenticated but inactive (so it is pruned after 59 idle seconds
-//! unless a phone user's `last_session_id` re-activates it), and deletes
-//! its AstDB entry until the session is saved again.
+//! does (both of the official DPMA's callers of `phone_msg_session_alloc`
+//! pass 0 for its "load an RSA public key instead" argument), links the
+//! session as authenticated but inactive (so it is pruned after 59 idle
+//! seconds unless a phone user's `last_session_id` re-activates it), and
+//! deletes its AstDB entry until the session is saved again.
 
 use super::store::{alloc, NewSession};
 use super::{Session, DB_FAMILY};
@@ -32,15 +32,15 @@ use dpma_ast::{bformat, db, dpma_log};
 use dpma_proto::crypto;
 use std::sync::{Arc, Mutex};
 
-/// The original's storage passphrase for the common passwords in AstDB,
-/// embedded in its binary.
+/// The official DPMA's storage passphrase for the common passwords in
+/// AstDB, embedded in its binary.
 const DB_PASSPHRASE: &[u8] = b"1sInnalILansfPOEIdi)0-294923kjashdkjwe][";
 
 /// `db_crypto_mutex`: serializes saving and restoring.
 static DB_CRYPTO: Mutex<()> = Mutex::new(());
 
 /// `send_encrypt_hdr_helper` into a buffer of `size` bytes, with the
-/// original's messages; "" on failure.
+/// official DPMA's messages; "" on failure.
 pub(crate) fn encrypt_helper(plain: &[u8], password: &[u8], salt: &[u8; crypto::SALT_LEN], size: usize) -> Vec<u8> {
     let fail = |msg: &str| {
         dpma_log!("{}", msg);
@@ -89,7 +89,7 @@ pub fn update_db_info(s: &Arc<Session>) {
 }
 
 /// The value after `name=` (first occurrence anywhere in the entry, as the
-/// original's `strstr` finds it), up to the next `;`.
+/// official DPMA's `strstr` finds it), up to the next `;`.
 fn field<'a>(value: &'a [u8], name: &str) -> Option<&'a [u8]> {
     let start = value.find(name)? + name.len();
     let rest = &value[start..];
@@ -141,8 +141,8 @@ fn restore_entry(key: &[u8], value: &[u8]) {
         Ok(p) if usize::try_from(data_len).is_ok_and(|n| n == p.len()) => p,
         _ => {
             dpma_log!("Call to decrypt_msg_field failed");
-            // Deviation: the original keeps the entry (and fails on it at
-            // every load); it is dropped here so the phone simply
+            // Deviation: the official DPMA keeps the entry (and fails on it
+            // at every load); it is dropped here so the phone simply
             // handshakes again.
             db::del(DB_FAMILY, id);
             return;

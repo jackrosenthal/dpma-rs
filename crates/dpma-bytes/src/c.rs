@@ -1,4 +1,4 @@
-//! The C library's string functions, as the original module gets them in
+//! The C library's string functions, as the official DPMA gets them in
 //! the C locale: a string ends at its first NUL, and only the ASCII
 //! letters have a case (`tolower` and `toupper` leave every other byte,
 //! 0x80 and up included, alone).

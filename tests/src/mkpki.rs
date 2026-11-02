@@ -1,7 +1,7 @@
 //! The test PKI for the phone simulator (the Rust form of the former
 //! `tests/sim/mkpki.py`).
 //!
-//! Everything is generated locally; nothing comes from the original
+//! Everything is generated locally; nothing comes from the official DPMA's
 //! binary.  The PKI has two independent halves, the phone side (the CAs
 //! and phone certificates) and the AppServer side:
 //!
@@ -28,7 +28,7 @@
 //! |---|---|---|
 //! | `legacy` | legacy | HandshakeResponse |
 //! | `chain` | legacy, intermediate-ca, phone | HandshakeResponse with `Handshake-Version: 1` |
-//! | `chain-expired`, `legacy-expired` | as above, expired | Accepted (the original ignores the verification errors "certificate is not yet valid" and "certificate has expired") |
+//! | `chain-expired`, `legacy-expired` | as above, expired | Accepted (the official DPMA ignores the verification errors "certificate is not yet valid" and "certificate has expired") |
 //! | `weak` | weak | Accepted (512-bit keys and SHA-1 must work) |
 //! | `rogue` | rogue | No reply; an auth incident |
 //! | `two`, `four` | 2 or 4 certificates | No reply ("Expected two certificates in the chain, found 1" or "3") |

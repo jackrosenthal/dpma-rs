@@ -9,13 +9,13 @@ use dpma_ast::xml::{self, Doc, Node};
 /// `phone_utils_xml_escape(in, buf, size)`: escape `&`, `<`, `>`, `"`,
 /// and `'` into a buffer of `size` bytes.
 ///
-/// The original fills the buffer byte by byte: an entity is written only
-/// when it is shorter than the space left (not counting the terminating
-/// NUL); otherwise the character itself is copied, and copying stops when
-/// the buffer is full.  So at most `size - 1` bytes come out, and a value
-/// near the limit can end with a raw special character or half of a
-/// multi-byte character.  (The configuration document always uses a 256
-/// byte buffer.)
+/// The official DPMA fills the buffer byte by byte: an entity is written
+/// only when it is shorter than the space left (not counting the
+/// terminating NUL); otherwise the character itself is copied, and copying
+/// stops when the buffer is full.  So at most `size - 1` bytes come out,
+/// and a value near the limit can end with a raw special character or half
+/// of a multi-byte character.  (The configuration document always uses a
+/// 256 byte buffer.)
 pub fn escape(input: &[u8], size: usize) -> Vec<u8> {
     dpma_proto::xml::escape_bounded(input, size)
 }

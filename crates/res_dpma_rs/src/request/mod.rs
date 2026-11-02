@@ -14,10 +14,10 @@ use std::sync::{Arc, RwLock};
 /// `DPMA_request` pool.  The transaction's `outgoing` is allocated (and
 /// its response type, URI, full contact, and id filled in) before the
 /// handler runs when the registration has a response type.  The return
-/// value is ignored (as the taskprocessor ignores it in the original).
+/// value is ignored (as the taskprocessor ignores it in the official DPMA).
 pub type Handler = fn(tx: Arc<Transaction>) -> i32;
 
-/// One entry of the handler table (32 bytes in the original).
+/// One entry of the handler table (32 bytes in the official DPMA).
 #[derive(Clone, Copy)]
 struct Registration {
     request_type: &'static str,
@@ -199,7 +199,7 @@ fn method_or_na(method: &[u8]) -> &[u8] {
 /// <response method="M">\r\n<errors>\r\n<error code="C" message="T" />\r\n</errors>\r\n</response>\r\n
 /// ```
 ///
-/// The original starts with `ast_str_set`, so anything already in the
+/// The official DPMA starts with `ast_str_set`, so anything already in the
 /// buffer is discarded.  Neither the method nor the text is XML-escaped.
 pub fn error_response_xml(out: &mut Vec<u8>, method: impl AsRef<[u8]>, code: i32) {
     out.clear();
@@ -219,14 +219,14 @@ pub fn error_response_xml(out: &mut Vec<u8>, method: impl AsRef<[u8]>, code: i32
 /// {"response":{"method":"M","errors":{"error":{"code":C,"message":"T: D "}}}}
 /// ```
 ///
-/// where T is the code's text and D is `detail` (the original's printf
-/// format and arguments, already formatted here).  The original appends
-/// a single space after the detail, so the message ends with one.  The
-/// method is "NA" when empty.
+/// where T is the code's text and D is `detail` (the official DPMA's printf
+/// format and arguments, already formatted here).  The official DPMA
+/// appends a single space after the detail, so the message ends with one.
+/// The method is "NA" when empty.
 ///
-/// As with the original's `ast_json_pack`, a method or detail that is not
-/// valid UTF-8 fails: the original then logs "Unable to generate JSON for
-/// error response" and leaves `out` as it was.
+/// As with the official DPMA's `ast_json_pack`, a method or detail that is
+/// not valid UTF-8 fails: the official DPMA then logs "Unable to generate
+/// JSON for error response" and leaves `out` as it was.
 pub fn error_response_json(out: &mut Vec<u8>, method: impl AsRef<[u8]>, code: i32, detail: impl AsRef<[u8]>) {
     let message = bformat!("{}: {} ", dpma_proto::errors::request_error_text(code), detail.as_ref());
     let (Some(method), Some(message)) =
@@ -375,8 +375,9 @@ mod devtest {
         };
         a.out(bformat!("{} bytes: {:?}\n", out.len(), out));
         if json {
-            // Build the same document the original way (ast_json_pack and
-            // ast_json_dump_string, i.e., jansson) and compare.
+            // Build the same document the official DPMA's way
+            // (ast_json_pack and ast_json_dump_string, i.e., jansson) and
+            // compare.
             let reference = jansson_error_doc(
                 method_or_na(method),
                 code,
