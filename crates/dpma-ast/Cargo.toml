@@ -3,7 +3,6 @@ name = "dpma-ast"
 description = "Safe wrappers over the Asterisk C API for the dpma-rs module"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 
 [dependencies]
 dpma-bytes.workspace = true

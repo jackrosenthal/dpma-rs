@@ -3,7 +3,6 @@ name = "res_dpma_rs"
 description = "Open source, drop-in replacement for the Digium Phone Module for Asterisk (DPMA)"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 
 [lib]
 name = "res_dpma_rs"
