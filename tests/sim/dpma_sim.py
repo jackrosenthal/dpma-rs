@@ -31,6 +31,7 @@ import base64
 import binascii
 import ctypes
 import ctypes.util
+import datetime
 import hashlib
 import json
 import os
@@ -763,10 +764,21 @@ class Pki:
             return False, "%s is not signed by the test AppServer CA (%s)" % (
                 subject, str(e) or type(e).__name__)
         now = time.time()
-        if not (cert.not_valid_before_utc.timestamp() <= now
-                <= cert.not_valid_after_utc.timestamp()):
+        if not (_utc_timestamp(cert, "not_valid_before") <= now
+                <= _utc_timestamp(cert, "not_valid_after")):
             return False, "%s is outside its validity period" % subject
         return True, subject
+
+
+def _utc_timestamp(cert, name):
+    """The certificate's validity bound `name` as a POSIX timestamp.
+    cryptography 42 added the time-zone aware not_valid_*_utc; older
+    versions (Ubuntu 24.04 has 41) only have the naive not_valid_*, in
+    UTC."""
+    t = getattr(cert, name + "_utc", None)
+    if t is None:
+        t = getattr(cert, name).replace(tzinfo=datetime.timezone.utc)
+    return t.timestamp()
 
 
 # --------------------------------------------------------------------------
