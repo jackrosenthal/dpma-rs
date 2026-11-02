@@ -560,7 +560,7 @@ fn chain_verifies(
 
 /// Checks the PKI: every certificate verifies, or does not, as the
 /// module's rules expect (expiry ignored, 512-bit keys and SHA-1
-/// accepted), by the simulator's own X.509 code ([`chain_verifies`]:
+/// accepted), by the simulator's own X.509 code (`chain_verifies`:
 /// issuer names, signatures, CA flags, and validity periods).  Prints one
 /// line per case and returns the number of unexpected outcomes.
 pub fn check(dir: &Path) -> Result<usize> {
