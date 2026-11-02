@@ -5,10 +5,7 @@
 #
 #   cargo xtask ci --asterisk <major>
 #
-# A pushed tag vX.Y.Z (the workspace version) also publishes the GitHub
-# Release of that tag, with the six modules, SHA256SUMS, and LICENSE
-# (the GPL's text accompanies the binaries), once every test job has
-# passed.
+# A pushed tag vX.Y.Z also publishes a GitHub Release.
 name: CI
 
 on:
