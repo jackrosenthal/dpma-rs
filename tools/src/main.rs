@@ -1,16 +1,17 @@
 //! `cargo xtask`: the development tasks of dpma-rs (see `tests/README.md`).
 //!
 //! ```text
-//! cargo xtask test [--asterisk VERSION] [SUITE... | all]
-//! cargo xtask ci [--asterisk VERSION]
+//! cargo xtask test [--asterisk VERSION] [--original DIR] [-j N] [SUITE... | all]
+//! cargo xtask ci [--asterisk VERSION] [-j N]
 //! cargo xtask headers [--asterisk VERSION]
 //! cargo xtask majors
 //! ```
 //!
 //! A VERSION is a major version (`22`) or a release (`22.11.0`) pinned in
 //! `tools/asterisk-versions`; the default is the newest.  `test` and `ci`
-//! run in a fresh container of the release's test image
-//! ([`container`]), where `cargo xtask inside` (hidden) does their work.
+//! run in fresh containers of the release's test image ([`container`]):
+//! one builds, then every suite runs in one of its own ([`suites`]).
+//! `cargo xtask inside` (hidden) does the work inside.
 
 // The doc comments below are the command-line help (clap), not rustdoc.
 #![allow(rustdoc::invalid_html_tags)]
@@ -39,8 +40,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Run test suites in a fresh container of a pinned release's test
-    /// image (built first if needed).
+    /// Run test suites, each in a fresh container of a pinned release's
+    /// test image (built first if needed), several at a time.
     ///
     /// Suites (default: all of these, in this order): session config-xml
     /// users-runtime methods-vm methods-vm-phone methods-calls
@@ -57,13 +58,17 @@ enum Cmd {
         asterisk: Option<String>,
         /// The directory of the original binaries (res_digium_phone.so
         /// and its two PJSIP helpers 24.0_3.6.13), for parity: mounted
-        /// read-only into the container.
+        /// read-only into the containers.
         #[arg(long, value_name = "DIR")]
         original: Option<PathBuf>,
+        /// Suites that run at the same time, each in its own container
+        /// (default: the number of CPUs).
+        #[arg(short, long, value_name = "N")]
+        jobs: Option<usize>,
         /// Suites to run, or "all".
         suites: Vec<String>,
     },
-    /// The CI job: in a container of the release's test image, build,
+    /// The CI job: in containers of the release's test image, build,
     /// lint, and test dpma-rs, run every suite, and build, check, and
     /// smoke-test the module for publishing
     /// (target/container/<release>/res_dpma_rs-asterisk<major>-<arch>.so).
@@ -72,6 +77,10 @@ enum Cmd {
         /// (default: the newest).
         #[arg(long, value_name = "VERSION")]
         asterisk: Option<String>,
+        /// Suites that run at the same time, each in its own container
+        /// (default: the number of CPUs).
+        #[arg(short, long, value_name = "N")]
+        jobs: Option<usize>,
     },
     /// Copy the configured Asterisk headers out of a release's test image
     /// (built first if needed) and print their directory, for
@@ -95,10 +104,18 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum InsideJob {
-    /// Run these suites.
-    Test { suites: Vec<String> },
-    /// The CI job for this release.
-    Ci { release: String },
+    /// Build the devtest module and these suites' test binaries.
+    Build { suites: Vec<String> },
+    /// CI: build, lint, and test dpma-rs.
+    Check { release: String },
+    /// CI: build, check, and smoke-test the module for publishing.
+    Publish { release: String },
+}
+
+/// The number of suites that run at the same time: `jobs`, else the
+/// number of CPUs.
+fn jobs(jobs: Option<usize>) -> usize {
+    jobs.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, usize::from))
 }
 
 /// The repository.
@@ -127,7 +144,12 @@ pub fn run(cmd: &mut Command) -> Result<()> {
     Ok(())
 }
 
-fn test(asterisk: Option<String>, original: Option<PathBuf>, names: Vec<String>) -> Result<u8> {
+fn test(
+    asterisk: Option<String>,
+    original: Option<PathBuf>,
+    jobs: usize,
+    names: Vec<String>,
+) -> Result<u8> {
     let suites = suites::selection(&names);
     if let Some(s) = suites.iter().find(|s| suites::target(s).is_none()) {
         println!("unknown suite {s}");
@@ -144,9 +166,8 @@ fn test(asterisk: Option<String>, original: Option<PathBuf>, names: Vec<String>)
         );
     }
     let pin = pins::pin(asterisk.as_deref())?;
-    let mut args = vec!["test".to_string()];
-    args.extend(suites);
-    let code = container::run_inside(&pin, &args, original.as_deref())?;
+    let run = container::Run::new(&pin, original.as_deref())?;
+    let code = suites::run_suites(&run, &container::out_dir(&pin), &suites, jobs)?;
     println!(
         "Asterisk {}; logs in {}",
         pin.version,
@@ -160,11 +181,11 @@ fn run_cli(cli: Cli) -> Result<u8> {
         Cmd::Test {
             asterisk,
             original,
+            jobs: j,
             suites,
-        } => return test(asterisk, original, suites),
-        Cmd::Ci { asterisk } => {
-            let pin = pins::pin(asterisk.as_deref())?;
-            return container::run_inside(&pin, &["ci".into(), pin.version.clone()], None);
+        } => return test(asterisk, original, jobs(j), suites),
+        Cmd::Ci { asterisk, jobs: j } => {
+            return ci::ci(&pins::pin(asterisk.as_deref())?, jobs(j));
         }
         Cmd::Headers { asterisk } => {
             let dir = container::headers(&pins::pin(asterisk.as_deref())?)?;
@@ -176,8 +197,9 @@ fn run_cli(cli: Cli) -> Result<u8> {
         }
         Cmd::Inside { job } => {
             return match job {
-                InsideJob::Test { suites } => suites::run_suites(&suites),
-                InsideJob::Ci { release } => ci::job(&release),
+                InsideJob::Build { suites } => suites::build(&suites),
+                InsideJob::Check { release } => ci::check(&release),
+                InsideJob::Publish { release } => ci::publish(&release),
             }
         }
     }

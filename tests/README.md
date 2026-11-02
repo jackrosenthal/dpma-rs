@@ -24,8 +24,8 @@ image.
 
 | Command | What it does, and why it exists |
 |---|---|
-| `cargo xtask test [--asterisk VERSION] [--original DIR] [SUITE...\|all]` | Runs suites in a fresh container of the release's test image (below; built first if the engine does not have it).  This is how the suites run: they need the container's Asterisk. |
-| `cargo xtask ci [--asterisk VERSION]` | The CI job of `.github/workflows/ci.yml`, in a fresh container of the release's image: `cargo build`, both clippy runs (`--all-targets`, and `-p res_dpma_rs --features devtest`) with warnings as errors, `cargo test --workspace --exclude res_dpma_rs`, every suite (`all`), and the module for publishing (below).  It exists so that CI is one command that also runs locally. |
+| `cargo xtask test [--asterisk VERSION] [--original DIR] [-j N] [SUITE...\|all]` | Runs suites, each in a fresh container of the release's test image (below; built first if the engine does not have it), several at a time.  This is how the suites run: they need the container's Asterisk. |
+| `cargo xtask ci [--asterisk VERSION] [-j N]` | The CI job of `.github/workflows/ci.yml`, in fresh containers of the release's image: `cargo build`, both clippy runs (`--all-targets`, and `-p res_dpma_rs --features devtest`) with warnings as errors, `cargo test --workspace --exclude res_dpma_rs`, every suite (`all`), and the module for publishing (below).  It exists so that CI is one command that also runs locally. |
 | `cargo xtask headers [--asterisk VERSION]` | Copies the configured Asterisk headers out of the release's image into `target/container/<release>/asterisk-headers` (once per image) and prints that directory.  It exists because `cargo build` on the host needs headers for bindgen (`ASTERISK_SOURCE_DIR`), and these match the images exactly. |
 | `cargo xtask majors` | Prints the pinned major versions as a JSON array.  It exists for the CI matrix. |
 
@@ -34,6 +34,7 @@ The options:
 | Option | Why it exists |
 |---|---|
 | `--asterisk VERSION` | Selects the release: a major version (`22`) or a release (`22.11.0`) pinned in `tools/asterisk-versions`; the default is the newest.  Each release has its own image. |
+| `-j N`, `--jobs N` | How many suites run at the same time, each in its own container (default: the number of CPUs).  It exists to limit the CPU, memory, and disk that parallel containers take (with podman's `vfs` storage, every container is a full copy of the image). |
 | `--original DIR` (`test`) | The original binaries (`res_digium_phone.so` and its two PJSIP helpers, 24.0_3.6.13), which `parity` compares with and which are not distributed with dpma-rs.  `DIR` is mounted read-only into the container. |
 | `SUITE...` or `all` (`test`) | The suites to run (below); without any, the default suites. |
 
@@ -83,8 +84,8 @@ engine has.  The first build takes a few minutes (most of it Asterisk's
 
 ## The test container
 
-`test` and `ci` start a fresh container of the image and remove it
-afterwards:
+`test` and `ci` start fresh containers of the image and remove each one
+when it is done:
 
 - **Network:** `--network none`, a network namespace of its own whose
   only interface is `lo`.  The tests and Asterisk run in it together, so
@@ -111,11 +112,17 @@ afterwards:
 - **SELinux:** `--security-opt label=disable`, so that the container can
   use the mounts without relabeling them.
 
-Inside, `cargo xtask inside test` builds the devtest module (`cargo
-build -p res_dpma_rs --features devtest`) and the suites' test binaries
-with `ASTERISK_SOURCE_DIR` set to the image's headers, then runs the
-suites one after another (each suite's preparation installs the module
-into the container's Asterisk).
+A run has two steps.  First one container (`cargo xtask inside build`)
+builds the devtest module (`cargo build -p res_dpma_rs --features
+devtest`) and the suites' test binaries (`cargo test --no-run`) with
+`ASTERISK_SOURCE_DIR` set to the image's headers, makes the test PKI,
+and lists the binaries in `target/container/<release>/test-binaries`.
+Then every suite runs in a fresh container of its own, with its own
+Asterisk and network namespace, up to `-j` at a time, the longest
+suites first: its prebuilt binary runs directly (in `tests/`, as Cargo
+runs it), not through Cargo, so that the suites do not wait on the
+target directory's lock.  Each suite's preparation installs the module
+into its container's Asterisk.
 
 ## Asterisk versions
 
@@ -185,10 +192,11 @@ setup and the debug build, and starts Asterisk.
 
 `cargo xtask test` runs the suites in the order of the table (without a
 suite name: all of them up to `raw-bytes`; `all` adds `ami-expiry`;
-`parity` only when named), each as `cargo test -p dpma-tests --test
-<target> -- --ignored [OPTIONS]`.  It prints one line per suite (`ok` or
-`FAIL`, with its time in seconds; a suite whose test target does not
-exist fails without running) and keeps each suite's output in
+`parity` only when named), each as `<test binary of the target>
+--ignored [OPTIONS]`, several at a time.  It reports in that order, one
+line per suite (`ok` or `FAIL`, with its time in seconds; a suite whose
+test target does not exist fails without running), and keeps each
+suite's output in
 `target/container/<release>/logs/<suite>.log`, which each run replaces.
 The exit status is 0 when every suite passed (2 for an unknown suite
 name).  Each suite's rustdoc (at the top of its
@@ -270,7 +278,7 @@ A pushed tag `vX.Y.Z` runs the same matrix and then, only when every
 job passed, a release job (the only one with `contents: write`): it
 fails unless the tag names the workspace version (`version` in
 `Cargo.toml`), and otherwise creates the GitHub Release of the tag with
-the `gh` CLI, with the six modules and their `SHA256SUMS` attached.
+the `gh` CLI, with the six modules, their `SHA256SUMS`, and `LICENSE` attached.
 Pushes and pull requests without a tag publish nothing.
 
 The job runs the same way locally: `cargo xtask ci --asterisk

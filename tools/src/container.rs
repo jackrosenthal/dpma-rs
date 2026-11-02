@@ -52,7 +52,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
@@ -85,6 +85,7 @@ pub fn out_dir(pin: &Pin) -> PathBuf {
 }
 
 /// The container engine.
+#[derive(Clone)]
 pub struct Engine(OsString);
 
 /// Whether `name` is an executable file in a `PATH` directory.
@@ -196,11 +197,12 @@ fn mapped_owner(stat: &str) -> Option<&str> {
     (id(u) && id(g)).then_some(owner)
 }
 
-/// A running test container (see the module documentation), removed when
-/// dropped.
+/// A running test container (see the module documentation), stopped and
+/// removed when dropped.
 pub struct Container {
     engine: Engine,
     name: String,
+    user: String,
     main: Child,
     stdin: Option<ChildStdin>,
 }
@@ -208,15 +210,24 @@ pub struct Container {
 /// A bind mount: host path, container path, read-only.
 pub type Mount = (PathBuf, &'static str, bool);
 
+/// An exit status as the xtask's (1 for a signal).
+pub fn exit_code(status: ExitStatus) -> u8 {
+    match status.code() {
+        Some(0) => 0,
+        Some(n) => u8::try_from(n).unwrap_or(1),
+        None => 1,
+    }
+}
+
 impl Container {
-    /// Starts a container of `image` with `mounts` and `env`, and waits
-    /// until it runs.
-    pub fn start(
+    /// Starts a container of `image` with `mounts` and `env`, waits until
+    /// it runs, prepares `lo` for multicast, and finds the host user.
+    fn start(
         engine: Engine,
         image: &str,
         name: &str,
         mounts: &[Mount],
-        env: &[(&str, &str)],
+        env: &[(&str, String)],
     ) -> Result<Container> {
         let mut c = engine.cmd();
         c.args(["run", "--rm", "-i", "--name", name])
@@ -246,10 +257,14 @@ impl Container {
         let mut container = Container {
             engine,
             name: name.to_string(),
+            user: String::new(),
             main,
             stdin,
         };
         container.wait_running()?;
+        container.root(&["ip", "link", "set", "lo", "multicast", "on"])?;
+        container.root(&["ip", "route", "add", "224.0.0.0/4", "dev", "lo"])?;
+        container.user = container.host_user()?;
         Ok(container)
     }
 
@@ -257,7 +272,7 @@ impl Container {
     fn wait_running(&mut self) -> Result<()> {
         loop {
             let ok = self
-                .exec(None, &["true"])
+                .exec(None, None, &["true"])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
@@ -272,26 +287,37 @@ impl Container {
         }
     }
 
-    /// `<engine> exec [-u USER] <container> ARGS...`.
-    pub fn exec(&self, user: Option<&str>, args: &[&str]) -> Command {
+    /// `<engine> exec [-u USER] [-w DIR] <container> ARGS...`.
+    fn exec(&self, user: Option<&str>, dir: Option<&str>, args: &[&str]) -> Command {
         let mut c = self.engine.cmd();
         c.arg("exec");
         if let Some(u) = user {
             c.args(["-u", u]);
+        }
+        if let Some(d) = dir {
+            c.args(["-w", d]);
         }
         c.arg(&self.name).args(args);
         c
     }
 
     /// Runs `args` as root in the container.
-    pub fn root(&self, args: &[&str]) -> Result<()> {
-        run(&mut self.exec(Some("0"), args))
+    fn root(&self, args: &[&str]) -> Result<()> {
+        run(&mut self.exec(Some("0"), None, args))
+    }
+
+    /// `args` as the host user in the container (see [`Container::host_user`]),
+    /// in `dir` (default: the repository).
+    pub fn work(&self, dir: Option<&str>, args: &[&str]) -> Command {
+        self.exec(Some(&self.user), dir, args)
     }
 
     /// The `UID:GID` of the container user that is the host user: the
     /// owner of [`OUT`] (which the xtask made) as the container sees it.
-    pub fn host_user(&self) -> Result<String> {
-        let out = self.exec(None, &["stat", "-c", "%u:%g", OUT]).output()?;
+    fn host_user(&self) -> Result<String> {
+        let out = self
+            .exec(None, None, &["stat", "-c", "%u:%g", OUT])
+            .output()?;
         if !out.status.success() {
             bail!("stat {OUT} in the container failed ({})", out.status);
         }
@@ -317,59 +343,87 @@ impl Drop for Container {
     }
 }
 
-/// Runs `cargo xtask inside ARGS...` in a fresh container of `pin`'s image
-/// (built if needed), as the host user, with `original` (the original
-/// binaries) mounted at [`ORIGINAL`]; its exit status.
-pub fn run_inside(pin: &Pin, args: &[String], original: Option<&Path>) -> Result<u8> {
-    let engine = Engine::detect()?;
-    let image = engine.image(pin)?;
-    let root = repo_root();
-    let out = out_dir(pin);
-    let cargo_home = container_dir().join("cargo");
-    for d in [&out, &cargo_home] {
-        fs::create_dir_all(d).with_context(|| d.display().to_string())?;
+/// What the containers of a run of one release share: the engine, the
+/// image, the mounts, and the environment.
+pub struct Run {
+    engine: Engine,
+    image: String,
+    release: String,
+    mounts: Vec<Mount>,
+    env: Vec<(&'static str, String)>,
+}
+
+impl Run {
+    /// A run of `pin`'s image (built if needed), with `original` (the
+    /// original binaries) mounted at [`ORIGINAL`]; makes the run's
+    /// directories and fetches the crates.
+    pub fn new(pin: &Pin, original: Option<&Path>) -> Result<Run> {
+        let engine = Engine::detect()?;
+        let image = engine.image(pin)?;
+        let out = out_dir(pin);
+        let cargo_home = container_dir().join("cargo");
+        for d in [&out, &cargo_home] {
+            fs::create_dir_all(d).with_context(|| d.display().to_string())?;
+        }
+        // The containers have no network: the crates come from the cache.
+        eprintln!("fetching the crates into {}", cargo_home.display());
+        run(crate::cargo()
+            .args(["fetch", "--locked"])
+            .env("CARGO_HOME", &cargo_home))?;
+        let mut mounts: Vec<Mount> = vec![
+            (repo_root(), SRC, false),
+            (out, OUT, false),
+            (cargo_home, CARGO_HOME, false),
+        ];
+        if let Some(dir) = original {
+            mounts.push((dir.to_path_buf(), ORIGINAL, true));
+        }
+        let env = vec![
+            ("CARGO_HOME", CARGO_HOME.to_string()),
+            ("CARGO_TARGET_DIR", format!("{OUT}/target")),
+            ("CARGO_NET_OFFLINE", "true".to_string()),
+            ("DPMA_PKI", format!("{OUT}/pki")),
+        ];
+        Ok(Run {
+            engine,
+            image,
+            release: pin.version.clone(),
+            mounts,
+            env,
+        })
     }
 
-    // The container has no network: the crates come from the cache.
-    eprintln!("fetching the crates into {}", cargo_home.display());
-    run(crate::cargo()
-        .args(["fetch", "--locked"])
-        .env("CARGO_HOME", &cargo_home))?;
-
-    let mut mounts: Vec<Mount> = vec![
-        (root.clone(), SRC, false),
-        (out, OUT, false),
-        (cargo_home, CARGO_HOME, false),
-    ];
-    if let Some(dir) = original {
-        mounts.push((dir.to_path_buf(), ORIGINAL, true));
+    /// Sets an environment variable in the run's containers.
+    pub fn with_env(mut self, name: &'static str, value: &str) -> Run {
+        self.env.push((name, value.to_string()));
+        self
     }
-    let target = format!("{OUT}/target");
-    let pki = format!("{OUT}/pki");
-    let env = [
-        ("CARGO_HOME", CARGO_HOME),
-        ("CARGO_TARGET_DIR", target.as_str()),
-        ("CARGO_NET_OFFLINE", "true"),
-        ("DPMA_PKI", pki.as_str()),
-    ];
-    let name = format!("dpma-rs-{}-{}", pin.version, std::process::id());
-    let c = Container::start(engine, &image, &name, &mounts, &env)?;
-    c.root(&["ip", "link", "set", "lo", "multicast", "on"])?;
-    c.root(&["ip", "route", "add", "224.0.0.0/4", "dev", "lo"])?;
-    let user = c.host_user()?;
-    let mut inner = vec!["cargo", "xtask", "inside"];
-    inner.extend(args.iter().map(String::as_str));
-    let status = c
-        .exec(Some(&user), &inner)
-        .stdin(Stdio::null())
-        .status()
-        .context("running the xtask in the container")?;
-    drop(c);
-    Ok(match status.code() {
-        Some(0) => 0,
-        Some(n) => u8::try_from(n).unwrap_or(1),
-        None => 1,
-    })
+
+    /// A fresh container for `what` (unique within the run).
+    pub fn container(&self, what: &str) -> Result<Container> {
+        let name = format!("dpma-rs-{}-{}-{what}", self.release, std::process::id());
+        Container::start(
+            self.engine.clone(),
+            &self.image,
+            &name,
+            &self.mounts,
+            &self.env,
+        )
+    }
+
+    /// Runs `cargo xtask inside ARGS...` in a fresh container; its exit
+    /// status.
+    pub fn inside(&self, what: &str, args: &[&str]) -> Result<u8> {
+        let c = self.container(what)?;
+        let mut inner = vec!["cargo", "xtask", "inside"];
+        inner.extend(args);
+        let status = c
+            .work(None, &inner)
+            .stdin(Stdio::null())
+            .status()
+            .context("running the xtask in the container")?;
+        Ok(exit_code(status))
+    }
 }
 
 /// `cargo xtask headers`: copies the configured headers of `pin`'s image

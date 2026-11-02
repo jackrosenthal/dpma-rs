@@ -1,18 +1,22 @@
 //! `cargo xtask ci`: the CI job of `.github/workflows/ci.yml` for one
-//! pinned release, which runs the same way locally.  This is its part
-//! inside the test container (`cargo xtask inside ci <release>`):
+//! pinned release, which runs the same way locally ([`ci`]), each step in
+//! fresh containers of the release's test image:
 //!
 //! 1. `cargo build`, both clippy runs (`--all-targets`, and `-p
 //!    res_dpma_rs --features devtest`) with warnings as errors, and `cargo
-//!    test` for the crates whose tests run outside Asterisk;
-//! 2. every suite (`cargo xtask test all`);
-//! 3. when they pass, the module for publishing: `cargo build --release
-//!    -p res_dpma_rs` (without devtest); a check that it needs no newer
-//!    glibc than [`GLIBC_BASELINE`]; a smoke test (loaded into the
-//!    container's Asterisk: `module show like res_dpma_rs` lists it, and
+//!    test` for the crates whose tests run outside Asterisk ([`check`],
+//!    `cargo xtask inside check`);
+//! 2. every suite, as `cargo xtask test all` runs them;
+//! 3. when they pass, the module for publishing ([`publish`], `cargo
+//!    xtask inside publish`): `cargo build --release -p res_dpma_rs`
+//!    (without devtest); a check that it needs no newer glibc than
+//!    [`GLIBC_BASELINE`]; a smoke test (loaded into the container's
+//!    Asterisk: `module show like res_dpma_rs` lists it, and
 //!    `digium_phones show version` answers); and a copy as
 //!    `target/container/<release>/res_dpma_rs-asterisk<major>-<arch>.so`,
 //!    which the workflow uploads.
+//!
+//! Every build of the job is non-incremental (`CARGO_INCREMENTAL=0`).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -20,7 +24,8 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 use dpma_tests::harness::Instance;
 
-use crate::container::OUT;
+use crate::container::{out_dir, Run, OUT};
+use crate::pins::Pin;
 use crate::{pins, run, suites};
 
 /// The newest glibc symbol version that the module may need: the minimum
@@ -97,13 +102,10 @@ fn smoke_test() -> Result<()> {
     Ok(())
 }
 
-/// `cargo xtask inside ci <release>`; the exit status.
-pub fn job(release: &str) -> Result<u8> {
-    let pin = pins::pin(Some(release))?;
-    let v = pin.version.as_str();
-    // For every cargo run below (no other threads run yet).
-    std::env::set_var("CARGO_INCREMENTAL", "0");
-
+/// `cargo xtask inside check <release>`: the build, lint, and test
+/// steps.
+pub fn check(release: &str) -> Result<u8> {
+    let v = release;
     cargo_step("cargo build", v, &["build", "--locked"])?;
     cargo_step(
         "cargo clippy --all-targets",
@@ -145,13 +147,14 @@ pub fn job(release: &str) -> Result<u8> {
             "res_dpma_rs",
         ],
     )?;
+    Ok(0)
+}
 
-    step("test suites", v);
-    let code = suites::run_suites(&suites::selection(&["all".into()]))?;
-    if code != 0 {
-        return Ok(code);
-    }
-
+/// `cargo xtask inside publish <release>`: the module for publishing,
+/// checked and smoke-tested.
+pub fn publish(release: &str) -> Result<u8> {
+    let pin = pins::pin(Some(release))?;
+    let v = pin.version.as_str();
     cargo_step(
         "the module for publishing",
         v,
@@ -173,6 +176,24 @@ pub fn job(release: &str) -> Result<u8> {
         asset.file_name().unwrap_or_default().to_string_lossy()
     );
     Ok(0)
+}
+
+/// `cargo xtask ci`: [`check`], the suites (up to `jobs` at a time), and
+/// [`publish`]; the exit status.
+pub fn ci(pin: &Pin, jobs: usize) -> Result<u8> {
+    let run = Run::new(pin, None)?.with_env("CARGO_INCREMENTAL", "0");
+    let v = pin.version.as_str();
+    let code = run.inside("check", &["check", v])?;
+    if code != 0 {
+        return Ok(code);
+    }
+    step("test suites", v);
+    let all = suites::selection(&["all".into()]);
+    let code = suites::run_suites(&run, &out_dir(pin), &all, jobs)?;
+    if code != 0 {
+        return Ok(code);
+    }
+    run.inside("publish", &["publish", v])
 }
 
 #[cfg(test)]
