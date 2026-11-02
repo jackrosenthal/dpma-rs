@@ -19,6 +19,7 @@ md-5 = "0.10"
 rand = "0.8"
 regex = "1"
 rsa = { version = "0.9", features = ["sha1", "sha2", "pem"] }
+roxmltree = "0.21"
 serde_json.workspace = true
 sha1 = { version = "0.10", features = ["oid"] }
 sha2 = { version = "0.10", features = ["oid"] }
@@ -34,4 +35,19 @@ path = "src/lib.rs"
 [[test]]
 name = "session"
 path = "suites/session/main.rs"
+harness = false
+
+[[test]]
+name = "config-xml"
+path = "suites/config-xml/main.rs"
+harness = false
+
+[[test]]
+name = "users-runtime"
+path = "suites/users-runtime/main.rs"
+harness = false
+
+[[test]]
+name = "request-handlers"
+path = "suites/request-handlers/main.rs"
 harness = false

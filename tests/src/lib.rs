@@ -14,6 +14,7 @@
 //! | [`harness`] | Shared by the suites: the instance and its CLI (control socket), checks, the log, configuration editing, the suite runner, and fixtures. |
 //! | [`sip`] | SIP messages as bytes (parsing and encoding). |
 //! | [`util`] | JSON text as the test documents write it, waiting with timeouts. |
+//! | [`xml`] | XML well-formedness. |
 //!
 //! # Binaries
 //!
@@ -57,3 +58,4 @@ pub mod sim;
 pub mod sip;
 pub mod sipua;
 pub mod util;
+pub mod xml;

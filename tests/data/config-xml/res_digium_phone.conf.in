@@ -1,6 +1,8 @@
 ; P4 test configuration: exercises every phone, line, network,
 ; application, ringtone, alert, firmware, and multicast page option that
-; the configuration document uses.
+; the configuration document uses.  Installed as res_digium_phone.conf
+; (@SLOT@ is the instance directory) by
+; dpma_tests::harness::setup::config_xml.
 [general]
 globalpin=344486
 userlist_auth=globalpin

@@ -35,6 +35,7 @@ mod expect;
 pub mod fixtures;
 mod instance;
 mod log;
+pub mod setup;
 mod suite;
 
 pub use check::{contains_bytes, regex_capture, regex_search, Checker};
