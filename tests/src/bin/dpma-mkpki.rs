@@ -25,7 +25,7 @@ use dpma_tests::{mkpki, sim};
     about = "Generate the test PKI for the DPMA phone simulator."
 )]
 struct Args {
-    /// PKI directory (default: $DPMA_PKI, else dev/sim/pki).
+    /// PKI directory (default: $DPMA_PKI, else target/sim/pki).
     #[arg(long)]
     dir: Option<PathBuf>,
     /// Regenerate existing files.

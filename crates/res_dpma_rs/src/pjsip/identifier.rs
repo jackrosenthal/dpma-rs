@@ -1,6 +1,5 @@
 //! The endpoint identifier side: what the official DPMA ships as
-//! res_pjsip_endpoint_identifier_dpma.so, "DPMA PJSIP Support" (decompile:
-//! `dev/analysis/decomp/helpers/res_pjsip_endpoint_identifier_dpma.c`).
+//! res_pjsip_endpoint_identifier_dpma.so, "DPMA PJSIP Support".
 //!
 //! Lines and phones are reached through their objects (`users::objects`),
 //! as the official DPMA's helper reaches them through res_digium_phone's

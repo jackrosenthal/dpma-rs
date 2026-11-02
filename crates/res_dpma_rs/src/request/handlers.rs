@@ -202,8 +202,8 @@ const NULL_CONTACTS: &str = "<contacts group_name=\"null\" editable=\"0\" />\n";
 /// as it is.  A body without `file://` or a file that cannot be opened is
 /// answered with error -98 (File Not Found).
 ///
-/// Deviation (plan section 8, item 14): a name with a `..` component is
-/// answered with the same error as a missing file.  The official DPMA opens
+/// Deviation: a name with a `..` component is answered with the same
+/// error as a missing file.  The official DPMA opens
 /// `<file_directory>/<name>` whatever the name, so `..` reaches any file
 /// the Asterisk process can read.  Every other name is served as the
 /// official DPMA serves it: names in subdirectories, and absolute names,

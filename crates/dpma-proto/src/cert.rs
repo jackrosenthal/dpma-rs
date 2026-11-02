@@ -375,7 +375,7 @@ fn log(level: LogLevel, line: u32, msg: &[u8]) {
 }
 
 /// Restore the line breaks at PEM boundaries that a Handshake body lost
-/// on the way (deviation, port plan section 8, item 12).
+/// on the way (a deviation from the official DPMA).
 ///
 /// Asterisk 24's res_pjsip_messaging strips trailing CR and LF from every
 /// MESSAGE body, so when a phone's chunk ends right after a BEGIN or END

@@ -208,7 +208,7 @@ fn crypto_checks(c: &mut Checker) {
     let mut want_iv = d1[16..20].to_vec();
     want_iv.extend_from_slice(&d2[..12]);
     c.check(
-        "key/IV equal the plan's D1/D2 formula",
+        "key/IV equal the D1/D2 derivation",
         key[..] == d1[..16] && iv[..] == want_iv[..],
         "",
     );

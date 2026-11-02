@@ -1,7 +1,6 @@
 //! The dialog-info supplement: what the official DPMA ships as
 //! res_pjsip_dialog_info_digium_body_supplement.so, "PJSIP Dialog-Info
-//! Digium supplement" (decompile:
-//! `dev/analysis/decomp/helpers/res_pjsip_dialog_info_digium_body_supplement.c`).
+//! Digium supplement".
 //!
 //! A body supplement for `application/dialog-info+xml` NOTIFYs: when the
 //! subscriber is a Digium or Sangoma phone and a channel is ringing the
@@ -11,8 +10,8 @@
 //!
 //! The official DPMA refuses to load unless res_digium_phone reports a
 //! valid license (`get_license_status`); this rewrite has no license
-//! handling (port plan, section 8, item 1).  Log messages carry the
-//! official DPMA's file and function names.
+//! handling.  Log messages carry the official DPMA's file and function
+//! names.
 
 use dpma_ast::channel::{self, Party};
 use dpma_ast::log::{debug_atleast, LOG_DEBUG, LOG_WARNING};

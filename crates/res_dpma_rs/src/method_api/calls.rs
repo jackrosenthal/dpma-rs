@@ -12,17 +12,17 @@
 //!   which cannot hold "Success", so they report error 27168 even though
 //!   MixMonitor was started, and never send the
 //!   `digium.startRecording.success` INFO.  dpma-rs reads the whole
-//!   response, so starting a recording succeeds (port plan, section 8).
+//!   response, so starting a recording succeeds.
 //! * `getTodaysStatus` answers nothing at all (return 0, empty response)
 //!   when the phone has no application for the queue or Asterisk does
 //!   not know the queue.
 //! * `getList` reports `total_members` as a number with the `overview`
 //!   permission and as strings with `details`.
 //!
-//! Deviation (plan section 8, item 6): no chan_sip.  The official DPMA also
-//! looks for recording channels named "SIP/<account>" and handles parker
-//! dial strings "SIP/<peer>" (reading `SIPPEER(<peer>,useragent)`); both
-//! only ever matched chan_sip channels and are left out.
+//! Deviation: no chan_sip.  The official DPMA also looks for recording
+//! channels named "SIP/<account>" and handles parker dial strings
+//! "SIP/<peer>" (reading `SIPPEER(<peer>,useragent)`); both only ever
+//! matched chan_sip channels and are left out.
 
 use crate::method::MethodCall;
 use crate::request::{error_response_json, error_response_xml};

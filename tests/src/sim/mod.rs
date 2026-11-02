@@ -191,12 +191,12 @@ pub fn repo_root() -> PathBuf {
 }
 
 /// The default test PKI directory: `$DPMA_PKI` if set (the test container
-/// sets it to `target/container/<release>/pki`), else `dev/sim/pki` in the
-/// repository (generated, not committed).
+/// sets it to `target/container/<release>/pki`), else `target/sim/pki` in
+/// the repository (generated, not committed).
 pub fn default_pki_dir() -> PathBuf {
     match std::env::var_os("DPMA_PKI") {
         Some(p) => PathBuf::from(p),
-        None => repo_root().join("dev").join("sim").join("pki"),
+        None => repo_root().join("target").join("sim").join("pki"),
     }
 }
 

@@ -286,9 +286,9 @@ pub fn send_and_destroy(tx: &Arc<Transaction>) {
 /// failed validation, with "Session Timeout" (-398) in the response type
 /// of its request type.
 ///
-/// Deviation (port plan section 8, item 11): the reply goes over the
-/// transport of the request it answers, `;transport=<PJSIP_TRANSPORT>`
-/// appended to the Response-URI as for a transaction's replies.  The
+/// Deviation: the reply goes over the transport of the request it
+/// answers, `;transport=<PJSIP_TRANSPORT>` appended to the Response-URI
+/// as for a transaction's replies.  The
 /// official DPMA uses the raw Response-URI, so over TCP it answers over
 /// UDP.  The URI is not truncated (the official DPMA keeps it in a string
 /// field).
