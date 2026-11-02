@@ -172,7 +172,14 @@ impl Suite {
     /// Runs the suite as the `main` of a test target (see the module
     /// documentation).
     pub fn main(self) -> ExitCode {
-        let args = parse_args(std::env::args().skip(1));
+        self.main_with_args(std::env::args().skip(1))
+    }
+
+    /// [`Suite::main`] with the arguments given (without the program
+    /// name): for a suite that takes options of its own and passes the
+    /// rest on.
+    pub fn main_with_args(self, args: impl IntoIterator<Item = String>) -> ExitCode {
+        let args = parse_args(args);
         let selected: Vec<&(String, PartFn)> = self
             .parts
             .iter()

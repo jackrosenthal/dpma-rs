@@ -23,6 +23,7 @@ serde_json.workspace = true
 sha1 = { version = "0.10", features = ["oid"] }
 sha2 = { version = "0.10", features = ["oid"] }
 socket2 = { version = "0.5", features = ["all"] }
+ureq = { version = "3", default-features = false }
 x509-cert = { version = "0.2", features = ["builder", "hazmat", "pem"] }
 
 [lib]
@@ -34,4 +35,14 @@ path = "src/lib.rs"
 [[test]]
 name = "session"
 path = "suites/session/main.rs"
+harness = false
+
+[[test]]
+name = "pjsip-helpers"
+path = "suites/pjsip-helpers/main.rs"
+harness = false
+
+[[test]]
+name = "parity"
+path = "suites/parity/main.rs"
 harness = false

@@ -182,6 +182,21 @@ impl Instance {
         self.dir.join("var").join("spool").join("asterisk")
     }
 
+    /// The module directory: `astmoddir` of the instance's
+    /// `asterisk.conf` (default `<dir>/lib/asterisk/modules`).
+    pub fn modules_dir(&self) -> PathBuf {
+        let conf = std::fs::read(self.conf("asterisk.conf")).unwrap_or_default();
+        conf.split(|&b| b == b'\n')
+            .filter_map(|l| {
+                let l = String::from_utf8_lossy(l);
+                let (k, v) = l.split_once('=')?;
+                (k.trim() == "astmoddir").then(|| v.trim_start_matches('>').trim().to_string())
+            })
+            .find(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.dir.join("lib").join("asterisk").join("modules"))
+    }
+
     /// The instance's `messages.log`.
     pub fn log(&self) -> Log {
         Log::new(&self.messages_log)

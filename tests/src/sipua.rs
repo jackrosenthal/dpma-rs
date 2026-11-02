@@ -390,20 +390,37 @@ pub fn notify_line(m: &Message) -> String {
 }
 
 /// The transcript lines of `sipua.py` for a received INFO: `INFO
-/// received:`, its `X-`, `Content-Type`, and `Content-Length` headers,
-/// and the body.
+/// received:`, its `X-`, `Content-Type`, and `Content-Length` header
+/// lines exactly as they arrived (PJSIP pads `Content-Length`), and the
+/// body.  A message that was not parsed from bytes (no
+/// [`Message::raw`]) shows its parsed headers instead.
 pub fn info_lines(m: &Message) -> Vec<String> {
+    let wanted = |line: &str| {
+        let l = line.to_ascii_lowercase();
+        l.starts_with("x-") || l.starts_with("content-type") || l.starts_with("content-length")
+    };
     let mut out = vec!["INFO received:".to_string()];
-    for (k, v) in &m.headers {
-        let lk = k.to_ascii_lowercase();
-        if lk.starts_with("x-")
-            || lk.starts_with("content-type")
-            || lk.starts_with("content-length")
-        {
-            out.push(format!("  {k}: {}", v.to_str_lossy()));
+    let body = match m.raw.find(b"\r\n\r\n") {
+        Some(end) => {
+            let head = m.raw[..end].to_str_lossy();
+            out.extend(
+                head.split("\r\n")
+                    .skip(1)
+                    .filter(|l| wanted(l))
+                    .map(|l| format!("  {l}")),
+            );
+            m.raw[end + 4..].to_str_lossy().into_owned()
         }
-    }
-    out.push(format!("  body: {}", m.body.to_str_lossy()));
+        None => {
+            for (k, v) in &m.headers {
+                if wanted(k) {
+                    out.push(format!("  {k}: {}", v.to_str_lossy()));
+                }
+            }
+            m.body.to_str_lossy().into_owned()
+        }
+    };
+    out.push(format!("  body: {body}"));
     out
 }
 
