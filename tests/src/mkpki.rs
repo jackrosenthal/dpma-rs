@@ -1,27 +1,37 @@
-//! The test PKI for the phone simulator (the Rust form of
+//! The test PKI for the phone simulator (the Rust form of the former
 //! `tests/sim/mkpki.py`).
 //!
 //! Everything is generated locally; nothing comes from the original
-//! binary.  The PKI has two independent halves:
+//! binary.  The PKI has two independent halves, the phone side (the CAs
+//! and phone certificates) and the AppServer side:
 //!
-//! - Phone side: a test root CA (the module's `phone_ca_file`), an
-//!   intermediate CA signed by it (serial number 4097, which the module
-//!   logs as "Intermediate cert serial number"), a phone certificate
-//!   signed by the intermediate (chain form), and a legacy phone
-//!   certificate signed by the root (legacy form).  Negative variants:
-//!   expired certificates (valid 2001 to 2002), a certificate from an
-//!   untrusted ("rogue") CA, and a 512-bit legacy certificate with a SHA-1
-//!   signature.
-//! - AppServer side: a test AppServer CA and an AppServer certificate
-//!   signed by it (the module's `appserver_certificate`).  The simulator
-//!   checks the HandshakeResponse body against the AppServer CA.
+//! | Entity | Issuer | Notes |
+//! |---|---|---|
+//! | `root-ca` | itself | The module's `phone_ca_file`. |
+//! | `intermediate-ca` | root-ca | Serial number 4097 (logged by the module as "Intermediate cert serial number"). |
+//! | `phone` | intermediate-ca | Chain form phone certificate. |
+//! | `legacy` | root-ca | Legacy form phone certificate. |
+//! | `phone-expired`, `legacy-expired` | intermediate-ca, root-ca | Valid 2001 to 2002. |
+//! | `rogue-ca`, `rogue` | itself, rogue-ca | Not trusted by the module. |
+//! | `weak` | root-ca | 512-bit RSA key, SHA-1 signature. |
+//! | `appserver-ca`, `appserver` | itself, appserver-ca | The module's `appserver_certificate`; the simulator checks the HandshakeResponse body against `appserver-ca`. |
 //!
-//! Files (in the PKI directory): `<name>.key` (PKCS#1 PEM, mode 0600) and
-//! `<name>.pem` for every entity, and `bundles.json`, which lists the
-//! handshake bodies the simulator can send: the certificates in body
-//! order and the key that decrypts the common password.  The layout is
-//! the one `tests/sim/mkpki.py` writes, so the Python and Rust simulators
-//! can use each other's PKI.
+//! Files (in the PKI directory, by default `dev/sim/pki`, not committed):
+//! `<name>.key` (PKCS#1 PEM, mode 0600) and `<name>.pem` for every
+//! entity, and `bundles.json`, which lists the handshake bodies the
+//! simulator can send ([`BUNDLES`]): the certificates in body order and
+//! the key that decrypts the common password.  The server encrypts the
+//! common password to the key of the last certificate of the body.
+//! Existing files are kept unless [`Generator::force`] is set.
+//!
+//! | Bundle | Body | The module's answer |
+//! |---|---|---|
+//! | `legacy` | legacy | HandshakeResponse |
+//! | `chain` | legacy, intermediate-ca, phone | HandshakeResponse with `Handshake-Version: 1` |
+//! | `chain-expired`, `legacy-expired` | as above, expired | Accepted (OpenSSL errors 9 and 10 are ignored) |
+//! | `weak` | weak | Accepted (512-bit keys and SHA-1 must work) |
+//! | `rogue` | rogue | No reply; an auth incident |
+//! | `two`, `four` | 2 or 4 certificates | No reply ("Expected two certificates in the chain, found 1" or "3") |
 //!
 //! [`install`] copies `root-ca.pem` to
 //! `<etc>/dpma/phone_ca.pem` and `appserver.pem` to

@@ -24,9 +24,9 @@
 //! ```
 //!
 //! Instance management (start, stop, install, resetting the
-//! configuration) goes through the instance manager script and only
-//! through [`AstTool`]; the CLI goes through the control socket
-//! ([`Cli`]).
+//! configuration) goes through the instance manager,
+//! [`crate::asterisk::Slot`], which [`Instance`] and [`AstTool`] wrap;
+//! the CLI goes through the control socket ([`Cli`]).
 
 mod check;
 mod cli;
@@ -35,6 +35,7 @@ mod expect;
 pub mod fixtures;
 mod instance;
 mod log;
+pub mod setup;
 mod suite;
 
 pub use check::{contains_bytes, regex_capture, regex_search, Checker};
@@ -43,4 +44,4 @@ pub use conf::{ConfBackup, ConfFile};
 pub use expect::{AmiCheck, ExchangeCheck};
 pub use instance::{AstTool, Instance};
 pub use log::{Log, LogMark};
-pub use suite::{Ctx, Suite};
+pub use suite::{option_value, Ctx, Suite};

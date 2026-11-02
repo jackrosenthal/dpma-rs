@@ -6,6 +6,15 @@
 //! dpma-ami [options] --listen SECONDS
 //! ```
 //!
+//! For example:
+//!
+//! ```text
+//! DPMA_SLOT=5 dpma-ami DPMAShowPhones
+//! dpma-ami --slot 5 Command Command="digium_phones show sessions"
+//! dpma-ami --slot 5 --wait-event DPMAMessage --events 60 DPMAMessageRegister Method=m
+//! dpma-ami --slot 5 --listen 30
+//! ```
+//!
 //! Logs in to the AMI port of 127.0.0.1 as test/test.  For list actions it
 //! waits for `EventList: Complete`; otherwise it prints the events of the
 //! next `--events` seconds.  Exit status 0 when the response is

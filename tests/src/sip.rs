@@ -87,6 +87,9 @@ pub struct Message {
     pub transport: Option<Transport>,
     /// When the message was received or built.
     pub received: Instant,
+    /// The bytes a parsed message was parsed from (empty for a built
+    /// one): header lines exactly as they arrived, padding included.
+    pub raw: BString,
 }
 
 impl Message {
@@ -103,6 +106,7 @@ impl Message {
             source: None,
             transport: None,
             received: Instant::now(),
+            raw: BString::default(),
         }
     }
 
@@ -241,6 +245,7 @@ pub fn parse(data: &[u8], source: Option<SocketAddr>) -> Result<Message> {
     }
     let mut msg = Message::new(first.trim_ascii(), headers, body);
     msg.source = source;
+    msg.raw = data.into();
     if let Some(cl) = msg
         .get("Content-Length")
         .and_then(|v| v.to_str().ok())

@@ -31,6 +31,35 @@ pub const DEVTEST_HINT: &str = "cargo build -p res_dpma_rs --features devtest";
 /// The simulator's test configuration snippets: the file name in the
 /// instance, the configuration file that includes it, and the contents
 /// (`@SIP_PORT@` is replaced).
+///
+/// - `pjsip_dpma_sim.conf`: a TCP transport on the instance's SIP port;
+///   the endpoint `dpma-sim` with
+///   `message_context=dpma_pjsip_message_context`, identified by
+///   `match=127.0.0.1` (a test-only stand-in for the module's endpoint
+///   identifier); and `dpma-sim-loopback`, identified by
+///   `match=127.0.0.2`, whose messages go to a static test context.  With
+///   the module loaded, the simulator's MESSAGEs (which carry
+///   `X-Digium-User-Agent`) are identified by the module's endpoint
+///   identifier instead, and the `dpma-sim` identify is not needed; take
+///   the snippet out ([`remove_sim_conf`]) when testing other PJSIP
+///   clients: it matches every request from 127.0.0.1, REGISTERs
+///   included.  The loopback path needs `--no-digium-ua-header` while the
+///   module is loaded.
+/// - `extensions_dpma_sim.conf`: `[dpma-sim-loopback]` logs every MESSAGE
+///   from 127.0.0.2 with its AppServer headers and answers Echo the way
+///   the module's `handle_request_echo` does (no module needed);
+///   `[dpma-sim-send]` sends an unencrypted `digium.config.update` event
+///   to a listening simulator: `channel originate
+///   Local/<port>@dpma-sim-send application Wait 1`.
+/// - `res_digium_phone_sim.conf`: the test phones [`SIMPHONE`] (MAC
+///   `000fd3000001`, the simulator's default; pin 1234; line 1001, the
+///   PJSIP endpoint 1001 with secret `secret1001`) and [`SIMPHONE2`] (MAC
+///   `000fd3000002`; pin 5678; line 1002, secret `secret1002`).
+///
+/// The scratch configuration's `[general]` has `globalpin=344486`
+/// ([`GLOBALPIN`]), `config_auth=mac_globalpin`, and
+/// `userlist_auth=disabled`; change them in the instance for the other
+/// authentication modes.
 pub const SIM_CONF: [(&str, &str, &str); 3] = [
     (
         "pjsip_dpma_sim.conf",
@@ -49,10 +78,9 @@ pub const SIM_CONF: [(&str, &str, &str); 3] = [
     ),
 ];
 
-/// Prepares the instance for a suite, as `tests/run-all.sh` does:
-/// stops Asterisk, resets the configuration, runs `setup`, installs the
-/// module (debug build), starts Asterisk, and checks that the module is a
-/// devtest build.
+/// Prepares the instance for a suite: stops Asterisk, resets the
+/// configuration, runs `setup`, installs the module (debug build), starts
+/// Asterisk, and checks that the module is a devtest build.
 pub fn prepare(inst: &Instance, setup: impl FnOnce(&Instance) -> Result<()>) -> Result<()> {
     inst.stop()?;
     inst.reset_conf()?;

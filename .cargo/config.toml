@@ -1,0 +1,4 @@
+# cargo xtask: Asterisk builds, private instances, the test suites, and
+# CI (tools/, see tests/README.md).
+[alias]
+xtask = "run --package xtask --"

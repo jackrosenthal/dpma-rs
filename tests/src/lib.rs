@@ -9,12 +9,16 @@
 //! | [`sim`] | The phone simulator: SIP transport, handshake (legacy and chain forms), encryption, chunking and reassembly, every request type, events, and a self-test.  Independent of the module's crates (RustCrypto instead of OpenSSL), so it cross-checks them. |
 //! | [`mkpki`] | The test PKI: phone CAs and certificates, negative variants, and the AppServer certificate; installs the trust material into an instance. |
 //! | [`ami`] | An AMI client that keeps every message's raw bytes. |
+//! | [`asterisk`] | The pinned Asterisk releases and the private instances: the instance manager behind `cargo xtask instance` and [`harness::Instance`]. |
 //! | [`sipua`] | A minimal SIP user agent for test phones: REGISTER with digest authentication, MESSAGE, SUBSCRIBE, and a UAS that answers or rejects calls, sends DTMF INFOs, and records INFOs and NOTIFYs. |
 //! | [`mdns`] | An mDNS browser (legacy unicast queries) and listener. |
 //! | [`netns`] | A private network namespace a suite runs itself in (`unshare -rn`). |
 //! | [`harness`] | Shared by the suites: the instance and its CLI (control socket), checks, the log, configuration editing, the suite runner, and fixtures. |
 //! | [`sip`] | SIP messages as bytes (parsing and encoding). |
 //! | [`util`] | JSON text as the test documents write it, waiting with timeouts. |
+//! | [`ari`] | An ARI (Asterisk REST Interface) HTTP client, for push configuration. |
+//! | [`diff`] | Unified line diffs for check details. |
+//! | [`xml`] | XML well-formedness. |
 //!
 //! # Binaries
 //!
@@ -26,18 +30,19 @@
 //! # Suites
 //!
 //! Each suite is a test target in `tests/suites/` that runs against a
-//! private instance (`DPMA_SLOT`, see `tools/ast.sh`) with a devtest
-//! build of the module:
+//! private instance (`DPMA_SLOT`, see [`asterisk`]) with a devtest build
+//! of the module:
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-24-src
+//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/24.0.0-rc4/src
 //! cargo build -p res_dpma_rs --features devtest
 //! cargo test -p dpma-tests --test session -- --ignored
 //! ```
 //!
 //! A suite prepares the instance itself (fresh configuration, its setup,
 //! the module installed, Asterisk restarted), then runs its parts; see
-//! [`harness::Suite`] for the arguments.  A plain `cargo test` runs the
+//! [`harness::Suite`] for the arguments.  `cargo xtask test` runs the
+//! suites one after another (see `tests/README.md`).  A plain `cargo test` runs the
 //! unit tests (including the simulator's self-test against a throwaway
 //! PKI) and skips the suites.
 //!
@@ -51,6 +56,9 @@
 #![warn(missing_docs)]
 
 pub mod ami;
+pub mod ari;
+pub mod asterisk;
+pub mod diff;
 pub mod harness;
 pub mod mdns;
 pub mod mkpki;
@@ -59,3 +67,4 @@ pub mod sim;
 pub mod sip;
 pub mod sipua;
 pub mod util;
+pub mod xml;

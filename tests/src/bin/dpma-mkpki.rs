@@ -9,7 +9,7 @@
 //! ```
 //!
 //! The instance is `--instance DIR`, else the slot of `--slot N` or
-//! `$DPMA_SLOT` (as `ast.sh info` describes it).
+//! `$DPMA_SLOT`.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -25,7 +25,7 @@ use dpma_tests::{mkpki, sim};
     about = "Generate the test PKI for the DPMA phone simulator."
 )]
 struct Args {
-    /// PKI directory (default: $DPMA_PKI, else dev/sim/pki, shared with the Python tools).
+    /// PKI directory (default: $DPMA_PKI, else dev/sim/pki).
     #[arg(long)]
     dir: Option<PathBuf>,
     /// Regenerate existing files.
