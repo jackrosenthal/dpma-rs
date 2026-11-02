@@ -1,9 +1,8 @@
 //! Phone certificate verification (`load_castore`, `session_verify_cert`,
 //! `session_load_rsa_key`).
 //!
-//! The CA store is built from the user-supplied `phone_ca_file` PEM bundle
-//! (the original embeds three CA certificates; they must never be copied
-//! into this project).
+//! The CA store is built from a PEM bundle of CA certificates: by default
+//! the three embedded in the original, or the `phone_ca_file` when set.
 //!
 //! # The verifier
 //!
@@ -72,7 +71,8 @@
 //!   MD4, MDC2, RIPEMD-160, SHA-3, and RSASSA-PSS, and DSA, ECDSA, Ed25519,
 //!   and Ed448): they fail as certificate signature failure (7).  A
 //!   phone's key must be RSA anyway (the common password is encrypted to
-//!   it), and its CAs are expected to sign with RSA PKCS#1 v1.5 too.
+//!   it), and the original's built-in CAs have RSA keys and sign with
+//!   SHA-1 and SHA-256.
 //! - Public keys other than RSA are not decoded, only recognized by
 //!   algorithm: such a key counts as decodable, as a well-formed one is
 //!   for 1.1.1t.  A malformed DSA or EC key would make 1.1.1t refuse the

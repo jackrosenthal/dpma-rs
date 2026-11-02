@@ -1,7 +1,7 @@
 //! The `[general]` section of res_digium_phone.conf.
 
 use dpma_ast::config::{self, LoadResult};
-use dpma_ast::{ast_log, bformat, dpma_log, log::LOG_ERROR, log::LOG_WARNING};
+use dpma_ast::{ast_log, bformat, dpma_log, log::LOG_WARNING};
 use std::sync::{Arc, RwLock};
 
 /// Authentication flags (shared with the session layer).
@@ -17,6 +17,9 @@ pub mod auth {
     /// The global pin is required to fetch the user list.
     pub const USERLIST_GLOBALPIN: u32 = 1 << 4;
 }
+
+pub const DEFAULT_APPSERVER_CERTIFICATE: &[u8] = include_bytes!("trust/appserver.pem");
+pub const DEFAULT_PHONE_CA: &[u8] = include_bytes!("trust/phone_ca.pem");
 
 pub const DEFAULT_SERVICE_NAME: &str = "Digium Phone Config Server";
 pub const DEFAULT_PJSIP_MESSAGE_CONTEXT: &str = "dpma_pjsip_message_context";
@@ -45,19 +48,19 @@ pub struct General {
     pub registration_address: Vec<u8>,
     pub registration_port: Vec<u8>,
     pub firmware_url_prefix: Vec<u8>,
-    /// PEM file with the server certificate presented to phones during the
-    /// handshake.  Not part of the original module: the certificate must come
-    /// from the user's own copy of the original distribution.
+    /// Path to a PEM file with the server certificate sent to phones during
+    /// the handshake; empty (the default) uses the embedded
+    /// [`DEFAULT_APPSERVER_CERTIFICATE`].
     pub appserver_certificate: Vec<u8>,
-    /// PEM bundle of the CA certificates that phone certificates are
-    /// verified against.  Same provenance as `appserver_certificate`.
+    /// Path to a PEM bundle of the CA certificates phone certificates are
+    /// verified against; empty (the default) uses the embedded
+    /// [`DEFAULT_PHONE_CA`].
     pub phone_ca_file: Vec<u8>,
 }
 
 impl General {
     fn defaults() -> General {
         let file_dir = bformat!("{}/digium_phones", dpma_ast::var_dir());
-        let trust_dir = bformat!("{}/dpma", dpma_ast::config_dir());
         General {
             auth_flags: auth::USER,
             discovery_enabled: true,
@@ -77,8 +80,8 @@ impl General {
             registration_address: Vec::new(),
             registration_port: Vec::new(),
             firmware_url_prefix: Vec::new(),
-            appserver_certificate: bformat!("{}/appserver.pem", trust_dir),
-            phone_ca_file: bformat!("{}/phone_ca.pem", trust_dir),
+            appserver_certificate: Vec::new(),
+            phone_ca_file: Vec::new(),
         }
     }
 
@@ -332,21 +335,4 @@ pub fn settings() -> Option<Settings> {
 /// "<astvarlibdir>/digium_phones", cut to 0x1000 bytes.
 pub fn default_file_dir() -> Vec<u8> {
     cut(&bformat!("{}/digium_phones", dpma_ast::var_dir()), 0x1000)
-}
-
-/// Log configuration problems that make the module unusable.
-pub fn check_trust_material(g: &General) {
-    for (what, path) in [
-        ("appserver_certificate", &g.appserver_certificate),
-        ("phone_ca_file", &g.phone_ca_file),
-    ] {
-        if !crate::util::path(path).exists() {
-            ast_log!(
-                LOG_ERROR,
-                "{} '{}' does not exist; phones will not be able to complete a handshake. See README.md, \"Phone trust material\".",
-                what,
-                path
-            );
-        }
-    }
 }

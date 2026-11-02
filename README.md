@@ -5,8 +5,7 @@ Digium Phone Module for Asterisk (DPMA, `res_digium_phone`), written in
 Rust.  It follows DPMA 24.0_3.6.13 for Asterisk 24: the same configuration
 files, the same phone protocol, and the same CLI commands, AMI actions and
 events, and dialplan applications.  Digium and Sangoma phones are meant to
-work with it just as with the original, without changes on the phones,
-given the trust material described in "Phone trust material" below.
+work with it just as with the original, without changes on the phones.
 
 This is version 0.1.0.  dpma-rs is an independent rewrite; it is not made
 or endorsed by Digium or Sangoma.
@@ -136,40 +135,6 @@ the Asterisk database unchanged.  Where the original hands text to JSON
 (the user list and the phone methods' answers), text that is not UTF-8
 makes the request fail as it does in the original.
 
-dpma-rs adds two options to the `[general]` section of
-`res_digium_phone.conf`, `appserver_certificate` and `phone_ca_file`,
-described in the next section.  The original module has no such options;
-it carries the equivalent material built in.
-
-### Phone trust material
-
-During the handshake each phone presents its factory certificate, and the
-server answers with its own (AppServer) certificate.  The original module
-has Digium's certificates built into its binary.  dpma-rs ships no Digium
-certificates or keys; you must supply this material yourself, from your
-own copy of the original distribution:
-
-| Option (`[general]`) | Default | Contents |
-|---|---|---|
-| `phone_ca_file` | `<astetcdir>/dpma/phone_ca.pem` | PEM bundle of the CA certificates that the phones' certificates are verified against. |
-| `appserver_certificate` | `<astetcdir>/dpma/appserver.pem` | PEM certificate sent to the phones in every handshake response; the phones check it against their own trust store. |
-
-`<astetcdir>` is Asterisk's configuration directory, normally
-`/etc/asterisk`.  Only certificates are needed: dpma-rs never uses a
-server private key (the session key is encrypted with the phone's public
-key).
-
-When either file is missing, the module still loads and logs an error
-that points here; phones then cannot complete a handshake.  A phone whose
-certificate does not verify gets no answer and is recorded as an
-authentication incident (`DPMAShowIncidents`).  Both files are read again
-on `module reload res_dpma_rs.so`; a file that cannot be read keeps
-its previous contents.
-
-For testing without phones, `dpma-mkpki` (in `tests/`) generates a
-self-made PKI and installs it under these names; real phones do not accept
-its AppServer certificate.
-
 ## Differences from the original
 
 dpma-rs reproduces the original's behavior, quirks included, with these
@@ -183,20 +148,17 @@ deliberate exceptions:
    contexts behind.
 3. All AMI actions are unregistered when the module unloads.  The original
    leaves some registered, pointing into unloaded code.
-4. Certificates come from files you supply (see "Phone trust material"),
-   and other key material is generated locally, instead of being built
-   in.
-5. `digium_phones show version` prints `dpma-rs version 0.1.0` (the
+4. `digium_phones show version` prints `dpma-rs version 0.1.0` (the
    dpma-rs version) instead of a DPMA version number.
-6. No chan_sip support: no phone messages or in-call notifications
+5. No chan_sip support: no phone messages or in-call notifications
    through chan_sip, no lines from `sip.conf` or from `users.conf` users
    with `hassip`, and no warnings about `sip.conf`.  `voicemail.conf` and
    `users.conf` voicemail users are still read.
-7. Phone sessions saved in the Asterisk database
-   (`DigiumPhoneSessions`) are encrypted with dpma-rs's own passphrase,
-   not the original's.  Sessions saved by the original module are
-   therefore not restored; those phones simply handshake again.
-8. Service discovery (mDNS) uses a responder built into the module
+6. A saved phone session (`DigiumPhoneSessions` in the Asterisk database)
+   whose stored data cannot be decrypted is deleted, and the phone
+   handshakes again.  The original keeps the entry and fails on it at
+   every load.
+7. Service discovery (mDNS) uses a responder built into the module
    instead of Avahi, so it works without `avahi-daemon` or the Avahi
    libraries.  It announces the same `_digiumproxy._udp` service, with
    these small differences: the service's host name is
@@ -205,34 +167,34 @@ deliberate exceptions:
    `name #2`).  A service name that is not valid UTF-8 is not announced;
    an error is logged instead.  Discovery is on unless
    `service_discovery_enabled=no`.
-9. Authentication incidents from IPv6 phones are tracked per address.  The
+8. Authentication incidents from IPv6 phones are tracked per address.  The
    original cuts the address at its first colon, so all IPv6 phones share
    one incident record.  IPv4 behavior is unchanged.
-10. Starting a call recording from a phone reports success when the
-    recording starts.  The original always reports an error (and never
-    sends the "recording started" notification) although the recording
-    runs.
-11. "Session Timeout" replies go back over the transport the request came
+9. Starting a call recording from a phone reports success when the
+   recording starts.  The original always reports an error (and never
+   sends the "recording started" notification) although the recording
+   runs.
+10. "Session Timeout" replies go back over the transport the request came
     in on.  The original sends them over UDP even to phones using TCP.
-12. Handshake certificates whose line breaks were lost in transit are
+11. Handshake certificates whose line breaks were lost in transit are
     repaired before they are read.  Asterisk 24 strips trailing line
     breaks from each SIP MESSAGE body, which can break a certificate that
     a phone splits across messages.
-13. Phone requests forwarded to AMI clients (methods registered with
+12. Phone requests forwarded to AMI clients (methods registered with
     `DPMAMessageRegister`) expire after 300 seconds without a
     `DPMAMessageResponse`, with the log message "No response to request
     (...), expired."  The original never expires them.
-14. File requests from phones cannot leave `file_directory`: names with
+13. File requests from phones cannot leave `file_directory`: names with
     a `..` component are answered as if the file did not exist.  With
     `..`, the original serves any file the Asterisk process can read.
     Other names are served as by the original, files in subdirectories
     included; absolute names are looked up inside `file_directory`.
-15. `digium_phones show line` shows the line's `authname` as `AuthName`,
+14. `digium_phones show line` shows the line's `authname` as `AuthName`,
     and `digium_phones show application` shows a queue application's
     `logout_exten` as `Logout Extension` and a status application's
     `send486=yes` as `Send486: Yes`.  The original shows the secondary
     server port, the login extension, and "No" there.
-16. One module, `res_dpma_rs.so`, takes the place of the original's three
+15. One module, `res_dpma_rs.so`, takes the place of the original's three
     (`res_digium_phone.so`, `res_pjsip_endpoint_identifier_dpma.so`, and
     `res_pjsip_dialog_info_digium_body_supplement.so`; see "Installing").
     So `module show`, `module load`, `module unload`, `module reload`, and
@@ -242,25 +204,26 @@ deliberate exceptions:
     loaded `res_digium_phone.conf` (so `config reload` of that file
     reloads `res_dpma_rs`).  The module's use count does not include the
     helper modules that use the original.
-17. No C API for other modules.  The original exports functions
+16. No C API for other modules.  The original exports functions
     (`dpma_config_*`, `dpma_register_*_handler`, `phone_users_*`,
     `phone_utils_*`, and others) that its helper modules use; dpma-rs
     has no helper modules and exports none, so the original's helpers
     cannot be used with it.
-18. Phone certificates are read and verified as by the original's
+17. Phone certificates are read and verified as by the original's
     built-in OpenSSL 1.1.1t, with the same checks and log messages,
-    except for these, which Digium's phone certificates are not expected
-    to need: certificates signed with algorithms other than RSA PKCS#1
-    v1.5 with MD5, SHA-1, or SHA-2 (for example, ECDSA or RSASSA-PSS) fail
-    with "certificate signature failure"; a phone certificate with an RFC
-    3779 IP address or AS number extension fails with "Unsupported
-    extension feature"; and an encrypted PEM block is unreadable (the
-    original asks for a pass phrase on Asterisk's terminal or standard
-    input).  The OpenSSL error that "Unable to read client cert" and the
-    decryption failure messages show is the error of that failure; the
-    original's can be an error left over from an earlier handshake on the
-    same thread.  (dpma-rs used to log OpenSSL 3's error texts, which
-    differ from the original's 1.1.1t texts.)
+    except for these, which the original's built-in CA certificates (RSA
+    keys, SHA-1 and SHA-256 signatures) do not call for: certificates
+    signed with algorithms other than RSA PKCS#1 v1.5 with MD5, SHA-1, or
+    SHA-2 (for example, ECDSA or RSASSA-PSS) fail with "certificate
+    signature failure"; a phone certificate with an RFC 3779 IP address or
+    AS number extension fails with "Unsupported extension feature"; and an
+    encrypted PEM block is unreadable (the original asks for a pass
+    phrase on Asterisk's terminal or standard input).  The OpenSSL error
+    that "Unable to read client cert" and the decryption failure messages
+    show is the error of that failure; the original's can be an error left
+    over from an earlier handshake on the same thread.  (dpma-rs used to
+    log OpenSSL 3's error texts, which differ from the original's 1.1.1t
+    texts.)
 
 Beyond these, a number of inputs that crash the original modules (for
 example, PJSIP AOR changes while a phone line has no PJSIP endpoint, or an

@@ -211,7 +211,7 @@ dpma-tests has three binaries (`cargo run -p dpma-tests --bin <name> --
 | Binary | What it does |
 |---|---|
 | `dpma-sim` | The phone simulator: SIP MESSAGE over UDP or TCP, handshake (legacy and chain forms), encryption, chunking, every request type, events, and a self-test (`dpma_tests::sim`) |
-| `dpma-mkpki` | Makes the test PKI in `dev/sim/pki` (`$DPMA_PKI`; existing files are kept, `--force` regenerates them) and installs its trust material into the instance: `root-ca.pem` as `etc/asterisk/dpma/phone_ca.pem` and `appserver.pem` as `etc/asterisk/dpma/appserver.pem`, the defaults of `phone_ca_file` and `appserver_certificate`.  `--check` checks that every certificate verifies, or is rejected, as the module's rules expect, with the simulator's own X.509 code (issuer names, signatures, CA flags, validity periods) (`dpma_tests::mkpki`). |
+| `dpma-mkpki` | Makes the test PKI in `dev/sim/pki` (`$DPMA_PKI`; existing files are kept, `--force` regenerates them) and installs its trust material into the instance: `root-ca.pem` as `etc/asterisk/dpma/phone_ca.pem` and `appserver.pem` as `etc/asterisk/dpma/appserver.pem`.  `--check` checks that every certificate verifies, or is rejected, as the module's rules expect, with the simulator's own X.509 code (issuer names, signatures, CA flags, validity periods) (`dpma_tests::mkpki`). |
 | `dpma-ami` | Sends an AMI action and prints the response and the events that follow it, or listens for events (`dpma_tests::ami`) |
 
 Everything is written from the decompile of the original module,

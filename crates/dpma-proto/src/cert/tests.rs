@@ -761,3 +761,50 @@ fn no_panics_on_damaged_input() {
         }
     }
 }
+
+/// The original's CA certificates and AppServer certificate, which the
+/// module embeds (crates/res_dpma_rs/src/trust).
+const EMBEDDED_CA: &[u8] = include_bytes!("../../../res_dpma_rs/src/trust/phone_ca.pem");
+const EMBEDDED_APPSERVER: &[u8] = include_bytes!("../../../res_dpma_rs/src/trust/appserver.pem");
+
+#[test]
+fn embedded_trust_material() {
+    // The bundle reads as three certificates: the Sangoma root (v3,
+    // CA:TRUE, 4096 bits), the Digium AppServer CA as a v1 certificate,
+    // and the same CA (same key) as an expired v3 certificate whose
+    // authorityKeyIdentifier names its own key, issuer, and serial.  All
+    // are self-signed (x509v3_cache_extensions) and valid trust anchors;
+    // X509_check_ca gives 1, 3 (a self-signed v1 root), and 1.
+    let certs = certificates_from_pem(EMBEDDED_CA).unwrap();
+    assert_eq!(certs.len(), 3);
+    for c in &certs {
+        assert!(!c.invalid());
+        assert_ne!(c.ex.flags & crate::x509::ext::EXFLAG_SS, 0);
+    }
+    assert_eq!(certs.iter().map(crate::x509::verify::check_ca).collect::<Vec<_>>(), [1, 3, 1]);
+    let bits: Vec<usize> = certs.iter().map(|c| c.public_key().unwrap().rsa().unwrap().bits()).collect();
+    assert_eq!(bits, [4096, 1024, 1024]);
+    assert_eq!(certs[1].public_key(), certs[2].public_key());
+    let store = CaStore::from_pem(EMBEDDED_CA).unwrap();
+    assert_eq!(store.len(), 3);
+    // Each verifies as a phone's legacy certificate (it is in the store;
+    // the expired one too, error 10 being ignored).
+    for c in &certs {
+        let body = crate::x509::pem::encode("CERTIFICATE", c.der());
+        assert!(verify(&store, &body).is_ok());
+    }
+    // The AppServer certificate (v1, a 512-bit key, SHA-256) is issued by
+    // "Digium Appserver": it verifies against the bundle (the valid v1 CA
+    // is preferred, X509_STORE_CTX_get1_issuer), against the expired v3 CA
+    // alone, and not against the Sangoma root.
+    let app = certificates_from_pem(EMBEDDED_APPSERVER).unwrap();
+    assert_eq!(app.len(), 1);
+    assert_eq!(app[0].public_key().unwrap().rsa().unwrap().bits(), 512);
+    let v = verify(&store, EMBEDDED_APPSERVER).unwrap();
+    assert!(v.legacy);
+    assert_eq!(v.certificate, app[0]);
+    let only = |i: usize| CaStore::from_certs(std::slice::from_ref(&certs[i])).unwrap();
+    assert!(verify(&only(2), EMBEDDED_APPSERVER).is_ok());
+    assert!(verify(&only(1), EMBEDDED_APPSERVER).is_ok());
+    assert_eq!(outcome(verify(&only(0), EMBEDDED_APPSERVER)), failed(20));
+}
