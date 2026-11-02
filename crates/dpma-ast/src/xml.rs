@@ -7,9 +7,10 @@
 //! processing and parser options the original never used, which would
 //! change the documents sent to phones.
 //!
-//! The raw libxml2 functions are public for the exported C API
-//! (`phone_utils_xml_*`), which works on raw `xmlDocPtr` and `xmlNodePtr`
-//! values.
+//! libxml2 is not one of the libraries `dpma-sys` binds (its headers are
+//! not needed to build dpma-rs), so the few functions and the leading
+//! fields of the structures used are declared here.  Some are public for
+//! `astxml.rs`, which serializes Asterisk's XML nodes with them.
 
 use crate::util::cstr;
 use std::marker::PhantomData;
@@ -31,20 +32,25 @@ struct XmlXPathObject {
 
 extern "C" {
     pub fn xmlParseMemory(buffer: *const c_char, size: c_int) -> *mut c_void;
-    pub fn xmlReadFile(url: *const c_char, encoding: *const c_char, options: c_int) -> *mut c_void;
-    pub fn xmlFreeDoc(doc: *mut c_void);
-    pub fn xmlDocGetRootElement(doc: *const c_void) -> *mut c_void;
-    pub fn xmlCopyNode(node: *mut c_void, extended: c_int) -> *mut c_void;
-    pub fn xmlAddChild(parent: *mut c_void, cur: *mut c_void) -> *mut c_void;
-    pub fn xmlFreeNode(node: *mut c_void);
+    fn xmlReadFile(url: *const c_char, encoding: *const c_char, options: c_int) -> *mut c_void;
+    fn xmlFreeDoc(doc: *mut c_void);
+    fn xmlDocGetRootElement(doc: *const c_void) -> *mut c_void;
+    fn xmlCopyNode(node: *mut c_void, extended: c_int) -> *mut c_void;
+    fn xmlAddChild(parent: *mut c_void, cur: *mut c_void) -> *mut c_void;
+    fn xmlFreeNode(node: *mut c_void);
     fn xmlXPathNewContext(doc: *mut c_void) -> *mut c_void;
     fn xmlXPathFreeContext(ctx: *mut c_void);
     fn xmlXPathEvalExpression(expr: *const c_char, ctx: *mut c_void) -> *mut XmlXPathObject;
     fn xmlXPathFreeObject(obj: *mut XmlXPathObject);
     fn xmlDocDumpFormatMemory(doc: *mut c_void, mem: *mut *mut c_char, size: *mut c_int, format: c_int);
-    /// Asterisk's wrapper around libxml2's `xmlFree`.
-    pub fn ast_xml_free_text(text: *const c_char);
+    pub fn xmlBufferCreate() -> *mut c_void;
+    pub fn xmlBufferFree(buf: *mut c_void);
+    pub fn xmlBufferContent(buf: *const c_void) -> *const c_char;
+    pub fn xmlNodeDump(buf: *mut c_void, doc: *mut c_void, cur: *mut c_void, level: c_int, format: c_int) -> c_int;
 }
+
+/// Asterisk's wrapper around libxml2's `xmlFree`.
+use crate::sys::ast_xml_free_text;
 
 /// An owned libxml2 document (`xmlDocPtr`), freed on drop.
 pub struct Doc(*mut c_void);
@@ -67,14 +73,6 @@ impl<'a> Node<'a> {
         }
     }
 
-    /// Wrap a raw `xmlNodePtr` (for the exported C API).
-    ///
-    /// # Safety
-    /// `ptr` must be NULL or a valid node that outlives `'a`.
-    pub unsafe fn from_raw(ptr: *mut c_void) -> Option<Node<'a>> {
-        Node::new(ptr)
-    }
-
     pub fn as_ptr(&self) -> *mut c_void {
         self.ptr
     }
@@ -93,21 +91,6 @@ impl Doc {
         let c = cstr(path);
         let p = unsafe { xmlReadFile(c.as_ptr(), std::ptr::null(), 0) };
         (!p.is_null()).then_some(Doc(p))
-    }
-
-    /// Take ownership of a raw `xmlDocPtr` (for the exported C API).
-    ///
-    /// # Safety
-    /// `ptr` must be a valid document that nothing else frees.
-    pub unsafe fn from_raw(ptr: *mut c_void) -> Option<Doc> {
-        (!ptr.is_null()).then_some(Doc(ptr))
-    }
-
-    /// Give up ownership without freeing the document.
-    pub fn into_raw(self) -> *mut c_void {
-        let p = self.0;
-        std::mem::forget(self);
-        p
     }
 
     pub fn as_ptr(&self) -> *mut c_void {
@@ -153,21 +136,13 @@ impl Drop for Doc {
 ///
 /// # Safety
 /// `doc` must be a valid `xmlDocPtr`.
-pub unsafe fn xpath_first_raw(doc: *mut c_void, expr: impl AsRef<[u8]>) -> Option<*mut c_void> {
-    let e = cstr(expr);
-    xpath_first_cstr(doc, e.as_ptr())
-}
-
-/// [`xpath_first_raw`] with the expression as a C string.
-///
-/// # Safety
-/// `doc` must be a valid `xmlDocPtr` and `expr` a NUL-terminated string.
-pub unsafe fn xpath_first_cstr(doc: *mut c_void, expr: *const c_char) -> Option<*mut c_void> {
+unsafe fn xpath_first_raw(doc: *mut c_void, expr: impl AsRef<[u8]>) -> Option<*mut c_void> {
+    let expr = cstr(expr);
     let ctx = xmlXPathNewContext(doc);
     if ctx.is_null() {
         return None;
     }
-    let obj = xmlXPathEvalExpression(expr, ctx);
+    let obj = xmlXPathEvalExpression(expr.as_ptr(), ctx);
     let mut found = None;
     if !obj.is_null() {
         let set = (*obj).nodesetval;
@@ -185,7 +160,7 @@ pub unsafe fn xpath_first_cstr(doc: *mut c_void, expr: *const c_char) -> Option<
 ///
 /// # Safety
 /// Both must be NULL or valid nodes.
-pub unsafe fn add_copy_raw(parent: *mut c_void, node: *mut c_void) -> *mut c_void {
+unsafe fn add_copy_raw(parent: *mut c_void, node: *mut c_void) -> *mut c_void {
     let copy = xmlCopyNode(node, 1);
     let added = xmlAddChild(parent, copy);
     if added.is_null() && !copy.is_null() {

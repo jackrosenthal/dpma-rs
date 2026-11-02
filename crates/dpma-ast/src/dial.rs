@@ -4,56 +4,26 @@
 //! A dial is a raw pointer whose ownership the caller manages, because the
 //! original hands it to a detached thread that runs and destroys it.
 
-use crate::types::AstChannel;
+use crate::sys;
 use crate::vm::c_bytes;
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_int, c_void};
 use std::ptr;
 
-/// Opaque `struct ast_dial`.
-#[repr(C)]
-pub struct AstDial {
-    _private: [u8; 0],
-}
+/// `struct ast_dial`.
+pub type AstDial = sys::ast_dial;
 
 /// `AST_DIAL_OPTION_ANSWER_EXEC`: run "app,args" on the answered channel.
-pub const OPTION_ANSWER_EXEC: c_int = 1;
+pub const OPTION_ANSWER_EXEC: sys::ast_dial_option = sys::AST_DIAL_OPTION_ANSWER_EXEC;
 
 /// `AST_DIAL_RESULT_ANSWERED`.
-pub const RESULT_ANSWERED: c_int = 6;
+pub const RESULT_ANSWERED: c_int = sys::AST_DIAL_RESULT_ANSWERED as c_int;
 
 /// A thread start routine.
 pub type StartFn = unsafe extern "C" fn(data: *mut c_void) -> *mut c_void;
 
-extern "C" {
-    fn ast_dial_create() -> *mut AstDial;
-    fn ast_dial_append(dial: *mut AstDial, tech: *const c_char, device: *const c_char, assignedids: *const c_void) -> c_int;
-    fn ast_dial_prerun(dial: *mut AstDial, chan: *mut AstChannel, cap: *mut c_void) -> c_int;
-    fn ast_dial_run(dial: *mut AstDial, chan: *mut AstChannel, async_: c_int) -> c_int;
-    fn ast_dial_get_channel(dial: *mut AstDial, num: c_int) -> *mut AstChannel;
-    fn ast_dial_set_user_data(dial: *mut AstDial, user_data: *mut c_void);
-    fn ast_dial_get_user_data(dial: *mut AstDial) -> *mut c_void;
-    fn ast_dial_option_global_enable(dial: *mut AstDial, option: c_int, data: *mut c_void) -> c_int;
-    fn ast_dial_destroy(dial: *mut AstDial) -> c_int;
-    fn ast_pthread_create_detached_stack(
-        thread: *mut libc_pthread_t,
-        attr: *mut c_void,
-        start_routine: StartFn,
-        data: *mut c_void,
-        stacksize: usize,
-        file: *const c_char,
-        caller: *const c_char,
-        line: c_int,
-        start_fn: *const c_char,
-    ) -> c_int;
-}
-
-/// `pthread_t` on the supported (Linux) targets.
-#[allow(non_camel_case_types)]
-type libc_pthread_t = std::os::raw::c_ulong;
-
 /// `ast_dial_create`.
 pub fn create() -> *mut AstDial {
-    unsafe { ast_dial_create() }
+    unsafe { sys::ast_dial_create() }
 }
 
 /// `ast_dial_append(dial, tech, device, NULL)`.
@@ -62,7 +32,7 @@ pub fn create() -> *mut AstDial {
 /// `dial` must be NULL or a live dial.
 pub unsafe fn append(dial: *mut AstDial, tech: &[u8], device: &[u8]) -> c_int {
     let (tech, device) = (c_bytes(tech), c_bytes(device));
-    ast_dial_append(dial, tech.as_ptr(), device.as_ptr(), ptr::null())
+    sys::ast_dial_append(dial, tech.as_ptr(), device.as_ptr(), ptr::null())
 }
 
 /// `ast_dial_prerun(dial, NULL, NULL)`: request the channels.
@@ -70,7 +40,7 @@ pub unsafe fn append(dial: *mut AstDial, tech: &[u8], device: &[u8]) -> c_int {
 /// # Safety
 /// `dial` must be NULL or a live dial.
 pub unsafe fn prerun(dial: *mut AstDial) -> c_int {
-    ast_dial_prerun(dial, ptr::null_mut(), ptr::null_mut())
+    sys::ast_dial_prerun(dial, ptr::null_mut(), ptr::null_mut())
 }
 
 /// `ast_dial_run(dial, NULL, async)`.
@@ -78,27 +48,27 @@ pub unsafe fn prerun(dial: *mut AstDial) -> c_int {
 /// # Safety
 /// `dial` must be a live dial.
 pub unsafe fn run(dial: *mut AstDial, async_: bool) -> c_int {
-    ast_dial_run(dial, ptr::null_mut(), async_ as c_int)
+    sys::ast_dial_run(dial, ptr::null_mut(), async_ as c_int) as c_int
 }
 
 /// `ast_dial_get_channel` (borrowed).
 ///
 /// # Safety
 /// `dial` must be NULL or a live dial.
-pub unsafe fn get_channel(dial: *mut AstDial, num: c_int) -> *mut AstChannel {
-    ast_dial_get_channel(dial, num)
+pub unsafe fn get_channel(dial: *mut AstDial, num: c_int) -> *mut sys::ast_channel {
+    sys::ast_dial_get_channel(dial, num)
 }
 
 /// # Safety
 /// `dial` must be a live dial.
 pub unsafe fn set_user_data(dial: *mut AstDial, data: *mut c_void) {
-    ast_dial_set_user_data(dial, data)
+    sys::ast_dial_set_user_data(dial, data)
 }
 
 /// # Safety
 /// `dial` must be a live dial.
 pub unsafe fn get_user_data(dial: *mut AstDial) -> *mut c_void {
-    ast_dial_get_user_data(dial)
+    sys::ast_dial_get_user_data(dial)
 }
 
 /// `ast_dial_option_global_enable` with a string argument (copied by the
@@ -106,9 +76,9 @@ pub unsafe fn get_user_data(dial: *mut AstDial) -> *mut c_void {
 ///
 /// # Safety
 /// `dial` must be a live dial.
-pub unsafe fn option_global_enable(dial: *mut AstDial, option: c_int, data: &[u8]) -> c_int {
+pub unsafe fn option_global_enable(dial: *mut AstDial, option: sys::ast_dial_option, data: &[u8]) -> c_int {
     let data = c_bytes(data);
-    ast_dial_option_global_enable(dial, option, data.as_ptr() as *mut c_void)
+    sys::ast_dial_option_global_enable(dial, option, data.as_ptr() as *mut c_void)
 }
 
 /// `ast_dial_destroy`.
@@ -116,7 +86,7 @@ pub unsafe fn option_global_enable(dial: *mut AstDial, option: c_int, data: &[u8
 /// # Safety
 /// `dial` must be NULL or a live dial, not used afterwards.
 pub unsafe fn destroy(dial: *mut AstDial) -> c_int {
-    ast_dial_destroy(dial)
+    sys::ast_dial_destroy(dial)
 }
 
 /// `ast_pthread_create_detached_stack` with the default stack size: start
@@ -128,11 +98,11 @@ pub unsafe fn destroy(dial: *mut AstDial) -> c_int {
 /// `start` must be safe to run with `data` on another thread.
 pub unsafe fn spawn_detached(start: StartFn, data: *mut c_void, file: &str, caller: &str, line: i32, start_fn: &str) -> c_int {
     let (file, caller, start_fn) = (crate::cstr(file), crate::cstr(caller), crate::cstr(start_fn));
-    let mut thread: libc_pthread_t = 0;
-    ast_pthread_create_detached_stack(
+    let mut thread: sys::pthread_t = 0;
+    sys::ast_pthread_create_detached_stack(
         &mut thread,
         ptr::null_mut(),
-        start,
+        Some(start),
         data,
         0,
         file.as_ptr(),

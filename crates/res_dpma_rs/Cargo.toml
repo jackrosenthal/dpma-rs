@@ -1,0 +1,23 @@
+[package]
+name = "res_dpma_rs"
+description = "Open source, drop-in replacement for the Digium Phone Module for Asterisk (DPMA)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "res_dpma_rs"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Test-only CLI commands (`dpmadev ...`) used by the test suites in
+# dev/tests; never enabled in release builds.
+devtest = []
+
+[dependencies]
+dpma-ast.workspace = true
+dpma-proto.workspace = true
+libc.workspace = true
+mdns-sd = { version = "0.21.6", default-features = false }
+openssl.workspace = true
+serde_json.workspace = true

@@ -9,52 +9,14 @@
 //! The phone request handlers (phone_request.c) use it too, for the XML
 //! requests' attributes and node markup.
 
+use crate::sys;
 use crate::util::{cstr, from_ptr};
-use crate::xml::{ast_xml_free_text, xmlParseMemory};
+use crate::xml::{xmlBufferContent, xmlBufferCreate, xmlBufferFree, xmlNodeDump, xmlParseMemory};
 use std::marker::PhantomData;
 use std::os::raw::{c_char, c_int};
 
-#[repr(C)]
-struct AstXmlDoc {
-    _private: [u8; 0],
-}
-
-#[repr(C)]
-struct AstXmlNode {
-    _private: [u8; 0],
-}
-
-extern "C" {
-    fn ast_xml_open(filename: *mut c_char) -> *mut AstXmlDoc;
-    fn ast_xml_close(doc: *mut AstXmlDoc);
-    fn ast_xml_get_root(doc: *mut AstXmlDoc) -> *mut AstXmlNode;
-    fn ast_xml_node_get_name(node: *mut AstXmlNode) -> *const c_char;
-    fn ast_xml_node_get_children(node: *mut AstXmlNode) -> *mut AstXmlNode;
-    fn ast_xml_node_get_next(node: *mut AstXmlNode) -> *mut AstXmlNode;
-    fn ast_xml_find_element(
-        root: *mut AstXmlNode,
-        name: *const c_char,
-        attrname: *const c_char,
-        attrvalue: *const c_char,
-    ) -> *mut AstXmlNode;
-    fn ast_xml_new_child(parent: *mut AstXmlNode, name: *const c_char) -> *mut AstXmlNode;
-    fn ast_xml_set_attribute(node: *mut AstXmlNode, name: *const c_char, value: *const c_char) -> c_int;
-    fn ast_xml_get_text(node: *mut AstXmlNode) -> *const c_char;
-    fn ast_xml_get_attribute(node: *mut AstXmlNode, attrname: *const c_char) -> *const c_char;
-    fn ast_xml_free_attr(attribute: *const c_char);
-    /// libxml2, for serializing a node (`xmlNodeDump` into an `xmlBuffer`).
-    fn xmlBufferCreate() -> *mut std::os::raw::c_void;
-    fn xmlBufferFree(buf: *mut std::os::raw::c_void);
-    fn xmlBufferContent(buf: *const std::os::raw::c_void) -> *const c_char;
-    fn xmlNodeDump(
-        buf: *mut std::os::raw::c_void,
-        doc: *mut AstXmlDoc,
-        cur: *mut AstXmlNode,
-        level: c_int,
-        format: c_int,
-    ) -> c_int;
-    fn ast_xml_doc_dump_file(output: *mut libc::FILE, doc: *mut AstXmlDoc) -> c_int;
-}
+type AstXmlDoc = sys::ast_xml_doc;
+type AstXmlNode = sys::ast_xml_node;
 
 /// An owned `struct ast_xml_doc`, closed with `ast_xml_close` on drop.
 pub struct Doc(*mut AstXmlDoc);
@@ -80,7 +42,7 @@ impl Doc {
     /// `ast_xml_open(filename)`.
     pub fn open(filename: impl AsRef<[u8]>) -> Option<Doc> {
         let c = cstr(filename);
-        let p = unsafe { ast_xml_open(c.as_ptr() as *mut c_char) };
+        let p = unsafe { sys::ast_xml_open(c.as_ptr() as *mut c_char) };
         (!p.is_null()).then_some(Doc(p))
     }
 
@@ -90,13 +52,13 @@ impl Doc {
     pub fn read_memory(buf: impl AsRef<[u8]>) -> Option<Doc> {
         let buf = buf.as_ref();
         let len = c_int::try_from(buf.len()).ok()?;
-        let p = unsafe { xmlParseMemory(buf.as_ptr() as *const c_char, len) } as *mut AstXmlDoc;
+        let p = unsafe { xmlParseMemory(buf.as_ptr() as *const c_char, len) }.cast::<AstXmlDoc>();
         (!p.is_null()).then_some(Doc(p))
     }
 
     /// `ast_xml_get_root`.
     pub fn root(&self) -> Option<Node<'_>> {
-        node(unsafe { ast_xml_get_root(self.0) })
+        node(unsafe { sys::ast_xml_get_root(self.0) })
     }
 
     /// `fopen(path, "w")` and `ast_xml_doc_dump_file` (libxml2's
@@ -108,7 +70,7 @@ impl Doc {
             if f.is_null() {
                 return false;
             }
-            ast_xml_doc_dump_file(f, self.0);
+            sys::ast_xml_doc_dump_file(f.cast(), self.0);
             libc::fclose(f);
         }
         true
@@ -122,7 +84,7 @@ impl Doc {
             if buf.is_null() {
                 return None;
             }
-            let res = if xmlNodeDump(buf, self.0, node.ptr, 0, 0) < 0 {
+            let res = if xmlNodeDump(buf, self.0.cast(), node.ptr.cast(), 0, 0) < 0 {
                 None
             } else {
                 from_ptr(xmlBufferContent(buf))
@@ -135,24 +97,24 @@ impl Doc {
 
 impl Drop for Doc {
     fn drop(&mut self) {
-        unsafe { ast_xml_close(self.0) };
+        unsafe { sys::ast_xml_close(self.0) };
     }
 }
 
 impl<'a> Node<'a> {
     /// `ast_xml_node_get_name` ("" when libxml2 has none).
     pub fn name(&self) -> Vec<u8> {
-        unsafe { from_ptr(ast_xml_node_get_name(self.ptr)).unwrap_or_default() }
+        unsafe { from_ptr(sys::ast_xml_node_get_name(self.ptr)).unwrap_or_default() }
     }
 
     /// `ast_xml_node_get_children`: the first child (text nodes included).
     pub fn children(&self) -> Option<Node<'a>> {
-        node(unsafe { ast_xml_node_get_children(self.ptr) })
+        node(unsafe { sys::ast_xml_node_get_children(self.ptr) })
     }
 
     /// `ast_xml_node_get_next`: the next sibling.
     pub fn next(&self) -> Option<Node<'a>> {
-        node(unsafe { ast_xml_node_get_next(self.ptr) })
+        node(unsafe { sys::ast_xml_node_get_next(self.ptr) })
     }
 
     /// `ast_xml_find_element(self, name, attrname, attrvalue)`: this node or
@@ -163,20 +125,20 @@ impl<'a> Node<'a> {
         let an = opt_cstr(attr.map(|a| a.0.as_bytes()));
         let av = opt_cstr(attr.map(|a| a.1));
         let ptr = |c: &Option<std::ffi::CString>| c.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
-        node(unsafe { ast_xml_find_element(self.ptr, n.as_ptr(), ptr(&an), ptr(&av)) })
+        node(unsafe { sys::ast_xml_find_element(self.ptr, n.as_ptr(), ptr(&an), ptr(&av)) })
     }
 
     /// `ast_xml_new_child(self, name)`: append a new element.
     pub fn new_child(&self, name: impl AsRef<[u8]>) -> Option<Node<'a>> {
         let n = cstr(name);
-        node(unsafe { ast_xml_new_child(self.ptr, n.as_ptr()) })
+        node(unsafe { sys::ast_xml_new_child(self.ptr, n.as_ptr()) })
     }
 
     /// `ast_xml_set_attribute`.
     pub fn set_attribute(&self, name: impl AsRef<[u8]>, value: impl AsRef<[u8]>) -> bool {
         let n = cstr(name);
         let v = cstr(value);
-        unsafe { ast_xml_set_attribute(self.ptr, n.as_ptr(), v.as_ptr()) == 0 }
+        unsafe { sys::ast_xml_set_attribute(self.ptr, n.as_ptr(), v.as_ptr()) == 0 }
     }
 
     /// `ast_xml_get_attribute(self, name)`; None when the element has no
@@ -184,12 +146,12 @@ impl<'a> Node<'a> {
     pub fn attribute(&self, name: &str) -> Option<Vec<u8>> {
         let n = cstr(name);
         unsafe {
-            let a = ast_xml_get_attribute(self.ptr, n.as_ptr());
+            let a = sys::ast_xml_get_attribute(self.ptr, n.as_ptr());
             if a.is_null() {
                 return None;
             }
             let s = from_ptr(a);
-            ast_xml_free_attr(a);
+            sys::ast_xml_free_attr(a);
             s
         }
     }
@@ -198,12 +160,12 @@ impl<'a> Node<'a> {
     /// returns NULL.
     pub fn text(&self) -> Option<Vec<u8>> {
         unsafe {
-            let t = ast_xml_get_text(self.ptr);
+            let t = sys::ast_xml_get_text(self.ptr);
             if t.is_null() {
                 return None;
             }
             let s = from_ptr(t);
-            ast_xml_free_text(t);
+            sys::ast_xml_free_text(t);
             s
         }
     }

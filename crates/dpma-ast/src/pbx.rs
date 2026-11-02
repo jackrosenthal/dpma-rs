@@ -1,7 +1,7 @@
 //! Dialplan manipulation.
 
-use crate::ffi;
-use crate::util::cstr;
+use crate::sys;
+use crate::util::{ast_strdup, cstr, intern};
 
 fn opt(s: Option<&[u8]>) -> Option<std::ffi::CString> {
     s.map(cstr)
@@ -15,19 +15,27 @@ fn ptr(c: &Option<std::ffi::CString>) -> *const std::os::raw::c_char {
 pub fn context_create(name: impl AsRef<[u8]>, registrar: &str) -> bool {
     let n = cstr(name);
     let r = cstr(registrar);
-    unsafe { ffi::dpma_glue_context_create(n.as_ptr(), r.as_ptr()) == 0 }
+    // SAFETY: valid C strings (the context copies its registrar).
+    unsafe { !sys::ast_context_find_or_create(std::ptr::null_mut(), std::ptr::null_mut(), n.as_ptr(), r.as_ptr()).is_null() }
 }
 
 /// Remove everything `registrar` added to the context `name`.
 pub fn context_destroy(name: impl AsRef<[u8]>, registrar: &str) {
     let n = cstr(name);
     let r = cstr(registrar);
-    unsafe { ffi::dpma_glue_context_destroy(n.as_ptr(), r.as_ptr()) };
+    // SAFETY: valid C strings; a context found is destroyed by registrar.
+    unsafe {
+        let con = sys::ast_context_find(n.as_ptr());
+        if !con.is_null() {
+            sys::ast_context_destroy(con, r.as_ptr());
+        }
+    }
 }
 
 pub fn context_exists(name: impl AsRef<[u8]>) -> bool {
     let n = cstr(name);
-    unsafe { ffi::dpma_glue_context_exists(n.as_ptr()) != 0 }
+    // SAFETY: a valid C string.
+    unsafe { !sys::ast_context_find(n.as_ptr()).is_null() }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -47,10 +55,14 @@ pub fn add_extension(
     let l = opt(label);
     let cid = opt(callerid);
     let a = cstr(app);
-    let d = opt(data);
-    let r = cstr(registrar);
+    // The extension keeps (and frees) its data, and keeps the registrar
+    // pointer (contexts copy theirs).
+    let d = ast_strdup(data.unwrap_or_default());
+    let r = intern(registrar);
+    // SAFETY: valid C strings; `d` is handed over with ast_free_ptr as its
+    // destructor.
     unsafe {
-        ffi::dpma_glue_add_extension(
+        sys::ast_add_extension(
             c.as_ptr(),
             replace as i32,
             e.as_ptr(),
@@ -58,7 +70,8 @@ pub fn add_extension(
             ptr(&l),
             ptr(&cid),
             a.as_ptr(),
-            ptr(&d),
+            d.cast(),
+            Some(sys::ast_free_ptr),
             r.as_ptr(),
         ) == 0
     }
@@ -68,7 +81,8 @@ pub fn remove_extension(context: impl AsRef<[u8]>, exten: impl AsRef<[u8]>, prio
     let c = cstr(context);
     let e = cstr(exten);
     let r = cstr(registrar);
-    unsafe { ffi::dpma_glue_remove_extension(c.as_ptr(), e.as_ptr(), priority, r.as_ptr()) == 0 }
+    // SAFETY: valid C strings.
+    unsafe { sys::ast_context_remove_extension(c.as_ptr(), e.as_ptr(), priority, r.as_ptr()) == 0 }
 }
 
 /// Priority used for hints.
@@ -77,7 +91,8 @@ pub const PRIORITY_HINT: i32 = -1;
 /// Remove every context and extension that `registrar` added.
 pub fn context_destroy_registrar(registrar: &str) {
     let r = cstr(registrar);
-    unsafe { ffi::dpma_glue_context_destroy_registrar(r.as_ptr()) };
+    // SAFETY: a valid C string.
+    unsafe { sys::ast_context_destroy(std::ptr::null_mut(), r.as_ptr()) };
 }
 
 /// Set a global dialplan variable or function (`pbx_builtin_setvar_helper`
@@ -85,5 +100,6 @@ pub fn context_destroy_registrar(registrar: &str) {
 pub fn set_global(name: impl AsRef<[u8]>, value: impl AsRef<[u8]>) -> bool {
     let n = cstr(name);
     let v = cstr(value);
-    unsafe { ffi::pbx_builtin_setvar_helper(std::ptr::null_mut(), n.as_ptr(), v.as_ptr()) == 0 }
+    // SAFETY: valid C strings, copied.
+    unsafe { sys::pbx_builtin_setvar_helper(std::ptr::null_mut(), n.as_ptr(), v.as_ptr()) == 0 }
 }

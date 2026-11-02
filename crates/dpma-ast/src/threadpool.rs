@@ -6,47 +6,14 @@
 //! queued when a pool is shut down (Asterisk frees those without running
 //! them) are dropped properly instead of leaking.
 
+use crate::sys;
 use crate::util::{ast_strdup, cstr};
 use std::collections::HashMap;
 use std::ffi::CStr;
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_int, c_void};
 use std::sync::{Mutex, OnceLock};
 
-#[repr(C)]
-struct AstThreadpool {
-    _private: [u8; 0],
-}
-
-/// `struct ast_threadpool_options` (AST_THREADPOOL_OPTIONS_VERSION 1).
-#[repr(C)]
-struct AstThreadpoolOptions {
-    version: c_int,
-    idle_timeout: c_int,
-    auto_increment: c_int,
-    initial_size: c_int,
-    max_size: c_int,
-    thread_start: Option<extern "C" fn()>,
-    thread_end: Option<extern "C" fn()>,
-}
-
-extern "C" {
-    fn ast_threadpool_create(
-        name: *const c_char,
-        listener: *mut c_void,
-        options: *const AstThreadpoolOptions,
-    ) -> *mut AstThreadpool;
-    fn __ast_threadpool_push(
-        pool: *mut AstThreadpool,
-        task: extern "C" fn(*mut c_void) -> c_int,
-        data: *mut c_void,
-        file: *const c_char,
-        line: c_int,
-        function: *const c_char,
-    ) -> c_int;
-    fn ast_threadpool_shutdown(pool: *mut AstThreadpool);
-    fn ast_register_thread(name: *mut c_char);
-    fn ast_unregister_thread(id: *mut c_void);
-}
+type AstThreadpool = sys::ast_threadpool;
 
 /// Pool sizing (the fields of `struct ast_threadpool_options`).
 #[derive(Debug, Clone, Copy)]
@@ -89,7 +56,7 @@ fn tasks() -> &'static Mutex<Tasks> {
     T.get_or_init(|| Mutex::new(Tasks { next: 1, pending: HashMap::new() }))
 }
 
-extern "C" fn run_task(data: *mut c_void) -> c_int {
+unsafe extern "C" fn run_task(data: *mut c_void) -> c_int {
     crate::guard((), || {
         let id = data as usize;
         let task = tasks().lock().unwrap_or_else(|e| e.into_inner()).pending.remove(&id);
@@ -114,8 +81,8 @@ impl ThreadPool {
     /// `ast_threadpool_create(name, NULL, &options)`.  The pool's
     /// taskprocessors are named "<name>/pool" and "<name>/pool-control".
     pub fn create(name: &str, opts: &Options) -> Option<ThreadPool> {
-        let o = AstThreadpoolOptions {
-            version: 1,
+        let o = sys::ast_threadpool_options {
+            version: sys::AST_THREADPOOL_OPTIONS_VERSION as c_int,
             idle_timeout: opts.idle_timeout,
             auto_increment: opts.auto_increment,
             initial_size: opts.initial_size,
@@ -124,7 +91,8 @@ impl ThreadPool {
             thread_end: None,
         };
         let n = cstr(name);
-        let ptr = unsafe { ast_threadpool_create(n.as_ptr(), std::ptr::null_mut(), &o) };
+        // SAFETY: the options are read during the call; no listener.
+        let ptr = unsafe { sys::ast_threadpool_create(n.as_ptr(), std::ptr::null_mut(), &o) };
         if ptr.is_null() {
             None
         } else {
@@ -146,10 +114,12 @@ impl ThreadPool {
             t.pending.insert(id, Pending { pool: self.ptr as usize, task });
             id
         };
+        // SAFETY: the task's data is an id into the task table, which
+        // `run_task` looks up; the origin strings are static.
         let res = unsafe {
-            __ast_threadpool_push(
+            sys::__ast_threadpool_push(
                 self.ptr,
-                run_task,
+                Some(run_task),
                 id as *mut c_void,
                 origin.file.as_ptr(),
                 origin.line,
@@ -171,7 +141,8 @@ impl Drop for ThreadPool {
     fn drop(&mut self) {
         // Stops the workers and waits for the running tasks; queued tasks
         // are discarded by Asterisk without running.
-        unsafe { ast_threadpool_shutdown(self.ptr) };
+        // SAFETY: the pool this wrapper owns.
+        unsafe { sys::ast_threadpool_shutdown(self.ptr) };
         let pool = self.ptr as usize;
         let dropped: Vec<Pending> = {
             let mut t = tasks().lock().unwrap();
@@ -197,11 +168,13 @@ pub fn register_thread(name: &str) {
     // Asterisk takes ownership of the name and frees it with ast_free.
     let n = ast_strdup(name);
     if !n.is_null() {
-        unsafe { ast_register_thread(n) };
+        // SAFETY: Asterisk takes ownership of the ast_malloc'ed name.
+        unsafe { sys::ast_register_thread(n) };
     }
 }
 
 /// `ast_unregister_thread(pthread_self())`.
 pub fn unregister_thread() {
-    unsafe { ast_unregister_thread(libc::pthread_self() as *mut c_void) };
+    // SAFETY: the calling thread's id, as registered.
+    unsafe { sys::ast_unregister_thread(libc::pthread_self() as *mut c_void) };
 }

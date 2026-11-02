@@ -1,14 +1,14 @@
 //! CLI command registration.
 //!
-//! Commands are registered as a group; the C glue owns the `ast_cli_entry`
-//! structures and dispatches back into Rust by numeric id.
+//! Each command is an `ast_cli_entry` owned here, with the Rust handler
+//! next to it; Asterisk calls the one `handler` below for all of them,
+//! which finds the Rust handler from the entry it is given.
 
-use crate::ffi;
+use crate::sys;
 use crate::util::{ast_strdup, cstr, from_ptr};
 use dpma_bytes::starts_with_ic;
-use std::collections::HashMap;
-use std::os::raw::{c_char, c_int, c_void};
-use std::sync::{Mutex, OnceLock};
+use std::ffi::CString;
+use std::os::raw::{c_char, c_int};
 
 /// Arguments passed to a CLI command handler.
 pub struct CliArgs {
@@ -24,7 +24,8 @@ impl CliArgs {
     /// Write text to the CLI (`ast_cli(fd, "%s", text)`: up to a NUL).
     pub fn out(&self, text: impl AsRef<[u8]>) {
         let c = cstr(text);
-        unsafe { ffi::dpma_glue_cli_out(self.fd, c.as_ptr()) };
+        // SAFETY: valid C strings; the text is passed as a "%s" argument.
+        unsafe { sys::ast_cli(self.fd, c"%s".as_ptr(), c.as_ptr()) };
     }
 }
 
@@ -54,106 +55,119 @@ pub struct CliCommand {
     pub complete: Option<CompleteFn>,
 }
 
-struct Handler {
+/// `CLI_SUCCESS`, `CLI_SHOWUSAGE`, and `CLI_FAILURE` (`(char *)
+/// RESULT_*`).
+const CLI_SUCCESS: *mut c_char = std::ptr::null_mut();
+const CLI_SHOWUSAGE: *mut c_char = std::ptr::without_provenance_mut(1);
+const CLI_FAILURE: *mut c_char = std::ptr::without_provenance_mut(2);
+
+/// A registered command: the `ast_cli_entry` Asterisk holds (first, so a
+/// pointer to it is a pointer to the whole) and what it refers to.
+#[repr(C)]
+struct Entry {
+    raw: sys::ast_cli_entry,
+    command: CString,
+    summary: CString,
+    usage: CString,
     exec: ExecFn,
     complete: Option<CompleteFn>,
 }
 
-fn handlers() -> &'static Mutex<HashMap<i32, Handler>> {
-    static H: OnceLock<Mutex<HashMap<i32, Handler>>> = OnceLock::new();
-    H.get_or_init(|| Mutex::new(HashMap::new()))
+/// The handler of every entry (`char *(*handler)(struct ast_cli_entry *e,
+/// int cmd, struct ast_cli_args *a)`).
+unsafe extern "C" fn handler(e: *mut sys::ast_cli_entry, cmd: c_int, a: *mut sys::ast_cli_args) -> *mut c_char {
+    // SAFETY: every entry registered with this handler is the first field
+    // of an `Entry` that lives until it is unregistered.
+    let entry = &*(e as *const Entry);
+    if cmd == sys::CLI_INIT {
+        // The command words and usage (Asterisk copies the command).
+        (*e).command = entry.command.as_ptr() as *mut c_char;
+        (*e).usage = entry.usage.as_ptr();
+        return std::ptr::null_mut();
+    }
+    if a.is_null() {
+        return CLI_FAILURE;
+    }
+    // SAFETY: Asterisk's arguments for this call.
+    let a = &*a;
+    if cmd == sys::CLI_GENERATE {
+        let Some(complete) = entry.complete else {
+            return std::ptr::null_mut();
+        };
+        return crate::guard(std::ptr::null_mut(), || {
+            let args = CompleteArgs {
+                line: from_ptr(a.line).unwrap_or_default(),
+                word: from_ptr(a.word).unwrap_or_default(),
+                pos: a.pos,
+                n: a.n,
+            };
+            // The caller frees the result with ast_free.
+            complete(&args).map_or(std::ptr::null_mut(), ast_strdup)
+        });
+    }
+    let exec = entry.exec;
+    crate::guard(CLI_FAILURE, || {
+        let argv = (0..a.argc.max(0) as usize).map(|i| from_ptr(*a.argv.add(i)).unwrap_or_default()).collect();
+        match exec(&CliArgs { fd: a.fd, argv }) {
+            CliResult::Success => CLI_SUCCESS,
+            CliResult::ShowUsage => CLI_SHOWUSAGE,
+            CliResult::Failure => CLI_FAILURE,
+        }
+    })
 }
-
-static NEXT_ID: Mutex<i32> = Mutex::new(1);
 
 /// A registered group of commands; unregistered on drop.
 pub struct CliGroup {
-    handle: *mut c_void,
-    ids: Vec<i32>,
+    /// Registered entries; Asterisk holds pointers into the slice, which
+    /// never moves or grows.
+    entries: Box<[Entry]>,
 }
 
+// SAFETY: the entries are only touched by Asterisk (under its CLI lock)
+// and by `drop`, after they are unregistered.
 unsafe impl Send for CliGroup {}
 unsafe impl Sync for CliGroup {}
 
 impl CliGroup {
+    /// `ast_cli_register_multiple`: register `cmds` for this module.
     pub fn register(cmds: &[CliCommand]) -> CliGroup {
-        let mut ids = Vec::new();
-        {
-            let mut next = NEXT_ID.lock().unwrap();
-            let mut h = handlers().lock().unwrap();
-            for c in cmds {
-                let id = *next;
-                *next += 1;
-                h.insert(id, Handler { exec: c.exec, complete: c.complete });
-                ids.push(id);
-            }
+        let mut entries: Box<[Entry]> = cmds
+            .iter()
+            .map(|c| {
+                Entry {
+                    // SAFETY: an all-zero ast_cli_entry is the C empty
+                    // initializer (NULL pointers, no handler).
+                    raw: unsafe { std::mem::zeroed() },
+                    command: cstr(c.command),
+                    summary: cstr(c.summary),
+                    usage: cstr(c.usage),
+                    exec: c.exec,
+                    complete: c.complete,
+                }
+            })
+            .collect();
+        let mut failed = false;
+        for e in entries.iter_mut() {
+            e.raw.summary = e.summary.as_ptr();
+            e.raw.handler = Some(handler);
+            // SAFETY: the entry stays at this address (the slice is never
+            // moved or resized) until `drop` unregisters it.
+            failed |= unsafe { sys::__ast_cli_register(&mut e.raw, crate::module::self_ptr()) } != 0;
         }
-        let commands: Vec<_> = cmds.iter().map(|c| cstr(c.command)).collect();
-        let summaries: Vec<_> = cmds.iter().map(|c| cstr(c.summary)).collect();
-        let usages: Vec<_> = cmds.iter().map(|c| cstr(c.usage)).collect();
-        let cp: Vec<*const c_char> = commands.iter().map(|c| c.as_ptr()).collect();
-        let sp: Vec<*const c_char> = summaries.iter().map(|c| c.as_ptr()).collect();
-        let up: Vec<*const c_char> = usages.iter().map(|c| c.as_ptr()).collect();
-        let handle = unsafe {
-            ffi::dpma_glue_cli_register(cp.as_ptr(), sp.as_ptr(), up.as_ptr(), ids.as_ptr(), ids.len() as c_int)
-        };
-        CliGroup { handle, ids }
+        if failed {
+            crate::ast_log!(crate::log::LOG_ERROR, "Unable to register CLI commands");
+        }
+        CliGroup { entries }
     }
 }
 
 impl Drop for CliGroup {
     fn drop(&mut self) {
-        unsafe { ffi::dpma_glue_cli_unregister(self.handle) };
-        let mut h = handlers().lock().unwrap();
-        for id in &self.ids {
-            h.remove(id);
+        for e in self.entries.iter_mut() {
+            // SAFETY: registered by `register`.
+            unsafe { sys::ast_cli_unregister(&mut e.raw) };
         }
     }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn dpma_rust_cli_exec(id: c_int, fd: c_int, argc: c_int, argv: *const *const c_char) -> c_int {
-    crate::guard(2, || {
-        let exec = match handlers().lock().unwrap().get(&id) {
-            Some(h) => h.exec,
-            None => return 2,
-        };
-        let mut args = Vec::with_capacity(argc as usize);
-        for i in 0..argc as usize {
-            args.push(from_ptr(*argv.add(i)).unwrap_or_default());
-        }
-        match exec(&CliArgs { fd, argv: args }) {
-            CliResult::Success => 0,
-            CliResult::ShowUsage => 1,
-            CliResult::Failure => 2,
-        }
-    })
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn dpma_rust_cli_complete(
-    id: c_int,
-    line: *const c_char,
-    word: *const c_char,
-    pos: c_int,
-    n: c_int,
-) -> *mut c_char {
-    crate::guard(std::ptr::null_mut(), || {
-        let complete = match handlers().lock().unwrap().get(&id) {
-            Some(Handler { complete: Some(c), .. }) => *c,
-            _ => return std::ptr::null_mut(),
-        };
-        let args = CompleteArgs {
-            line: from_ptr(line).unwrap_or_default(),
-            word: from_ptr(word).unwrap_or_default(),
-            pos,
-            n,
-        };
-        match complete(&args) {
-            Some(s) => ast_strdup(s),
-            None => std::ptr::null_mut(),
-        }
-    })
 }
 
 /// Standard completion over a list of candidate names: returns the n-th name
