@@ -14,6 +14,8 @@
 //! | [`harness`] | Shared by the suites: the instance and its CLI (control socket), checks, the log, configuration editing, the suite runner, and fixtures. |
 //! | [`sip`] | SIP messages as bytes (parsing and encoding). |
 //! | [`util`] | JSON text as the test documents write it, waiting with timeouts. |
+//! | [`ari`] | An ARI (Asterisk REST Interface) HTTP client, for push configuration. |
+//! | [`diff`] | Unified line diffs for check details. |
 //! | [`xml`] | XML well-formedness. |
 //!
 //! # Binaries
@@ -51,6 +53,8 @@
 #![warn(missing_docs)]
 
 pub mod ami;
+pub mod ari;
+pub mod diff;
 pub mod harness;
 pub mod mdns;
 pub mod mkpki;
