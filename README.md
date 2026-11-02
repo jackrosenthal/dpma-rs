@@ -3,23 +3,24 @@
 dpma-rs is an open-source, drop-in replacement for Digium's closed-source
 Digium Phone Module for Asterisk (DPMA, `res_digium_phone`), written in
 Rust.  It follows DPMA 24.0_3.6.13 for Asterisk 24: the same configuration
-files, the same phone protocol, the same CLI commands and AMI actions and
-events, and the same C API for the helper modules.  Digium and Sangoma
-phones are meant to work with it just as with the original, without
-changes on the phones, given the trust material described in "Phone trust
-material" below.
+files, the same phone protocol, and the same CLI commands, AMI actions and
+events, and dialplan applications.  Digium and Sangoma phones are meant to
+work with it just as with the original, without changes on the phones,
+given the trust material described in "Phone trust material" below.
 
 This is version 0.1.0.  dpma-rs is an independent rewrite; it is not made
 or endorsed by Digium or Sangoma.
 
-It consists of three Asterisk modules, each replacing the module of the
-same name in the original distribution:
+It is one Asterisk module, `res_dpma_rs.so`, which replaces the three
+modules of the original distribution:
 
-| Module | Purpose |
+| Original module | What `res_dpma_rs.so` does in its place |
 |---|---|
 | `res_digium_phone.so` | The phone module: phone configuration, sessions and encryption, phone requests, the phone methods (voicemail, queues, parking, recording, phonebook, presence), CLI commands, AMI actions and events, dialplan applications, and service discovery (mDNS). |
 | `res_pjsip_endpoint_identifier_dpma.so` | PJSIP support: matches the phones' messages to the module, fills phone lines from the PJSIP configuration, records where phones register, and sends SIP INFO messages to phones during calls. |
 | `res_pjsip_dialog_info_digium_body_supplement.so` | Adds the ringing caller's details to dialog-info (BLF) notifications sent to Digium and Sangoma phones. |
+
+It is written in Rust only: there is no C code to compile.
 
 ## Supported Asterisk versions
 
@@ -30,15 +31,19 @@ dpma-rs supports Asterisk 22, 23, and 24.
 You need:
 
 - A stable Rust toolchain with Cargo (dpma-rs is developed with Rust
-  1.99) and a C compiler.
+  1.99).
+- libclang (from LLVM/Clang; dpma-rs is developed with libclang 18): the
+  build reads the Asterisk and pjproject headers with `bindgen`, which
+  uses it.  If it is not found, set `LIBCLANG_PATH` to the directory
+  that holds `libclang.so`.
 - The Asterisk 24 development headers (`asterisk.h` and the `asterisk/`
   directory).  Set `ASTERISK_INCLUDE_DIR` to the directory that holds
   `asterisk.h`; the default is `/usr/include`.
-- For the two PJSIP modules, the pjproject headers Asterisk was built
-  with.  Set `PJPROJECT_DIR` to either a pjproject source tree (for the
-  pjproject bundled with Asterisk, `third-party/pjproject/source` in the
-  Asterisk source tree) or a directory of installed pjproject headers
-  (the one containing `pjsip.h`).
+- The pjproject headers Asterisk was built with.  Set `PJPROJECT_DIR` to
+  either a pjproject source tree (for the pjproject bundled with
+  Asterisk, `third-party/pjproject/source` in the Asterisk source tree)
+  or a directory of installed pjproject headers (the one containing
+  `pjsip.h`).
 - The OpenSSL development files (headers and `pkg-config` data), for the
   `openssl` crate.
 
@@ -50,48 +55,53 @@ export PJPROJECT_DIR=/usr/src/asterisk-24/third-party/pjproject/source
 cargo build --release
 ```
 
-The modules are built as `target/release/libres_digium_phone.so`,
-`target/release/libres_pjsip_endpoint_identifier_dpma.so`, and
-`target/release/libres_pjsip_dialog_info_digium_body_supplement.so`.  To
-build only the phone module (without the pjproject headers), run
-`cargo build --release -p res_digium_phone`.
+The module is built as `target/release/libres_dpma_rs.so`.
 
-At run time the modules use the OpenSSL libraries and the libxml2 that
+At run time the module uses the OpenSSL libraries and the libxml2 that
 Asterisk itself loads.
 
 ## Installing
 
-Copy the modules into Asterisk's module directory (`astmoddir` in
-`asterisk.conf`, often `/usr/lib/asterisk/modules`) without the `lib`
-prefix, replacing the original modules of the same names:
+Copy the module into Asterisk's module directory (`astmoddir` in
+`asterisk.conf`, often `/usr/lib/asterisk/modules`) as `res_dpma_rs.so`
+(without the `lib` prefix), and take the original modules out of it:
 
 ```
 MODDIR=/usr/lib/asterisk/modules
-for m in res_digium_phone res_pjsip_endpoint_identifier_dpma res_pjsip_dialog_info_digium_body_supplement; do
-    cp target/release/lib$m.so $MODDIR/$m.so.new && mv $MODDIR/$m.so.new $MODDIR/$m.so
-done
+cp target/release/libres_dpma_rs.so $MODDIR/res_dpma_rs.so.new && mv $MODDIR/res_dpma_rs.so.new $MODDIR/res_dpma_rs.so
+rm -f $MODDIR/res_digium_phone.so $MODDIR/res_pjsip_endpoint_identifier_dpma.so \
+    $MODDIR/res_pjsip_dialog_info_digium_body_supplement.so
 ```
 
-Copy them in while Asterisk is stopped, or copy and rename as above:
-writing over a loaded module crashes the running Asterisk.  Then restart
-Asterisk; after an upgrade, `module unload` and `module load` do not
-reliably pick up the new code of these modules, so restart instead.
+`res_dpma_rs.so` does everything the three original modules do, so they
+must not be loaded with it: Asterisk would load both, and both would
+answer the phones.  Remove them as above, or keep the files and add
+`noload` lines to `modules.conf`:
 
-The modules load with Asterisk's usual autoloading (or `load =>` lines in
-`modules.conf`).  The PJSIP modules require `res_pjsip` and
-`res_digium_phone` (the dialog-info supplement also `res_pjsip_pubsub`).
-`res_digium_phone` uses `func_presencestate`, `app_voicemail`,
-`res_parking`, and `app_queue` when they are loaded.
+```
+noload => res_digium_phone.so
+noload => res_pjsip_endpoint_identifier_dpma.so
+noload => res_pjsip_dialog_info_digium_body_supplement.so
+```
 
-As with the original, `res_pjsip_endpoint_identifier_dpma` needs a PJSIP
-endpoint named by `default_outbound_endpoint` in the `[global]` section of
-`pjsip.conf` (default name `default_outbound_endpoint`).  Without it the
-module fails to load, which stops Asterisk from starting.
+Copy the module in while Asterisk is stopped, or copy and rename as
+above: writing over a loaded module crashes the running Asterisk.  Then
+restart Asterisk; after an upgrade, `module unload` and `module load` do
+not reliably pick up the new code of the module, so restart instead.
 
-The original `res_pjsip_endpoint_identifier_dpma.so` also works with
-dpma-rs's `res_digium_phone.so`.  The original dialog-info supplement does
-not: it refuses to load without a license check that dpma-rs does not
-have (see "Differences from the original").
+The module loads with Asterisk's usual autoloading (or a
+`load => res_dpma_rs.so` line in `modules.conf`, in place of the
+original's `load =>` lines).  It requires `res_pjsip`,
+`res_pjsip_session`, and `res_pjsip_pubsub`, and uses
+`func_presencestate`, `app_voicemail`, `res_parking`, and `app_queue`
+when they are loaded.  Where you reloaded the original with
+`module reload res_digium_phone.so`, use `module reload res_dpma_rs.so`.
+
+As with the original's `res_pjsip_endpoint_identifier_dpma`, the module
+needs a PJSIP endpoint named by `default_outbound_endpoint` in the
+`[global]` section of `pjsip.conf` (default name
+`default_outbound_endpoint`).  Without it the module fails to load, which
+stops Asterisk from starting.
 
 ## Configuration
 
@@ -108,8 +118,8 @@ existing setup carries over unchanged:
 - `voicemail.conf` and the `users.conf` users with `hasvoicemail`, read
   through app_voicemail as the original does: they provide line mailboxes
   and voicemail pins (`pin=voicemail`).
-- PJSIP lines get their settings from `pjsip.conf` through
-  `res_pjsip_endpoint_identifier_dpma`.
+- PJSIP lines get their settings from `pjsip.conf`, as the original's
+  `res_pjsip_endpoint_identifier_dpma` gives them.
 
 chan_sip is not supported: no lines are read from `sip.conf` or from the
 `users.conf` users with `hassip`.
@@ -147,7 +157,7 @@ When either file is missing, the module still loads and logs an error
 that points here; phones then cannot complete a handshake.  A phone whose
 certificate does not verify gets no answer and is recorded as an
 authentication incident (`DPMAShowIncidents`).  Both files are read again
-on `module reload res_digium_phone.so`; a file that cannot be read keeps
+on `module reload res_dpma_rs.so`; a file that cannot be read keeps
 its previous contents.
 
 For testing without phones, `dev/sim/mkpki.py` generates a self-made PKI
@@ -160,10 +170,8 @@ dpma-rs reproduces the original's behavior, quirks included, with these
 deliberate exceptions:
 
 1. No license handling.  There is no license check and nothing to
-   license: no `digium_phones license status` command, no
-   `DPMALicenseStatus` AMI action, and no `get_license_status` function
-   for other modules.  The original dialog-info supplement module needs
-   that function and so cannot load with dpma-rs; use dpma-rs's own.
+   license: no `digium_phones license status` command and no
+   `DPMALicenseStatus` AMI action.
 2. When loading fails partway, everything already loaded is unloaded
    again.  The original leaves applications, thread pools, and dialplan
    contexts behind.
@@ -218,24 +226,39 @@ deliberate exceptions:
     `logout_exten` as `Logout Extension` and a status application's
     `send486=yes` as `Send486: Yes`.  The original shows the secondary
     server port, the login extension, and "No" there.
+16. One module, `res_dpma_rs.so`, takes the place of the original's three
+    (`res_digium_phone.so`, `res_pjsip_endpoint_identifier_dpma.so`, and
+    `res_pjsip_dialog_info_digium_body_supplement.so`; see "Installing").
+    So `module show`, `module load`, `module unload`, `module reload`, and
+    `core set debug` name `res_dpma_rs` (whose debug level also governs
+    the debug messages that the PJSIP helpers logged under their own
+    names), and `config list` shows `res_dpma_rs` as the module that
+    loaded `res_digium_phone.conf` (so `config reload` of that file
+    reloads `res_dpma_rs`).  The module's use count does not include the
+    helper modules that use the original.
+17. No C API for other modules.  The original exports functions
+    (`dpma_config_*`, `dpma_register_*_handler`, `phone_users_*`,
+    `phone_utils_*`, and others) that its helper modules use; dpma-rs
+    has no helper modules and exports none, so the original's helpers
+    cannot be used with it.
 
 Beyond these, a number of inputs that crash the original modules (for
-example, some NULL arguments to the C API, and PJSIP AOR changes while a
-phone line has no PJSIP endpoint) are handled instead.
+example, PJSIP AOR changes while a phone line has no PJSIP endpoint, or an
+INFO on a channel that has just hung up) are handled instead.
 
 ## License
 
 dpma-rs is licensed under the GNU General Public License, version 2 or
 (at your option) any later version (`GPL-2.0-or-later`), as declared in
-`Cargo.toml` and in the C sources.
+`Cargo.toml`.
 
 ## Development
 
 The development notes and tools live under `dev/`:
 
-- `dev/notes/port-plan.md`: the plan of the port, the protocol and C API
-  as reconstructed from the original, and every finding and decision made
-  along the way.
+- `dev/notes/port-plan.md`: the plan of the port, the protocol and the
+  original's C API as reconstructed from the original, and every finding
+  and decision made along the way.
 - `dev/sim/README.md`: the phone simulator, test PKI, and AMI client used
   to test without phones.
 - `dev/tests/README.md`: the test suites and how to run them against a

@@ -3,13 +3,13 @@
 phone_request.c) with the phone simulator.
 
 Needs a private instance with the simulator's PKI and configuration, the
-P12 test phones (setup.sh), a devtest build of res_digium_phone
+P12 test phones (setup.sh), a devtest build of res_dpma_rs
 installed, and Asterisk running:
 
     export DPMA_SLOT=<n>
     python3 dev/sim/mkpki.py && dev/sim/install-conf.sh
     dev/tests/request-handlers/setup.sh
-    cargo build -p res_digium_phone --features devtest
+    cargo build -p res_dpma_rs --features devtest
     dev/tools/ast.sh install && dev/tools/ast.sh start
     python3 dev/tests/request-handlers/run.py [-v] [SECTION...]
 
@@ -377,14 +377,14 @@ def test_xml():
     try:
         params = '<parameters><a x="1">t &amp; u</a><b/></parameters>'
         doc = '<request method="P12.who.xml">%s</request>' % params
-        cli("core set debug 3 res_digium_phone")
+        cli("core set debug 3 res_dpma_rs")
         mark = log_mark()
         want = ('<response method="P12.who.xml"><result phone="p12a" registry="xml">%s</result></response>'
                 % params).encode()
         expect("XML method gets phone, method, and <parameters>", call(p, "p12a:4321", doc),
                "AsteriskResponse", None, http(want))
         logged("XML debug log", mark, "Asterisk request method 'P12.who.xml' is using XML body\n")
-        cli("core set debug 0 res_digium_phone")
+        cli("core set debug 0 res_dpma_rs")
         cases = [
             ('<request method="p12.who.xml"/>', "p12.who.xml", 10001),
             ('<request method=""><parameters/></request>', "NA", 10003),
@@ -546,7 +546,7 @@ def main():
     finally:
         with open(CONF, "w") as f:
             f.write(original)
-        cli("module reload res_digium_phone.so")
+        cli("module reload res_dpma_rs.so")
         L.ami.close()
     return L.summary()
 

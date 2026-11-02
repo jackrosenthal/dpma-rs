@@ -51,7 +51,7 @@ ami DPMAShowPhones
 expect-ami Response=Success EventList~Complete
 
 # Sessions survive a module reload (AstDB).
-cli module reload res_digium_phone.so
+cli module reload res_dpma_rs.so
 sleep 1
 ping
 expect type=PingResponse error=none

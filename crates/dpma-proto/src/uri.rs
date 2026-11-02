@@ -900,7 +900,7 @@ fn split_headers<'a>(host: &'a [u8], params: Option<&'a [u8]>) -> (&'a [u8], Opt
 }
 
 /// `phone_utils_parse_uri` (0x1737f0) on a NUL-terminated buffer, in
-/// place, as the exported C function works: returns the offsets of the
+/// place, as the original's C function works: returns the offsets of the
 /// address and (when `want_transport`) of the transport value; `None`
 /// stands for a pointer to a static `""`.
 ///

@@ -1,0 +1,398 @@
+
+== load
+> module show like res_dpma_rs.so
+  Module                         Description                              Use Count  Status      Support Level
+  res_dpma_rs.so                 Digium Phone Module for Asterisk         0          Running          extended
+  1 modules loaded
+  log: DPMA load.rs: Reconfiguring triggered by Voicemail
+  log: DPMA load.rs: Reconfiguring triggered by res_digium_phone.conf
+  log: NOTICE res_pjsip_endpoint_identifier_dpma.c: Using ast_sip_session_get_dialog() for pjproject version 2.17
+  log: DPMA load.rs: Reconfiguring triggered by identifier load
+line 2001:
+  name '2001' refs 2 (with ours) linked true
+  pjsip_auth (object): '2001-auth'
+  phone: '2001'
+  tech 'PJSIP'
+  secret 'pw2001'
+  callerid '"Phone One" <2001>'
+  mailbox '2001@default'
+  context 'p11-phones'
+  authname '2001'
+  pjsip_auth '2001-auth'
+  line_label ''
+  delme false
+line 2002:
+  name '2002' refs 2 (with ours) linked true
+  pjsip_auth (object): '2002-auth'
+  phone: '2001'
+  tech 'PJSIP'
+  secret 'pw2002'
+  callerid '"Phone Two" <2002>'
+  mailbox 'from-line-section@default'
+  context 'from-line-section'
+  authname '2002'
+  pjsip_auth '2002-auth'
+  line_label 'Two'
+  delme false
+line 2003:
+  name '2003' refs 2 (with ours) linked true
+  pjsip_auth (object): '2003-auth'
+  phone: '2003'
+  tech 'PJSIP'
+  secret 'pw2003'
+  callerid '<unknown>'
+  mailbox ''
+  context 'p11-phones'
+  authname 'user2003'
+  pjsip_auth '2003-auth'
+  line_label ''
+  delme false
+line 2004:
+  name '2004' refs 2 (with ours) linked true
+  pjsip_auth (object): ''
+  phone: '2003'
+  tech ''
+  secret ''
+  callerid ''
+  mailbox ''
+  context 'default'
+  authname ''
+  pjsip_auth ''
+  line_label 'No endpoint'
+  delme false
+line 2005:
+  name '2005' refs 2 (with ours) linked true
+  pjsip_auth (object): ''
+  phone: '2003'
+  tech ''
+  secret ''
+  callerid ''
+  mailbox ''
+  context 'default'
+  authname ''
+  pjsip_auth ''
+  line_label 'ARI'
+  delme false
+
+== res_pjsip reload with changed endpoint and auth
+> module reload res_pjsip.so
+  Module 'res_pjsip.so' reloaded successfully.
+  log: DPMA load.rs: Reconfiguring triggered by endpoint
+line 2001:
+  name '2001' refs 2 (with ours) linked true
+  pjsip_auth (object): '2001-auth'
+  phone: '2001'
+  tech 'PJSIP'
+  secret 'pw2001b'
+  callerid '"Phone One B" <2001>'
+  mailbox '2001@default'
+  context 'p11-phones'
+  authname '2001'
+  pjsip_auth '2001-auth'
+  line_label ''
+  delme false
+> module reload res_pjsip.so
+  Module 'res_pjsip.so' reloaded successfully.
+  log: DPMA load.rs: Reconfiguring triggered by endpoint
+line 2001:
+  name '2001' refs 2 (with ours) linked true
+  pjsip_auth (object): '2001-auth'
+  phone: '2001'
+  tech 'PJSIP'
+  secret 'pw2001'
+  callerid '"Phone One" <2001>'
+  mailbox '2001@default'
+  context 'p11-phones'
+  authname '2001'
+  pjsip_auth '2001-auth'
+  line_label ''
+  delme false
+
+== observers through ARI push configuration
+  ARI PUT endpoint/2005: 200
+line 2005:
+  name '2005' refs 2 (with ours) linked true
+  pjsip_auth (object): ''
+  phone: '2003'
+  tech 'PJSIP'
+  secret ''
+  callerid '"ARI Five" <2005>'
+  mailbox ''
+  context 'p11-phones'
+  authname ''
+  pjsip_auth ''
+  line_label 'ARI'
+  delme false
+  ARI PUT auth/2005-auth: 200
+line 2005:
+  name '2005' refs 2 (with ours) linked true
+  pjsip_auth (object): ''
+  phone: '2003'
+  tech 'PJSIP'
+  secret ''
+  callerid '"ARI Five" <2005>'
+  mailbox ''
+  context 'p11-phones'
+  authname ''
+  pjsip_auth ''
+  line_label 'ARI'
+  delme false
+  ARI PUT endpoint/2005: 200
+line 2005:
+  name '2005' refs 2 (with ours) linked true
+  pjsip_auth (object): '2005-auth'
+  phone: '2003'
+  tech 'PJSIP'
+  secret 'pw2005'
+  callerid '"ARI Five B" <2005>'
+  mailbox ''
+  context 'p11-phones'
+  authname 'ari5'
+  pjsip_auth '2005-auth'
+  line_label 'ARI'
+  delme false
+  ARI PUT auth/2005-auth: 200
+line 2005:
+  name '2005' refs 2 (with ours) linked true
+  pjsip_auth (object): '2005-auth'
+  phone: '2003'
+  tech 'PJSIP'
+  secret 'pw2005b'
+  callerid '"ARI Five B" <2005>'
+  mailbox ''
+  context 'p11-phones'
+  authname 'ari5'
+  pjsip_auth '2005-auth'
+  line_label 'ARI'
+  delme false
+  ARI PUT aor/2005: 200
+line 2005:
+  name '2005' refs 2 (with ours) linked true
+  pjsip_auth (object): '2005-auth'
+  phone: '2003'
+  tech 'PJSIP'
+  secret 'pw2005b'
+  callerid '"ARI Five B" <2005>'
+  mailbox ''
+  context 'p11-phones'
+  authname 'ari5'
+  pjsip_auth '2005-auth'
+  line_label 'ARI'
+  delme false
+  ARI PUT endpoint/2005: 200
+line 2005:
+  name '2005' refs 2 (with ours) linked true
+  pjsip_auth (object): '2005-auth'
+  phone: '2003'
+  tech 'PJSIP'
+  secret 'pw2005b'
+  callerid '"ARI Five B" <2005>'
+  mailbox '2005@default'
+  context 'p11-phones'
+  authname 'ari5'
+  pjsip_auth '2005-auth'
+  line_label 'ARI'
+  delme false
+  ARI DELETE auth/2005-auth: 204
+line 2005:
+  name '2005' refs 2 (with ours) linked true
+  pjsip_auth (object): ''
+  phone: '2003'
+  tech 'PJSIP'
+  secret ''
+  callerid '"ARI Five B" <2005>'
+  mailbox '2005@default'
+  context 'p11-phones'
+  authname ''
+  pjsip_auth ''
+  line_label 'ARI'
+  delme false
+  ARI DELETE endpoint/2005: 204
+line 2005:
+  name '2005' refs 2 (with ours) linked true
+  pjsip_auth (object): ''
+  phone: '2003'
+  tech ''
+  secret ''
+  callerid ''
+  mailbox ''
+  context ''
+  authname ''
+  pjsip_auth ''
+  line_label 'ARI'
+  delme false
+
+== REGISTER
+  REGISTER 2001 200 OK
+  REGISTER 2002 200 OK
+  log: DEBUG res_pjsip_endpoint_identifier_dpma.c: Updating DPMA user '2001' uri='pjsip:127.0.0.1:PORT;transport=udp' ua='Digium D65 2_9_17'
+> dpmadev pjsip lastinfo
+  1: phone '2001' uri 'pjsip:127.0.0.1:PORT;transport=udp' session NULL mac NULL
+  1 calls
+> dpmadev pjsip isdphone 2001
+  dpma_pjsip_endpoint_is_dphone('2001') = 1
+> dpmadev pjsip isdphone 2002
+  dpma_pjsip_endpoint_is_dphone('2002') = 0
+> dpmadev pjsip isdphone 2003
+  dpma_pjsip_endpoint_is_dphone('2003') = 0
+> dpmadev pjsip isdphone 2004
+  dpma_pjsip_endpoint_is_dphone('2004') = 0
+> dpmadev pjsip isdphone nonexistent
+  dpma_pjsip_endpoint_is_dphone('nonexistent') = 0
+  REGISTER 2001 200 OK
+  REGISTER 2002 200 OK
+  log: DEBUG res_pjsip_endpoint_identifier_dpma.c: Updating DPMA user '2001' uri='pjsip:127.0.0.1:PORT;transport=udp' ua='Sangoma P370 2.0'
+> dpmadev pjsip lastinfo
+  1: phone '2001' uri 'pjsip:127.0.0.1:PORT;transport=udp' session NULL mac NULL
+  2: phone '2001' uri 'pjsip:127.0.0.1:PORT;transport=udp' session NULL mac NULL
+  2 calls
+> dpmadev pjsip isdphone 2002
+  dpma_pjsip_endpoint_is_dphone('2002') = 1
+
+== SIP INFO
+> channel originate PJSIP/2001 application Wait 5
+  channel: PJSIP/2001-ID
+> dpmadev pjsip info PJSIP/2001-00000000 {"location":5}
+  info_send = 0
+> dpmadev pjsip info PJSIP/2001-00000000
+  info_send = 0
+> channel originate Local/2002@p11-phones application Wait 2
+> dpmadev pjsip info Local/2002@p11-phones-00000000;2 {}
+  info_send = -1
+  uas: REGISTER 2001 200 OK
+  uas: INVITE 1 answered
+  uas: INFO received:
+  uas:   X-Event-Name: digium.test
+  uas:   X-Extra: 1
+  uas:   Content-Type: application/json
+  uas:   Content-Length:    12
+  uas:   body: {location:5}
+  uas: INFO received:
+  uas:   X-Event-Name: digium.test
+  uas:   X-Extra: 1
+  uas:   Content-Length:  0
+  uas:   body:
+
+== MESSAGE identification and pjsip_message_context
+  MESSAGE proxy X-Digium-User-Agent 202 Accepted
+  MESSAGE proxy plain 401 Unauthorized
+  MESSAGE probe X-Digium-User-Agent 404 Not Found
+  MESSAGE probe plain 401 Unauthorized
+> module reload res_dpma_rs.so
+  Module 'res_dpma_rs.so' reloaded successfully.
+  MESSAGE proxy X-Digium-User-Agent 202 Accepted
+  MESSAGE probe X-Digium-User-Agent 202 Accepted
+  log: DPMA load.rs: Reconfiguring triggered by res_digium_phone.conf
+  log: VERBOSE app_verbose.c: P11 probe: test
+> module reload res_dpma_rs.so
+  Module 'res_dpma_rs.so' reloaded successfully.
+  MESSAGE probe X-Digium-User-Agent 404 Not Found
+  log: DPMA load.rs: Reconfiguring triggered by res_digium_phone.conf
+
+== unload and load 1
+> module unload res_dpma_rs.so
+  Unloaded res_dpma_rs.so
+> module show like res_dpma_rs.so
+  Module                         Description                              Use Count  Status      Support Level
+  res_dpma_rs.so                 Digium Phone Module for Asterisk         0          Not Running      extended
+  1 modules loaded
+> module load res_dpma_rs.so
+  Loaded res_dpma_rs.so
+> module show like res_dpma_rs.so
+  Module                         Description                              Use Count  Status      Support Level
+  res_dpma_rs.so                 Digium Phone Module for Asterisk         0          Running          extended
+  1 modules loaded
+  log: DPMA load.rs: Reconfiguring triggered by Voicemail
+  log: DPMA load.rs: Reconfiguring triggered by res_digium_phone.conf
+  log: NOTICE res_pjsip_endpoint_identifier_dpma.c: Using ast_sip_session_get_dialog() for pjproject version 2.17
+  log: DPMA load.rs: Reconfiguring triggered by identifier load
+line 2001:
+  name '2001' refs 2 (with ours) linked true
+  pjsip_auth (object): '2001-auth'
+  phone: '2001'
+  tech 'PJSIP'
+  secret 'pw2001'
+  callerid '"Phone One" <2001>'
+  mailbox '2001@default'
+  context 'p11-phones'
+  authname '2001'
+  pjsip_auth '2001-auth'
+  line_label ''
+  delme false
+line 2002:
+  name '2002' refs 2 (with ours) linked true
+  pjsip_auth (object): '2002-auth'
+  phone: '2001'
+  tech 'PJSIP'
+  secret 'pw2002'
+  callerid '"Phone Two" <2002>'
+  mailbox 'from-line-section@default'
+  context 'from-line-section'
+  authname '2002'
+  pjsip_auth '2002-auth'
+  line_label 'Two'
+  delme false
+
+== unload and load 2
+> module unload res_dpma_rs.so
+  Unloaded res_dpma_rs.so
+> module show like res_dpma_rs.so
+  Module                         Description                              Use Count  Status      Support Level
+  res_dpma_rs.so                 Digium Phone Module for Asterisk         0          Not Running      extended
+  1 modules loaded
+> module load res_dpma_rs.so
+  Loaded res_dpma_rs.so
+> module show like res_dpma_rs.so
+  Module                         Description                              Use Count  Status      Support Level
+  res_dpma_rs.so                 Digium Phone Module for Asterisk         0          Running          extended
+  1 modules loaded
+  log: DPMA load.rs: Reconfiguring triggered by Voicemail
+  log: DPMA load.rs: Reconfiguring triggered by res_digium_phone.conf
+  log: NOTICE res_pjsip_endpoint_identifier_dpma.c: Using ast_sip_session_get_dialog() for pjproject version 2.17
+  log: DPMA load.rs: Reconfiguring triggered by identifier load
+line 2001:
+  name '2001' refs 2 (with ours) linked true
+  pjsip_auth (object): '2001-auth'
+  phone: '2001'
+  tech 'PJSIP'
+  secret 'pw2001'
+  callerid '"Phone One" <2001>'
+  mailbox '2001@default'
+  context 'p11-phones'
+  authname '2001'
+  pjsip_auth '2001-auth'
+  line_label ''
+  delme false
+line 2002:
+  name '2002' refs 2 (with ours) linked true
+  pjsip_auth (object): '2002-auth'
+  phone: '2001'
+  tech 'PJSIP'
+  secret 'pw2002'
+  callerid '"Phone Two" <2002>'
+  mailbox 'from-line-section@default'
+  context 'from-line-section'
+  authname '2002'
+  pjsip_auth '2002-auth'
+  line_label 'Two'
+  delme false
+
+== AOR update while line 2004 has no endpoint
+  ARI PUT endpoint/2005: 200
+  ARI PUT aor/2005: 200
+  asterisk running: yes
+line 2005:
+  name '2005' refs 2 (with ours) linked true
+  pjsip_auth (object): ''
+  phone: '2003'
+  tech 'PJSIP'
+  secret ''
+  callerid '<unknown>'
+  mailbox '2005@other'
+  context 'p11-phones'
+  authname ''
+  pjsip_auth ''
+  line_label 'ARI'
+  delme false
+  ARI DELETE aor/2005: 204
+  ARI DELETE endpoint/2005: 204

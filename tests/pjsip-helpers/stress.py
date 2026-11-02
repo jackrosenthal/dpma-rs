@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Line locking stress test for the endpoint identifier helper and
-res_digium_phone (devtest build), in a private instance ($DPMA_SLOT)
-prepared with setup.sh and running.
+"""Line locking stress test for the module's PJSIP side (the original's
+endpoint identifier helper) and the rest of res_dpma_rs (devtest build),
+in a private instance ($DPMA_SLOT) prepared with setup.sh and running.
 
     stress.py [SECONDS]
 
 Phase 1 (SECONDS): ARI updates of auth 2005-auth (password pwA/pwB) and
-endpoint 2005 (caller ID A/B) make the helper's sorcery observers rewrite
+endpoint 2005 (caller ID A/B) make the PJSIP side's sorcery observers rewrite
 line 2005 on their own threads (clear seven settings, then set them),
 while `dpmadev config 2003` reads the line's account from phone 2003's
 configuration document over and over.  The document must always show a
@@ -14,7 +14,7 @@ complete line: password pwA or pwB, authname ari5, caller ID A or B.
 Before readers took the line's ao2 lock, a read could land between the
 clearing and the setting.
 
-Phase 2 (SECONDS): the same plus res_digium_phone and res_pjsip reloads
+Phase 2 (SECONDS): the same plus res_dpma_rs and res_pjsip reloads
 (full processing passes, also from a sorcery thread).  A pass has its own
 intermediate states (as in the original), so only deadlocks are checked:
 every CLI command must answer within 20 seconds.
@@ -110,7 +110,7 @@ def reloader():
     i = 0
     while not stop.is_set():
         i += 1
-        ast("module reload res_digium_phone.so" if i % 2 else "module reload res_pjsip.so")
+        ast("module reload res_dpma_rs.so" if i % 2 else "module reload res_pjsip.so")
         with lock:
             stats["reloads"] += 1
         time.sleep(0.5)

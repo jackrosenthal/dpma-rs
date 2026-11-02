@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Scenarios for the PJSIP helper modules, run against a private instance
-($DPMA_SLOT) prepared with setup.sh and a res_digium_phone built with the
-`devtest` feature.  Prints a transcript that does not depend on ports,
-addresses, tags, thread ids, or times, so transcripts of the original
-helper and ours can be diffed (compare.sh).
+"""Scenarios for the module's PJSIP side (the original's two helper
+modules), run against a private instance ($DPMA_SLOT) prepared with
+setup.sh and res_dpma_rs built with the `devtest` feature.  Prints a
+transcript that does not depend on ports, addresses, tags, thread ids, or
+times, so it can be compared with the expected one (check.sh).
 
     scenario.py identifier [--no-aor-update]
-        res_pjsip_endpoint_identifier_dpma: lines filled from pjsip.conf,
-        res_pjsip reloads, ARI-driven endpoint/auth/AOR observers, REGISTER
-        handling, the endpoint-is-dphone hook, SIP INFO, MESSAGE
-        identification and pjsip_message_context changes (config hook),
-        unload/load cycles, and, last, an AOR update while a line has no
-        endpoint (crashes the original; --no-aor-update skips it).
+        The endpoint identifier side (res_pjsip_endpoint_identifier_dpma):
+        lines filled from pjsip.conf, res_pjsip reloads, ARI-driven
+        endpoint/auth/AOR observers, REGISTER handling, the
+        endpoint-is-dphone function, SIP INFO, MESSAGE identification and
+        pjsip_message_context changes (config hook), unload/load cycles,
+        and, last, an AOR update while a line has no endpoint (crashes the
+        original; --no-aor-update skips it).
     scenario.py dialog-info
-        res_pjsip_dialog_info_digium_body_supplement: NOTIFY bodies for
+        The dialog-info supplement
+        (res_pjsip_dialog_info_digium_body_supplement): NOTIFY bodies for
         dialog subscriptions from Digium and other user agents while calls
         ring (early) and ring while in use, with plain and restricted
         caller ID.
@@ -40,8 +42,7 @@ HTTP_PORT = 15088 + 100 * SLOT
 AST = os.path.join(ROOT, "dev", "tools", "ast.sh")
 SIPUA = [sys.executable, "-I", os.path.join(HERE, "sipua.py"), "127.0.0.1", str(SIP_PORT)]
 DIGIUM_UA = "Digium D65 2_9_17"
-EID = "res_pjsip_endpoint_identifier_dpma.so"
-DPMA = "res_digium_phone.so"
+DPMA = "res_dpma_rs.so"
 
 
 def out(text=""):
@@ -134,7 +135,7 @@ def collect(p, label):
 
 def lines(*names):
     for n in names:
-        text = ast("dpmadev exports line %s" % n, quiet=True)
+        text = ast("dpmadev pjsip line %s" % n, quiet=True)
         out("line %s:" % n)
         for line in text.split("\n"):
             # The object's own reference count depends on who holds it.
@@ -199,7 +200,6 @@ def identifier(aor_update=True):
     log.pos = 0
     forget_contacts()
     step("load")
-    ast("module show like %s" % EID)
     ast("module show like %s" % DPMA)
     log.show()
     lines("2001", "2002", "2003", "2004", "2005")
@@ -247,24 +247,24 @@ def identifier(aor_update=True):
     lines("2005")
 
     step("REGISTER")
-    ast("core set debug 2 res_pjsip_endpoint_identifier_dpma", quiet=True)
-    ast("dpmadev exports lastinfo clear", quiet=True)
+    ast("core set debug 2 res_dpma_rs", quiet=True)
+    ast("dpmadev pjsip lastinfo clear", quiet=True)
     sipua("register", "2001", "pw2001", DIGIUM_UA)
     sipua("register", "2002", "pw2002", "Acme Phone 1.0")
     time.sleep(1)
     log.show()
-    ast("dpmadev exports lastinfo")
+    ast("dpmadev pjsip lastinfo")
     for e in ("2001", "2002", "2003", "2004", "nonexistent"):
-        ast("dpmadev exports isdphone %s" % e)
+        ast("dpmadev pjsip isdphone %s" % e)
     # Phone 2001 again (contact replaced); 2002 is not a phone but now has
     # a Sangoma contact as well.
     sipua("register", "2001", "pw2001", "Sangoma P370 2.0")
     sipua("register", "2002", "pw2002", "Sangoma P330 1.0")
     time.sleep(1)
     log.show()
-    ast("dpmadev exports lastinfo")
-    ast("dpmadev exports isdphone 2002")
-    ast("core set debug 0 res_pjsip_endpoint_identifier_dpma", quiet=True)
+    ast("dpmadev pjsip lastinfo")
+    ast("dpmadev pjsip isdphone 2002")
+    ast("core set debug 0 res_dpma_rs", quiet=True)
 
     step("SIP INFO")
     p = background("uas", "2001", "pw2001", DIGIUM_UA, "8", "--answer", "1")
@@ -274,13 +274,13 @@ def identifier(aor_update=True):
     chan = channel("PJSIP/2001-")
     out("  channel: %s" % norm(str(chan)))
     if chan:
-        ast('dpmadev exports info %s {"location":5}' % chan)
-        ast("dpmadev exports info %s" % chan)
+        ast('dpmadev pjsip info %s {"location":5}' % chan)
+        ast("dpmadev pjsip info %s" % chan)
     ast("channel originate Local/2002@p11-phones application Wait 2")
     time.sleep(0.5)
     local = channel("Local/2002@p11-phones-")
     if local:
-        ast("dpmadev exports info %s {}" % local)
+        ast("dpmadev pjsip info %s {}" % local)
     collect(p, "uas")
     ast("hangup request all", quiet=True)
 
@@ -303,15 +303,9 @@ def identifier(aor_update=True):
 
     for i in (1, 2):
         step("unload and load %d" % i)
-        ast("module unload %s" % EID)
-        ast("module show like %s" % DPMA)
-        ast("module unload res_pjsip_dialog_info_digium_body_supplement.so")
         ast("module unload %s" % DPMA)
         ast("module show like %s" % DPMA)
         ast("module load %s" % DPMA)
-        ast("module load %s" % EID)
-        ast("module load res_pjsip_dialog_info_digium_body_supplement.so")
-        ast("module show like %s" % EID)
         ast("module show like %s" % DPMA)
         log.show()
         lines("2001", "2002")
@@ -333,7 +327,7 @@ def dialog_info():
     log = Log()
     forget_contacts()
     step("dialog-info supplement")
-    ast("core set debug 3 res_pjsip_dialog_info_digium_body_supplement", quiet=True)
+    ast("core set debug 3 res_dpma_rs", quiet=True)
     uas = background("uas", "2002", "pw2002", "Acme Phone 1.0", "16", "--answer", "2")
     time.sleep(1)
     # (The supplement's "No domain in local uri" case cannot happen with
@@ -359,7 +353,7 @@ def dialog_info():
         collect(p, label)
     collect(uas, "uas")
     log.show()
-    ast("core set debug 0 res_pjsip_dialog_info_digium_body_supplement", quiet=True)
+    ast("core set debug 0 res_dpma_rs", quiet=True)
 
 
 def main():

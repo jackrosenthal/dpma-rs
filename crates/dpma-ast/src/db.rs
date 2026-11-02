@@ -1,25 +1,36 @@
 //! AstDB access.
 
-use crate::ffi;
+use crate::sys;
 use crate::util::{cstr, from_ptr, take_ast_string};
 
 pub fn put(family: &str, key: impl AsRef<[u8]>, value: impl AsRef<[u8]>) -> bool {
     let f = cstr(family);
     let k = cstr(key);
     let v = cstr(value);
-    unsafe { ffi::ast_db_put(f.as_ptr(), k.as_ptr(), v.as_ptr()) == 0 }
+    // SAFETY: valid C strings, copied by the database.
+    unsafe { sys::ast_db_put(f.as_ptr(), k.as_ptr(), v.as_ptr()) == 0 }
 }
 
+/// `ast_db_get_allocated(family, key, &out)`.
 pub fn get(family: &str, key: impl AsRef<[u8]>) -> Option<Vec<u8>> {
     let f = cstr(family);
     let k = cstr(key);
-    unsafe { take_ast_string(ffi::dpma_glue_db_get(f.as_ptr(), k.as_ptr())) }
+    let mut out = std::ptr::null_mut();
+    // SAFETY: valid C strings; `out` receives an ast_malloc'ed string that
+    // is copied and freed.
+    unsafe {
+        if sys::ast_db_get_allocated(f.as_ptr(), k.as_ptr(), &mut out) != 0 {
+            return None;
+        }
+        take_ast_string(out)
+    }
 }
 
 pub fn del(family: &str, key: impl AsRef<[u8]>) -> bool {
     let f = cstr(family);
     let k = cstr(key);
-    unsafe { ffi::ast_db_del(f.as_ptr(), k.as_ptr()) == 0 }
+    // SAFETY: valid C strings.
+    unsafe { sys::ast_db_del(f.as_ptr(), k.as_ptr()) == 0 }
 }
 
 /// All entries in `family`, as (full key, value).  Keys look like
@@ -27,18 +38,16 @@ pub fn del(family: &str, key: impl AsRef<[u8]>) -> bool {
 pub fn tree(family: &str) -> Vec<(Vec<u8>, Vec<u8>)> {
     let f = cstr(family);
     let mut out = Vec::new();
+    // SAFETY: the tree is a list of entries owned here until freed.
     unsafe {
-        let head = ffi::ast_db_gettree(f.as_ptr(), std::ptr::null());
-        let mut e = head as *const crate::types::AstDbEntry;
+        let head = sys::ast_db_gettree(f.as_ptr(), std::ptr::null());
+        let mut e = head;
         while !e.is_null() {
-            out.push((
-                from_ptr(ffi::dpma_glue_db_entry_key(e)).unwrap_or_default(),
-                from_ptr(ffi::dpma_glue_db_entry_data(e)).unwrap_or_default(),
-            ));
-            e = ffi::dpma_glue_db_entry_next(e);
+            out.push((from_ptr((*e).key).unwrap_or_default(), from_ptr((*e).data.as_ptr()).unwrap_or_default()));
+            e = (*e).next;
         }
         if !head.is_null() {
-            ffi::ast_db_freetree(head);
+            sys::ast_db_freetree(head);
         }
     }
     out

@@ -4,44 +4,36 @@
 //! The original module builds the user list and parses the JSON phone
 //! requests with it, so wherever key order, escaping, or number formatting
 //! must match the original, the same library is used.  Values are raw
-//! `struct ast_json *` pointers (`*mut c_void`); [`Json`] and [`Value`] wrap
+//! `struct ast_json *` pointers; [`Json`] and [`Value`] wrap
 //! the parsing side.
 
+use crate::sys;
 use crate::util::{cstr, from_ptr};
 use std::marker::PhantomData;
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_int, c_void};
 
-extern "C" {
-    pub fn ast_json_load_string(input: *const c_char, error: *mut c_void) -> *mut c_void;
-    pub fn ast_json_object_create() -> *mut c_void;
-    pub fn ast_json_array_create() -> *mut c_void;
-    pub fn ast_json_string_create(s: *const c_char) -> *mut c_void;
-    /// Takes over `value`'s reference, also on failure.
-    pub fn ast_json_object_set(object: *mut c_void, key: *const c_char, value: *mut c_void) -> c_int;
-    /// Takes over `value`'s reference, also on failure.
-    pub fn ast_json_array_append(array: *mut c_void, value: *mut c_void) -> c_int;
-    pub fn ast_json_object_get(object: *mut c_void, key: *const c_char) -> *mut c_void;
-    pub fn ast_json_typeof(value: *const c_void) -> c_int;
-    pub fn ast_json_string_get(string: *const c_void) -> *const c_char;
-    pub fn ast_json_pack(format: *const c_char, ...) -> *mut c_void;
-    pub fn ast_json_dump_string_format(root: *mut c_void, format: c_int) -> *mut c_char;
-    pub fn ast_json_free(p: *mut c_void);
-    pub fn ast_json_unref(value: *mut c_void);
-}
+/// The raw API, for building documents as the original does
+/// (`ast_json_object_set` and `ast_json_array_append` take over the
+/// value's reference, also on failure).
+pub use sys::{
+    ast_json, ast_json_array_append, ast_json_array_create, ast_json_dump_string_format, ast_json_free,
+    ast_json_load_string, ast_json_object_create, ast_json_object_get, ast_json_object_set, ast_json_pack,
+    ast_json_string_create, ast_json_string_get, ast_json_typeof, ast_json_unref,
+};
 
 /// `AST_JSON_COMPACT`.
-pub const COMPACT: c_int = 0;
+pub const COMPACT: sys::ast_json_encoding_format = sys::AST_JSON_COMPACT;
 /// `AST_JSON_OBJECT`.
-pub const OBJECT: c_int = 0;
+pub const OBJECT: c_int = sys::AST_JSON_OBJECT as c_int;
 /// `AST_JSON_STRING`.
-pub const STRING: c_int = 2;
+pub const STRING: c_int = sys::AST_JSON_STRING as c_int;
 
 /// `ast_json_dump_string(root)` (compact), copied and freed; None when
 /// jansson refuses (anything but an object or an array).
 ///
 /// # Safety
 /// `root` must be a live `struct ast_json`.
-pub unsafe fn dump_string(root: *mut c_void) -> Option<Vec<u8>> {
+pub unsafe fn dump_string(root: *mut ast_json) -> Option<Vec<u8>> {
     let s = ast_json_dump_string_format(root, COMPACT);
     if s.is_null() {
         return None;
@@ -52,11 +44,11 @@ pub unsafe fn dump_string(root: *mut c_void) -> Option<Vec<u8>> {
 }
 
 /// A parsed document (an owned reference).
-pub struct Json(*mut c_void);
+pub struct Json(*mut ast_json);
 
 /// A value inside a [`Json`] (a borrowed reference).
 #[derive(Clone, Copy)]
-pub struct Value<'a>(*mut c_void, PhantomData<&'a Json>);
+pub struct Value<'a>(*mut ast_json, PhantomData<&'a Json>);
 
 impl Json {
     /// `ast_json_load_string` of the C string in `text` (up to a NUL);
@@ -88,7 +80,7 @@ impl<'a> Value<'a> {
 
     /// `ast_json_typeof`.
     pub fn kind(&self) -> c_int {
-        unsafe { ast_json_typeof(self.0) }
+        unsafe { ast_json_typeof(self.0) as c_int }
     }
 
     /// `ast_json_string_get` ("" for a non-string).

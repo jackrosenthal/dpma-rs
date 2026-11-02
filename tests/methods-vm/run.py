@@ -2,7 +2,7 @@
 """End-to-end checks of the switchvox.users.voicemail.* methods (P9).
 
 Needs a private instance prepared with dev/tests/methods-vm/setup.sh, a
-devtest build of res_digium_phone installed, and Asterisk running:
+devtest build of res_dpma_rs installed, and Asterisk running:
 
     export DPMA_SLOT=<n>
     dev/tests/methods-vm/setup.sh
@@ -749,14 +749,14 @@ def test_tracker_lifecycle():
     with open(conf, "w") as f:
         f.write(stripped)
     try:
-        cli("module reload res_digium_phone.so")
+        cli("module reload res_dpma_rs.so")
         time.sleep(1)
         same("tracker removed with its phone", trackers("vmphone3"), None)
         same("other trackers kept", trackers("vmphone") is not None, True)
     finally:
         with open(conf, "w") as f:
             f.write(text)
-        cli("module reload res_digium_phone.so")
+        cli("module reload res_dpma_rs.so")
         time.sleep(1)
     cli("dpmadev vm forget vmphone")
     same("dpmadev vm forget", trackers("vmphone"), None)

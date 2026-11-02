@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small Asterisk Manager Interface client for testing res_digium_phone.
+"""Small Asterisk Manager Interface client for testing dpma-rs.
 
 Command line:
 

@@ -1,12 +1,11 @@
 [package]
 name = "dpma-ast"
-description = "Asterisk FFI glue and helpers for the dpma-rs modules"
+description = "Safe wrappers over the Asterisk C API for the dpma-rs module"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-links = "dpma_ast"
-build = "build.rs"
 
 [dependencies]
 dpma-bytes.workspace = true
+dpma-sys.workspace = true
 libc.workspace = true
