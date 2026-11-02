@@ -21,10 +21,10 @@ These tests check that side of the module.
 export ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-24-src CARGO_INCREMENTAL=0
 cargo build && cargo build -p res_dpma_rs --features devtest
 export DPMA_SLOT=19
-dev/tests/pjsip-helpers/check.sh /some/dir       # about 2 minutes
-dev/tools/ast.sh install && dev/tools/ast.sh start
-dev/tests/pjsip-helpers/stress.py 15             # PASS / FAIL
-dev/tools/ast.sh stop
+tests/pjsip-helpers/check.sh /some/dir       # about 2 minutes
+tools/ast.sh install && tools/ast.sh start
+tests/pjsip-helpers/stress.py 15             # PASS / FAIL
+tools/ast.sh stop
 ```
 
 `check.sh` stops Asterisk at the end; the instance keeps the test

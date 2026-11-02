@@ -1,5 +1,5 @@
-//! Cross-check against the phone simulator's vectors (`dev/sim/vectors.json`,
-//! written by `dev/sim/dpma_sim.py selftest --vectors`, an independent
+//! Cross-check against the phone simulator's vectors (`tests/sim/vectors.json`,
+//! written by `tests/sim/dpma_sim.py selftest --vectors`, an independent
 //! Python implementation from the decompile): key and IV derivation, a
 //! body, a header field, and the server's framing of an encrypted event
 //! over UDP.  The simulator checks the other direction against
@@ -8,7 +8,7 @@
 use dpma_proto::{crypto, framing};
 use serde_json::Value;
 
-const SIM_VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/sim/vectors.json");
+const SIM_VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/sim/vectors.json");
 
 fn s(v: &Value) -> &str {
     v.as_str().unwrap()

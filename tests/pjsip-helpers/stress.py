@@ -32,11 +32,11 @@ import time
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 SLOT = int(os.environ.get("DPMA_SLOT", "0"))
 if not SLOT:
     sys.exit("set DPMA_SLOT (never use the shared install)")
-AST = os.path.join(ROOT, "dev", "tools", "ast.sh")
+AST = os.path.join(ROOT, "tools", "ast.sh")
 HTTP_PORT = 15088 + 100 * SLOT
 ENV = dict(os.environ, DPMA_SLOT=str(SLOT))
 

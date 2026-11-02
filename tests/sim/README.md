@@ -21,12 +21,12 @@ and keys are generated locally.
 ## Setting up an instance
 
 ```
-export DPMA_SLOT=<n>                 # your private instance (dev/tools/ast.sh)
-python3 dev/sim/mkpki.py             # test PKI; installs phone_ca.pem and appserver.pem
-python3 dev/sim/mkpki.py --check     # verify every certificate with openssl
-dev/sim/install-conf.sh              # pjsip, dialplan, and phone test configuration
-dev/tools/ast.sh start               # (or restart; or reload res_pjsip and the dialplan)
-python3 dev/sim/dpma_sim.py selftest # no server needed
+export DPMA_SLOT=<n>                 # your private instance (tools/ast.sh)
+python3 tests/sim/mkpki.py             # test PKI; installs phone_ca.pem and appserver.pem
+python3 tests/sim/mkpki.py --check     # verify every certificate with openssl
+tests/sim/install-conf.sh              # pjsip, dialplan, and phone test configuration
+tools/ast.sh start               # (or restart; or reload res_pjsip and the dialplan)
+python3 tests/sim/dpma_sim.py selftest # no server needed
 ```
 
 `mkpki.py` writes keys and certificates to `dev/sim/pki/` (not committed;
@@ -243,7 +243,7 @@ expect type=AsteriskResponse body~hello
 ## Python
 
 ```
-import sys; sys.path.insert(0, "dev/sim")
+import sys; sys.path.insert(0, "tests/sim")
 from dpma_sim import Phone, Options
 with Phone(Options(slot=5, form="legacy")) as phone:
     ex = phone.handshake()
@@ -272,10 +272,10 @@ back.  `ami.py` treats AMI text the same way.
 ## AMI helper
 
 ```
-DPMA_SLOT=5 dev/sim/ami.py DPMAShowPhones
-dev/sim/ami.py --slot 5 Command Command="digium_phones show sessions"
-dev/sim/ami.py --slot 5 --wait-event DPMAMessage --events 60 DPMAMessageRegister Method=m
-dev/sim/ami.py --slot 5 --listen 30
+DPMA_SLOT=5 tests/sim/ami.py DPMAShowPhones
+tests/sim/ami.py --slot 5 Command Command="digium_phones show sessions"
+tests/sim/ami.py --slot 5 --wait-event DPMAMessage --events 60 DPMAMessageRegister Method=m
+tests/sim/ami.py --slot 5 --listen 30
 ```
 
 Logs in as test/test.  For list actions it waits for `EventList:
@@ -333,7 +333,7 @@ use `dpmadev session ...` to change flags, backdate activity, and send
 events):
 
 ```
-DPMA_SLOT=<n> dev/sim/scripts/session-all.sh
+DPMA_SLOT=<n> tests/sim/scripts/session-all.sh
 ```
 
 | Script | Checks |

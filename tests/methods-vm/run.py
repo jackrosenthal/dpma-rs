@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """End-to-end checks of the switchvox.users.voicemail.* methods (P9).
 
-Needs a private instance prepared with dev/tests/methods-vm/setup.sh, a
+Needs a private instance prepared with tests/methods-vm/setup.sh, a
 devtest build of res_dpma_rs installed, and Asterisk running:
 
     export DPMA_SLOT=<n>
-    dev/tests/methods-vm/setup.sh
-    dev/tools/ast.sh install && dev/tools/ast.sh start
-    python3 dev/tests/methods-vm/run.py [--via hook|phone]
+    tests/methods-vm/setup.sh
+    tools/ast.sh install && tools/ast.sh start
+    python3 tests/methods-vm/run.py [--via hook|phone]
 
 The script empties the test mailboxes, leaves messages with the dialplan
 (Local channels into VoiceMail()), adds a few hand-made spool messages
@@ -20,7 +20,7 @@ Exit status 0 when every check passes.
 
 With "--via phone" (package P12) the methods are called the way phones
 call them instead: encrypted AsteriskRequests from the phone simulator
-(dev/sim; run mkpki.py for the instance first, and leave out the
+(tests/sim; run mkpki.py for the instance first, and leave out the
 simulator's test identify, "install-conf.sh --remove": it would also catch
 vm_uas.py's REGISTER, and the PJSIP helper identifies the simulator), with
 the phone's name and pin as the credentials.  The reply body must be the
@@ -40,8 +40,8 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-sys.path.insert(0, os.path.join(ROOT, "dev", "sim"))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+sys.path.insert(0, os.path.join(ROOT, "tests", "sim"))
 from ami import AmiClient  # noqa: E402
 
 # How methods are called: "hook" ("dpmadev method call") or "phone".

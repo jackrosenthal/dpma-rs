@@ -5,7 +5,7 @@ It plays the phone side of the DPMA AppServer protocol over SIP MESSAGE
 (UDP or TCP) against an Asterisk instance: handshake with a locally
 generated certificate (legacy or chain form), AES-128-CBC encryption,
 chunking and reassembly, every request type, event listening, and a
-scripted mode for automated checks.  See dev/sim/README.md.
+scripted mode for automated checks.  See tests/sim/README.md.
 
 Written from the decompile of the original module (phone side of
 phone_message.c, phone_crypto.c, and phone_request.c), independently of the
@@ -18,7 +18,7 @@ asterisk, raw, listen, script, selftest.  `dpma_sim.py COMMAND -h` for
 details.  Exit status: 0 on success, 1 on a failed check, 2 on usage or
 setup errors.
 
-Python use (from dev/sim):
+Python use (from tests/sim):
 
   from dpma_sim import Phone, Options
   with Phone(Options(slot=5)) as phone:
@@ -65,7 +65,8 @@ if HERE not in sys.path:
 
 DEFAULT_MAC = "000fd3000001"
 DEFAULT_UA = "Digium D65 2_9_17"
-DEFAULT_PKI = os.path.join(HERE, "pki")
+# mkpki.py's output, local state in the ignored dev/ of the repository.
+DEFAULT_PKI = os.path.join(os.path.dirname(os.path.dirname(HERE)), "dev", "sim", "pki")
 
 # --------------------------------------------------------------------------
 # Protocol constants (section 4.2 of dev/notes/port-plan.md)
@@ -730,7 +731,7 @@ class Pki:
         self.dir = directory
         path = os.path.join(directory, "bundles.json")
         if not os.path.exists(path):
-            raise SimError("no test PKI in %s; run dev/sim/mkpki.py first" % directory)
+            raise SimError("no test PKI in %s; run tests/sim/mkpki.py first" % directory)
         with open(path) as f:
             self.manifest = json.load(f)
 
@@ -1855,7 +1856,7 @@ def check_proto_vectors(check, path=PROTO_VECTORS):
 
 def make_vectors():
     """Deterministic vectors for cross-checking other implementations
-    (dpma-proto), saved in dev/sim/vectors.json: key and IV derivation, a
+    (dpma-proto), saved in tests/sim/vectors.json: key and IV derivation, a
     body, a header field, and the server's framing of an encrypted event
     over UDP (prefix in every chunk, one CBC stream, each chunk's
     ciphertext base64 encoded on its own), all with a fixed password and
@@ -1907,7 +1908,7 @@ def build_parser(script=False):
     else:
         ap = argparse.ArgumentParser(
             description="Simulate a Digium phone against dpma-rs.",
-            epilog="See dev/sim/README.md for the test configuration and scripts.")
+            epilog="See tests/sim/README.md for the test configuration and scripts.")
         g = ap.add_argument_group("connection")
         g.add_argument("--slot", help="instance slot: SIP port 15060+100*slot, AMI port "
                                       "15038+100*slot (default: $DPMA_SLOT)")

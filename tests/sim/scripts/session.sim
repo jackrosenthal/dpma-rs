@@ -1,12 +1,12 @@
 # Session layer checks (package P7), written from the decompile and passed
 # by the P7 implementation over UDP and TCP.  Needs the module with
-# sessions, the test PKI (dev/sim/mkpki.py), and the test configuration
-# (dev/sim/install-conf.sh).  Every reply must arrive over the transport
+# sessions, the test PKI (tests/sim/mkpki.py), and the test configuration
+# (tests/sim/install-conf.sh).  Every reply must arrive over the transport
 # the simulator uses, Session Timeout replies included (port plan section
 # 8, item 11; the original sends those over UDP).
 #
-#   DPMA_SLOT=<n> dev/sim/dpma_sim.py script dev/sim/scripts/session.sim
-#   DPMA_SLOT=<n> dev/sim/dpma_sim.py --transport tcp script dev/sim/scripts/session.sim
+#   DPMA_SLOT=<n> tests/sim/dpma_sim.py script tests/sim/scripts/session.sim
+#   DPMA_SLOT=<n> tests/sim/dpma_sim.py --transport tcp script tests/sim/scripts/session.sim
 
 # Chain form: Handshake-Version 1, unencrypted, the AppServer certificate
 # in the body (about 1.3 KB: 3 chunks of 615 bytes over UDP, 2 of 900 over

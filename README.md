@@ -162,7 +162,7 @@ authentication incident (`DPMAShowIncidents`).  Both files are read again
 on `module reload res_dpma_rs.so`; a file that cannot be read keeps
 its previous contents.
 
-For testing without phones, `dev/sim/mkpki.py` generates a self-made PKI
+For testing without phones, `tests/sim/mkpki.py` generates a self-made PKI
 and installs it under these names; real phones do not accept its AppServer
 certificate.
 
@@ -256,15 +256,17 @@ dpma-rs is licensed under the GNU General Public License, version 2 or
 
 ## Development
 
-The development notes and tools live under `dev/`:
-
-- `dev/notes/port-plan.md`: the plan of the port, the protocol and the
-  original's C API as reconstructed from the original, and every finding
-  and decision made along the way.
-- `dev/sim/README.md`: the phone simulator, test PKI, and AMI client used
-  to test without phones.
-- `dev/tests/README.md`: the test suites and how to run them against a
-  private Asterisk instance.
+- `tests/`: the test suites, run against private Asterisk instances
+  (`tests/README.md`), and `tests/sim/`, the phone simulator, test PKI,
+  and AMI client used to test without phones (`tests/sim/README.md`).
+- `tools/`: `ast.sh` (private Asterisk instances), `asterisk-versions`
+  (the pinned Asterisk releases), `asterisk-build.sh` (downloads,
+  verifies, builds, and installs a pinned release), `asterisk-conf/` (its
+  test configuration), and `ci-setup.sh` and `ci-job.sh` (the CI job of
+  `.github/workflows/ci.yml`, which also runs locally).
+- Runtime state stays in the ignored `dev/`: Asterisk builds
+  (`dev/asterisk-builds/`), instances (`dev/run/`), logs, and the
+  simulator's generated PKI.
 
 Building with `--features devtest` adds `dpmadev ...` CLI commands that
 the test suites use; never enable it in production builds.

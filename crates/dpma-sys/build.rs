@@ -14,7 +14,7 @@
 //!   `pjmedia/include`, and `pjsip/include` are used).  The defines are
 //!   those of `PJPROJECT_INCLUDE` in Asterisk's `makeopts`.
 //!
-//! `dev/tools/asterisk-build.sh` prepares such a tree for the pinned
+//! `tools/asterisk-build.sh` prepares such a tree for the pinned
 //! releases.  The bindings follow the headers of the tree, so one source
 //! builds against every supported release.
 //!

@@ -7,10 +7,10 @@ sessions marked authenticated and inactive by token builds and lookups,
 orphaned and stale phones, the response URI following a phone that
 moves, and the phones' sessions restored after an Asterisk restart.
 
-Same setup as run.py (dev/tests/request-handlers/setup.sh, a devtest
+Same setup as run.py (tests/request-handlers/setup.sh, a devtest
 build installed, Asterisk running):
 
-    python3 dev/tests/request-handlers/users-flows.py [-v] [SECTION...]
+    python3 tests/request-handlers/users-flows.py [-v] [SECTION...]
 
 Sections: reconfigure, reload, mismatch, stale, uri, events, marks,
 restore (default: all; "restore" restarts Asterisk and waits about 70 s
@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import p12lib as L  # noqa: E402
 from p12lib import *  # noqa: E402,F401,F403
 
-AST = os.path.join(ROOT, "dev", "tools", "ast.sh")
+AST = os.path.join(ROOT, "tools", "ast.sh")
 P12CONF = os.path.join(INST, "etc", "asterisk", "res_digium_phone_p12.conf")
 UPDATE = "digium.config.update"
 PLAIN = b"<config></config>"

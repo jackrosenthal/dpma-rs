@@ -3,7 +3,7 @@
 original binary's (res_digium_phone), byte for byte, for every command
 and action that needs no connected phone.
 
-    DPMA_SLOT=<n> python3 -I dev/tests/parity/run.py [-v] [--keep DIR]
+    DPMA_SLOT=<n> python3 -I tests/parity/run.py [-v] [--keep DIR]
         [--original DIR] [--capture ours|original] [--compare A B]
 
 Without --capture or --compare, the script stops the instance, gives it a
@@ -17,7 +17,7 @@ original modules) and comparing the captures.  The original binaries go
 into the private instance only (DPMA_SLOT is required); never into the
 shared install.
 
-The test configuration is dev/tests/config-xml's (phones, lines,
+The test configuration is tests/config-xml's (phones, lines,
 external lines, networks, applications, alerts, ringtones, firmware
 profiles, multicast pages, and a firmware package file) plus two
 translation tables.
@@ -59,8 +59,8 @@ import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, "../../.."))
-AST = os.path.join(ROOT, "dev/tools/ast.sh")
+ROOT = os.path.abspath(os.path.join(HERE, "../.."))
+AST = os.path.join(ROOT, "tools/ast.sh")
 SLOT = os.environ.get("DPMA_SLOT")
 if not SLOT:
     sys.exit("DPMA_SLOT is not set (never run this against the shared install)")
@@ -186,7 +186,7 @@ class RawAmi:
 def install_config():
     ast("stop")
     ast("reset-conf")
-    r = subprocess.run([os.path.join(ROOT, "dev/tests/config-xml/setup.sh")], capture_output=True,
+    r = subprocess.run([os.path.join(ROOT, "tests/config-xml/setup.sh")], capture_output=True,
                        env=dict(os.environ, DPMA_SLOT=SLOT))
     if r.returncode:
         sys.exit("config-xml/setup.sh failed")

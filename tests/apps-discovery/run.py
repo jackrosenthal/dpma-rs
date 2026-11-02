@@ -3,7 +3,7 @@
 and DigiumVoicemailPlayback, `digium_phones show settings`, and the mDNS
 announcement.
 
-Needs a private instance prepared with dev/tests/apps-discovery/setup.sh,
+Needs a private instance prepared with tests/apps-discovery/setup.sh,
 a devtest build of res_dpma_rs installed, and Asterisk running.  The
 mDNS checks run only inside the private network namespace of netns.sh
 (an instance whose only interface is lo), so that no announcement reaches
@@ -30,8 +30,8 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-sys.path.insert(0, os.path.join(ROOT, "dev", "sim"))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+sys.path.insert(0, os.path.join(ROOT, "tests", "sim"))
 sys.path.insert(0, HERE)
 from ami import AmiClient  # noqa: E402
 import mdns_probe  # noqa: E402
@@ -43,7 +43,7 @@ INST = os.path.join(ROOT, "dev", "run", "slot%d" % SLOT)
 CONF = os.path.join(INST, "etc", "asterisk", "res_digium_phone.conf")
 SPOOL = os.path.join(INST, "var", "spool", "asterisk", "voicemail")
 MSGLOG = os.path.join(INST, "var", "log", "asterisk", "messages.log")
-AST = os.path.join(ROOT, "dev", "tools", "ast.sh")
+AST = os.path.join(ROOT, "tools", "ast.sh")
 TONE = "dpma-apps-tone"
 SERVICE = "_digiumproxy._udp.local"
 

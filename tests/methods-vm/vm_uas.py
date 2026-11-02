@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A minimal SIP UA for the voicemail play test (dev/tests/methods-vm).
+"""A minimal SIP UA for the voicemail play test (tests/methods-vm).
 
 Registers as a PJSIP endpoint (digest auth), then answers (or, with
 --reject, refuses with 486) INVITEs, printing one line per event:
