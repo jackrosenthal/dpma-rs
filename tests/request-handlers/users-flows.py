@@ -99,7 +99,7 @@ def edit_p12conf(extra="", drop=None):
         text = "\n".join(ln for ln in text.split("\n") if not re.match(drop, ln))
     with open(P12CONF, "w") as f:
         f.write(text + extra)
-    cli("module reload res_digium_phone.so")
+    cli("module reload res_dpma_rs.so")
     time.sleep(0.5)
 
 

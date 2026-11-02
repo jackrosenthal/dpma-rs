@@ -117,7 +117,7 @@ def set_general(**kv):
         out.append(ln)
     with open(CONF, "w") as f:
         f.write("\n".join(out))
-    cli("module reload res_digium_phone.so")
+    cli("module reload res_dpma_rs.so")
     time.sleep(0.5)
 
 

@@ -4,7 +4,7 @@
     export DPMA_SLOT=<n>
     python3 dev/sim/mkpki.py && dev/sim/install-conf.sh
     dev/tests/raw-bytes/setup.sh
-    cargo build && cargo build -p res_digium_phone --features devtest
+    cargo build && cargo build -p res_dpma_rs --features devtest
     dev/tools/ast.sh install && dev/tools/ast.sh start
     python3 -I dev/tests/raw-bytes/run.py [-v]
 
