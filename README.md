@@ -229,12 +229,6 @@ Beyond these, a number of inputs that crash the original modules (for
 example, PJSIP AOR changes while a phone line has no PJSIP endpoint, or an
 INFO on a channel that has just hung up) are handled instead.
 
-## License
-
-dpma-rs is licensed under the GNU General Public License, version 2 or
-(at your option) any later version (`GPL-2.0-or-later`), as declared in
-`Cargo.toml`.
-
 ## Development
 
 dpma-rs is Rust throughout, its test tooling included:
