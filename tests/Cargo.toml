@@ -35,3 +35,13 @@ path = "src/lib.rs"
 name = "session"
 path = "suites/session/main.rs"
 harness = false
+
+[[test]]
+name = "methods-vm"
+path = "suites/methods-vm/main.rs"
+harness = false
+
+[[test]]
+name = "methods-calls"
+path = "suites/methods-calls/main.rs"
+harness = false

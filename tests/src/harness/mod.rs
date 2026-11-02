@@ -43,4 +43,4 @@ pub use conf::{ConfBackup, ConfFile};
 pub use expect::{AmiCheck, ExchangeCheck};
 pub use instance::{AstTool, Instance};
 pub use log::{Log, LogMark};
-pub use suite::{Ctx, Suite};
+pub use suite::{option_value, Ctx, Suite};
