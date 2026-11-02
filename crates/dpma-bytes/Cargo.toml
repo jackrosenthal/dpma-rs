@@ -2,8 +2,8 @@
 name = "dpma-bytes"
 description = "C strings as bytes: byte formatting and C-locale string functions for the dpma-rs modules"
 version.workspace = true
-edition.workspace = true
 license.workspace = true
+edition.workspace = true
 
 [dependencies]
 bstr.workspace = true

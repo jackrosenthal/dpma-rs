@@ -2,8 +2,8 @@
 name = "dpma-proto"
 description = "Digium phone application-server protocol: constants, crypto, framing, and SIP URI parsing (no Asterisk dependency)"
 version.workspace = true
-edition.workspace = true
 license.workspace = true
+edition.workspace = true
 
 [dependencies]
 base64.workspace = true
