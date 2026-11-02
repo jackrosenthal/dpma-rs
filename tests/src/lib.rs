@@ -25,11 +25,11 @@
 //! # Suites
 //!
 //! Each suite is a test target in `tests/suites/` that runs against a
-//! private instance (`DPMA_SLOT`, see `dev/tools/ast.sh`) with a devtest
+//! private instance (`DPMA_SLOT`, see `tools/ast.sh`) with a devtest
 //! build of the module:
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_INCLUDE_DIR=$PWD/dev/asterisk-24/include
+//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-24-src
 //! cargo build -p res_dpma_rs --features devtest
 //! cargo test -p dpma-tests --test session -- --ignored
 //! ```

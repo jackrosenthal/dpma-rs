@@ -13,13 +13,13 @@ otherwise it prints events for --events seconds (default 1).  The exit
 status is 0 when the response is "Success" (or "Follows" or "Goodbye").
 
 The port defaults to the private instance of $DPMA_SLOT (15038 + 100 * slot,
-as in dev/tools/ast.sh), or 15038 without it; --slot and --port override.
+as in tools/ast.sh), or 15038 without it; --slot and --port override.
 
 Examples:
 
-  DPMA_SLOT=5 dev/sim/ami.py DPMAShowPhones
-  dev/sim/ami.py --slot 5 Command Command="digium_phones show sessions"
-  dev/sim/ami.py --slot 5 --wait-event DPMAMessage --events 60 \\
+  DPMA_SLOT=5 tests/sim/ami.py DPMAShowPhones
+  tests/sim/ami.py --slot 5 Command Command="digium_phones show sessions"
+  tests/sim/ami.py --slot 5 --wait-event DPMAMessage --events 60 \\
       DPMAMessageRegister Method=com.example.test
 
 Python:

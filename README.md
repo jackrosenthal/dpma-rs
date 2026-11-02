@@ -22,6 +22,10 @@ modules of the original distribution:
 
 It is written in Rust only: there is no C code to compile.
 
+## Supported Asterisk versions
+
+dpma-rs supports Asterisk 22, 23, and 24.
+
 ## Building
 
 You need:
@@ -32,22 +36,24 @@ You need:
   build reads the Asterisk and pjproject headers with `bindgen`, which
   uses it.  If it is not found, set `LIBCLANG_PATH` to the directory
   that holds `libclang.so`.
-- The Asterisk 24 development headers (`asterisk.h` and the `asterisk/`
-  directory).  Set `ASTERISK_INCLUDE_DIR` to the directory that holds
-  `asterisk.h`; the default is `/usr/include`.
-- The pjproject headers Asterisk was built with.  Set `PJPROJECT_DIR` to
-  either a pjproject source tree (for the pjproject bundled with
-  Asterisk, `third-party/pjproject/source` in the Asterisk source tree)
-  or a directory of installed pjproject headers (the one containing
-  `pjsip.h`).
+- The source tree of the Asterisk you build for (22, 23, or 24; the
+  same release and configuration as the installed Asterisk), configured
+  with the bundled pjproject (`./configure --with-pjproject-bundled`,
+  which downloads and configures pjproject in
+  `third-party/pjproject/source`) and with
+  `include/asterisk/buildopts.h` made (`make
+  include/asterisk/buildopts.h`, or a full `make`).  Set
+  `ASTERISK_SOURCE_DIR` to it; the build reads the Asterisk headers from
+  its `include/` and the pjproject headers from its bundled pjproject.
+  The module is built for that release (and Asterisk declines a module
+  whose build options, from `buildopts.h`, differ from its own).
 - The OpenSSL development files (headers and `pkg-config` data), for the
   `openssl` crate.
 
 Then:
 
 ```
-export ASTERISK_INCLUDE_DIR=/usr/include
-export PJPROJECT_DIR=/usr/src/asterisk-24/third-party/pjproject/source
+export ASTERISK_SOURCE_DIR=/usr/src/asterisk-24.0.0
 cargo build --release
 ```
 
@@ -156,7 +162,7 @@ authentication incident (`DPMAShowIncidents`).  Both files are read again
 on `module reload res_dpma_rs.so`; a file that cannot be read keeps
 its previous contents.
 
-For testing without phones, `dev/sim/mkpki.py` generates a self-made PKI
+For testing without phones, `tests/sim/mkpki.py` generates a self-made PKI
 and installs it under these names; real phones do not accept its AppServer
 certificate.
 
@@ -250,15 +256,17 @@ dpma-rs is licensed under the GNU General Public License, version 2 or
 
 ## Development
 
-The development notes and tools live under `dev/`:
-
-- `dev/notes/port-plan.md`: the plan of the port, the protocol and the
-  original's C API as reconstructed from the original, and every finding
-  and decision made along the way.
-- `dev/sim/README.md`: the phone simulator, test PKI, and AMI client used
-  to test without phones.
-- `dev/tests/README.md`: the test suites and how to run them against a
-  private Asterisk instance.
+- `tests/`: the test suites, run against private Asterisk instances
+  (`tests/README.md`), and `tests/sim/`, the phone simulator, test PKI,
+  and AMI client used to test without phones (`tests/sim/README.md`).
+- `tools/`: `ast.sh` (private Asterisk instances), `asterisk-versions`
+  (the pinned Asterisk releases), `asterisk-build.sh` (downloads,
+  verifies, builds, and installs a pinned release), `asterisk-conf/` (its
+  test configuration), and `ci-setup.sh` and `ci-job.sh` (the CI job of
+  `.github/workflows/ci.yml`, which also runs locally).
+- Runtime state stays in the ignored `dev/`: Asterisk builds
+  (`dev/asterisk-builds/`), instances (`dev/run/`), logs, and the
+  simulator's generated PKI.
 
 Building with `--features devtest` adds `dpmadev ...` CLI commands that
 the test suites use; never enable it in production builds.
@@ -271,7 +279,7 @@ Run a suite against a private instance with a devtest build, for
 example:
 
 ```
-export DPMA_SLOT=<n> ASTERISK_INCLUDE_DIR=$PWD/dev/asterisk-24/include
+export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-24-src
 cargo build -p res_dpma_rs --features devtest
 cargo test -p dpma-tests --test session -- --ignored
 ```

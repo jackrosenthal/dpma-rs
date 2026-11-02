@@ -6,7 +6,7 @@ incomplete transactions dropped after 40 s.  Sends hand-made chunks with
 the simulator's SIP layer.  Needs a devtest build (dpmadev session prune)
 and the setup of session.sim; takes about 50 s.
 
-    DPMA_SLOT=<n> dev/sim/scripts/session-reassembly.py
+    DPMA_SLOT=<n> tests/sim/scripts/session-reassembly.py
 """
 
 import os
@@ -32,7 +32,7 @@ def check(label, cond, detail=""):
 
 
 def cli(command):
-    subprocess.run([os.path.join(ROOT, "dev", "tools", "ast.sh"), "cli", command],
+    subprocess.run([os.path.join(ROOT, "tools", "ast.sh"), "cli", command],
                    check=False, capture_output=True)
 
 

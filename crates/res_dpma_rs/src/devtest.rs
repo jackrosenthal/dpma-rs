@@ -1,5 +1,5 @@
 //! Test-only CLI commands, compiled with `--features devtest` and never
-//! part of a release build.  They let the test suites under `dev/tests`
+//! part of a release build.  They let the test suites under `tests/`
 //! exercise each subsystem directly in a test Asterisk (e.g., `dpmadev
 //! config <phone>` prints a phone's configuration document).
 //!

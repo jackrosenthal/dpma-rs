@@ -1,5 +1,5 @@
 //! A small mDNS client (the Rust form of
-//! `dev/tests/apps-discovery/mdns_probe.py`).
+//! `tests/apps-discovery/mdns_probe.py`).
 //!
 //! [`browse`] sends one-shot (legacy unicast) queries to
 //! 224.0.0.251:5353: PTR for the service type, then SRV and TXT for every

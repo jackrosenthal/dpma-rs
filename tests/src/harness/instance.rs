@@ -2,8 +2,8 @@
 //!
 //! Instance management (start, stop, installing the module, resetting the
 //! configuration, and finding the instance's directories and ports) goes
-//! through the instance manager script, `dev/tools/ast.sh` (or
-//! `tools/ast.sh`), and only through [`AstTool`] in this module, so that
+//! through the instance manager script, `tools/ast.sh`, and only through
+//! [`AstTool`] in this module, so that
 //! replacing the script touches nothing else.  Everything else talks to
 //! the instance directly: the CLI through its control socket
 //! ([`Cli`]), AMI ([`AmiClient`]), and its files.
@@ -28,26 +28,17 @@ pub struct AstTool {
 }
 
 impl AstTool {
-    /// The script for `slot`: `$DPMA_AST` if set, else `tools/ast.sh` or
-    /// `dev/tools/ast.sh` in the repository.
+    /// The script for `slot`: `$DPMA_AST` if set, else `tools/ast.sh` in
+    /// the repository.
     pub fn for_slot(slot: u32) -> Result<AstTool> {
         let script = match std::env::var_os("DPMA_AST") {
             Some(p) => PathBuf::from(p),
             None => {
-                let root = repo_root();
-                [
-                    root.join("tools").join("ast.sh"),
-                    root.join("dev").join("tools").join("ast.sh"),
-                ]
-                .into_iter()
-                .find(|p| p.exists())
-                .ok_or_else(|| {
-                    anyhow!(
-                        "no ast.sh in {}/tools or {}/dev/tools",
-                        root.display(),
-                        root.display()
-                    )
-                })?
+                let script = repo_root().join("tools").join("ast.sh");
+                if !script.exists() {
+                    bail!("no instance manager script {}", script.display());
+                }
+                script
             }
         };
         Ok(AstTool { script, slot })

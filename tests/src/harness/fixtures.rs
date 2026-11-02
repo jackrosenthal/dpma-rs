@@ -49,7 +49,7 @@ pub const SIM_CONF: [(&str, &str, &str); 3] = [
     ),
 ];
 
-/// Prepares the instance for a suite, as `dev/tests/run-all.sh` does:
+/// Prepares the instance for a suite, as `tests/run-all.sh` does:
 /// stops Asterisk, resets the configuration, runs `setup`, installs the
 /// module (debug build), starts Asterisk, and checks that the module is a
 /// devtest build.

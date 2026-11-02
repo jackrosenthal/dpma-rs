@@ -137,20 +137,14 @@ pub fn repo_root() -> PathBuf {
         .unwrap_or_default()
 }
 
-/// The default test PKI directory: `$DPMA_PKI` if set, else `pki` in the
-/// directory of the Python simulator (`dev/sim/pki`, or `tests/sim/pki`
-/// once the simulator's files moved there), so that the Python and Rust
-/// tools share one PKI.
+/// The default test PKI directory: `$DPMA_PKI` if set, else
+/// `dev/sim/pki` in the repository (generated, not committed), the
+/// default of the Python tools (`tests/sim/mkpki.py`, `dpma_sim.py`) too,
+/// so that both share one PKI.
 pub fn default_pki_dir() -> PathBuf {
-    if let Some(p) = std::env::var_os("DPMA_PKI") {
-        return PathBuf::from(p);
-    }
-    let root = repo_root();
-    let dev = root.join("dev").join("sim");
-    if dev.is_dir() {
-        dev.join("pki")
-    } else {
-        root.join("tests").join("sim").join("pki")
+    match std::env::var_os("DPMA_PKI") {
+        Some(p) => PathBuf::from(p),
+        None => repo_root().join("dev").join("sim").join("pki"),
     }
 }
 

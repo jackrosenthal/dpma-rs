@@ -2,7 +2,7 @@
 """Smoke checks for the P4 configuration documents in a private instance
 prepared with setup.sh (devtest build installed, Asterisk running):
 
-    DPMA_SLOT=<n> python3 -I dev/tests/config-xml/check.py [-v]
+    DPMA_SLOT=<n> python3 -I tests/config-xml/check.py [-v]
 
 No expected documents are recorded (P4 compared them with the decompile
 by hand); this checks that every document setup.sh describes is produced
@@ -20,7 +20,7 @@ import subprocess
 import sys
 import xml.dom.minidom
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../.."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../.."))
 if not os.environ.get("DPMA_SLOT"):
     sys.exit("DPMA_SLOT is not set")
 VERBOSE = "-v" in sys.argv
@@ -31,7 +31,7 @@ failures = 0
 
 
 def cli(cmd):
-    return subprocess.run([os.path.join(ROOT, "dev/tools/ast.sh"), "cli", cmd],
+    return subprocess.run([os.path.join(ROOT, "tools/ast.sh"), "cli", cmd],
                           capture_output=True, text=True).stdout
 
 

@@ -1,9 +1,9 @@
 //! The session suite: sessions, handshake, encryption, and framing with
 //! the phone simulator (package P7; the Rust form of
-//! `dev/sim/scripts/session-all.sh` and the scripts it runs).
+//! `tests/sim/scripts/session-all.sh` and the scripts it runs).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_INCLUDE_DIR=$PWD/dev/asterisk-24/include
+//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-24-src
 //! cargo build -p res_dpma_rs --features devtest
 //! cargo test -p dpma-tests --test session -- --ignored [PART...]
 //! ```

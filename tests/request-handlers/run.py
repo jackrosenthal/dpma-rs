@@ -7,11 +7,11 @@ P12 test phones (setup.sh), a devtest build of res_dpma_rs
 installed, and Asterisk running:
 
     export DPMA_SLOT=<n>
-    python3 dev/sim/mkpki.py && dev/sim/install-conf.sh
-    dev/tests/request-handlers/setup.sh
+    python3 tests/sim/mkpki.py && tests/sim/install-conf.sh
+    tests/request-handlers/setup.sh
     cargo build -p res_dpma_rs --features devtest
-    dev/tools/ast.sh install && dev/tools/ast.sh start
-    python3 dev/tests/request-handlers/run.py [-v] [SECTION...]
+    tools/ast.sh install && tools/ast.sh start
+    python3 tests/request-handlers/run.py [-v] [SECTION...]
 
 Sections: token, config, userlist, file, asterisk, xml, ami, handshake
 (default: all).  The script rewrites [general] of the instance's

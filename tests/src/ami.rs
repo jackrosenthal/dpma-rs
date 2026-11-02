@@ -1,5 +1,5 @@
 //! A small Asterisk Manager Interface client (the Rust form of
-//! `dev/sim/ami.py`).
+//! `tests/sim/ami.py`).
 //!
 //! Text is bytes: action fields are sent as given and every message keeps
 //! both its parsed fields and the raw bytes Asterisk sent, so responses

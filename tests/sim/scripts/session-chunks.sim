@@ -3,8 +3,8 @@
 # session.sim.  EVENT_CHUNKS is the number of chunks of a 2000-byte event:
 # 5 over UDP (0x1a4 bytes of plaintext per chunk), 3 over TCP (0x384):
 #
-#   EVENT_CHUNKS=5 DPMA_SLOT=<n> dev/sim/dpma_sim.py script dev/sim/scripts/session-chunks.sim
-#   EVENT_CHUNKS=3 DPMA_SLOT=<n> dev/sim/dpma_sim.py --transport tcp script dev/sim/scripts/session-chunks.sim
+#   EVENT_CHUNKS=5 DPMA_SLOT=<n> tests/sim/dpma_sim.py script tests/sim/scripts/session-chunks.sim
+#   EVENT_CHUNKS=3 DPMA_SLOT=<n> tests/sim/dpma_sim.py --transport tcp script tests/sim/scripts/session-chunks.sim
 
 set L=abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij
 

@@ -30,7 +30,7 @@ import time
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 SLOT = int(os.environ.get("DPMA_SLOT", "0"))
 if not SLOT:
     sys.exit("set DPMA_SLOT (never use the shared install)")
@@ -39,7 +39,7 @@ ETC = os.path.join(INST, "etc", "asterisk")
 LOG = os.path.join(INST, "var", "log", "asterisk", "messages.log")
 SIP_PORT = 15060 + 100 * SLOT
 HTTP_PORT = 15088 + 100 * SLOT
-AST = os.path.join(ROOT, "dev", "tools", "ast.sh")
+AST = os.path.join(ROOT, "tools", "ast.sh")
 SIPUA = [sys.executable, "-I", os.path.join(HERE, "sipua.py"), "127.0.0.1", str(SIP_PORT)]
 DIGIUM_UA = "Digium D65 2_9_17"
 DPMA = "res_dpma_rs.so"

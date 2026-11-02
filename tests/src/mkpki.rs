@@ -1,5 +1,5 @@
 //! The test PKI for the phone simulator (the Rust form of
-//! `dev/sim/mkpki.py`).
+//! `tests/sim/mkpki.py`).
 //!
 //! Everything is generated locally; nothing comes from the original
 //! binary.  The PKI has two independent halves:
@@ -20,7 +20,7 @@
 //! `<name>.pem` for every entity, and `bundles.json`, which lists the
 //! handshake bodies the simulator can send: the certificates in body
 //! order and the key that decrypts the common password.  The layout is
-//! the one `dev/sim/mkpki.py` writes, so the Python and Rust simulators
+//! the one `tests/sim/mkpki.py` writes, so the Python and Rust simulators
 //! can use each other's PKI.
 //!
 //! [`install`] copies `root-ca.pem` to

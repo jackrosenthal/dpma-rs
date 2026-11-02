@@ -3,7 +3,7 @@
 # FUN_00148e40, action_dpma_show_phones FUN_001500d0).  Needs a devtest
 # build (dpmadev session mark) and the setup of session.sim.
 #
-#   DPMA_SLOT=<n> dev/sim/dpma_sim.py script dev/sim/scripts/session-output.sim
+#   DPMA_SLOT=<n> tests/sim/dpma_sim.py script tests/sim/scripts/session-output.sim
 
 handshake
 expect type=HandshakeResponse

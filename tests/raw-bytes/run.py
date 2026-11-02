@@ -2,11 +2,11 @@
 """Text that is not UTF-8 passes through unchanged (plan section 13).
 
     export DPMA_SLOT=<n>
-    python3 dev/sim/mkpki.py && dev/sim/install-conf.sh
-    dev/tests/raw-bytes/setup.sh
+    python3 tests/sim/mkpki.py && tests/sim/install-conf.sh
+    tests/raw-bytes/setup.sh
     cargo build && cargo build -p res_dpma_rs --features devtest
-    dev/tools/ast.sh install && dev/tools/ast.sh start
-    python3 -I dev/tests/raw-bytes/run.py [-v]
+    tools/ast.sh install && tools/ast.sh start
+    python3 -I tests/raw-bytes/run.py [-v]
 
 The configuration (fixtures.py) has Latin-1 text in phone, line,
 network, application, translation, alert, page, ringtone, and contact
@@ -39,12 +39,12 @@ sys.path.insert(0, HERE)
 import fixtures as fx  # noqa: E402
 
 ROOT = fx.ROOT
-sys.path.insert(0, os.path.join(ROOT, "dev", "sim"))
+sys.path.insert(0, os.path.join(ROOT, "tests", "sim"))
 from dpma_sim import Options, Phone, method_request  # noqa: E402
 
 if not fx.SLOT:
     sys.exit("DPMA_SLOT is not set (never run this against the shared install)")
-AST = os.path.join(ROOT, "dev", "tools", "ast.sh")
+AST = os.path.join(ROOT, "tools", "ast.sh")
 MSGLOG = os.path.join(fx.INST, "var", "log", "asterisk", "messages.log")
 AMI_PORT = 15038 + 100 * fx.SLOT
 VERBOSE = "-v" in sys.argv

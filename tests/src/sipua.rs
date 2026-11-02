@@ -1,6 +1,6 @@
 //! A minimal SIP user agent over UDP for test phones (the Rust form of
-//! `dev/tests/pjsip-helpers/sipua.py`, `dev/tests/methods-calls/phone.py`,
-//! and `dev/tests/methods-vm/vm_uas.py`).
+//! `tests/pjsip-helpers/sipua.py`, `tests/methods-calls/phone.py`,
+//! and `tests/methods-vm/vm_uas.py`).
 //!
 //! - [`SipUa`]: requests and replies by hand; [`SipUa::register`] with
 //!   digest authentication, [`SipUa::message`], and [`SipUa::subscribe`].
@@ -745,7 +745,9 @@ mod tests {
     #[test]
     fn uas_against_a_fake_server() {
         let server = UdpSocket::bind("127.0.0.1:0").unwrap();
-        server.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
         let port = server.local_addr().unwrap().port();
         let mut cfg = UasConfig::new("1001", "pw", Duration::from_secs(10));
         cfg.dtmf = "#*".into();
@@ -769,10 +771,19 @@ mod tests {
         };
         let (reg, addr) = recv();
         assert_eq!(reg.method().as_deref(), Some("REGISTER"));
-        respond(&reg, "401 Unauthorized", "WWW-Authenticate: Digest realm=\"r\",nonce=\"n1\",qop=\"auth\"\r\n", addr);
+        respond(
+            &reg,
+            "401 Unauthorized",
+            "WWW-Authenticate: Digest realm=\"r\",nonce=\"n1\",qop=\"auth\"\r\n",
+            addr,
+        );
         let (reg, addr) = recv();
         let auth = reg.get_str("Authorization").unwrap();
-        let cnonce = Regex::new(r#"cnonce="([^"]+)""#).unwrap().captures(&auth).unwrap()[1].to_string();
+        let cnonce = Regex::new(r#"cnonce="([^"]+)""#)
+            .unwrap()
+            .captures(&auth)
+            .unwrap()[1]
+            .to_string();
         let uri = format!("sip:127.0.0.1:{port}");
         let ha1 = md5_hex("1001:r:pw");
         let ha2 = md5_hex(&format!("REGISTER:{uri}"));
@@ -805,7 +816,9 @@ mod tests {
             let (info, a) = recv();
             assert_eq!(info.method().as_deref(), Some("INFO"));
             assert_eq!(info.get_str("Call-ID").as_deref(), Some("call1"));
-            assert!(info.body.starts_with(format!("Signal={key}\r\n").as_bytes()));
+            assert!(info
+                .body
+                .starts_with(format!("Signal={key}\r\n").as_bytes()));
             respond(&info, "200 OK", "", a);
         }
         let bye = format!(
@@ -820,13 +833,25 @@ mod tests {
         let kinds: Vec<String> = events
             .iter()
             .map(|e| match e {
-                UaEvent::Invite(n, m, what) => format!("invite {n} {what} {}", m.get_str("X-Event-Name").unwrap_or_default()),
+                UaEvent::Invite(n, m, what) => format!(
+                    "invite {n} {what} {}",
+                    m.get_str("X-Event-Name").unwrap_or_default()
+                ),
                 UaEvent::Dtmf(k) => format!("dtmf {k}"),
                 UaEvent::Bye(_) => "bye".into(),
                 UaEvent::Unregistered(s) => format!("unregistered {s}"),
                 other => format!("{other:?}"),
             })
             .collect();
-        assert_eq!(kinds, ["Registered(\"SIP/2.0 200 OK\")", "invite 1 answered test", "dtmf #", "dtmf *", "bye"]);
+        assert_eq!(
+            kinds,
+            [
+                "Registered(\"SIP/2.0 200 OK\")",
+                "invite 1 answered test",
+                "dtmf #",
+                "dtmf *",
+                "bye"
+            ]
+        );
     }
 }
