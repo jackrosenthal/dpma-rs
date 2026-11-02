@@ -11,6 +11,7 @@
 //! | [`ami`] | An AMI client that keeps every message's raw bytes. |
 //! | [`sipua`] | A minimal SIP user agent for test phones: REGISTER with digest authentication, MESSAGE, SUBSCRIBE, and a UAS that answers or rejects calls, sends DTMF INFOs, and records INFOs and NOTIFYs. |
 //! | [`mdns`] | An mDNS browser (legacy unicast queries) and listener. |
+//! | [`netns`] | A private network namespace a suite runs itself in (`unshare -rn`). |
 //! | [`harness`] | Shared by the suites: the instance and its CLI (control socket), checks, the log, configuration editing, the suite runner, and fixtures. |
 //! | [`sip`] | SIP messages as bytes (parsing and encoding). |
 //! | [`util`] | JSON text as the test documents write it, waiting with timeouts. |
@@ -53,6 +54,7 @@ pub mod ami;
 pub mod harness;
 pub mod mdns;
 pub mod mkpki;
+pub mod netns;
 pub mod sim;
 pub mod sip;
 pub mod sipua;

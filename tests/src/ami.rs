@@ -554,6 +554,16 @@ fn read_loop(mut reader: BufReader<TcpStream>, shared: &Shared) {
         }
         msg.raw.extend_from_slice(&line);
         let text = line.trim_end_with(|c| c == '\r' || c == '\n');
+        // A message ends at the first "\r\n\r\n": after a line that ends
+        // in a bare "\n" (DigiumPhoneReconfigure's "not contacted"
+        // message), a blank line does not end it yet.
+        if text.is_empty()
+            && !msg.fields.is_empty()
+            && !msg.raw.ends_with(b"\r\n\r\n")
+            && !msg.raw.ends_with(b"\n\n")
+        {
+            continue;
+        }
         if text.is_empty() {
             if !msg.fields.is_empty() {
                 let done = std::mem::take(&mut msg);
@@ -641,6 +651,10 @@ mod tests {
                         put(b"Event: ThingsComplete\r\nEventList: Complete\r\nActionID: ");
                         put(&id);
                         put(b"\r\n\r\n");
+                    } else if req.starts_with(b"Action: Bare") {
+                        put(b"Response: Error\r\nActionID: ");
+                        put(&id);
+                        put(b"\r\nMessage: one line.\n\r\n\r\n");
                     } else if req.starts_with(b"Action: Command") {
                         put(b"Response: Success\r\nActionID: ");
                         put(&id);
@@ -686,6 +700,11 @@ mod tests {
             .unwrap()
             .raw()
             .starts_with(b"Response: Success\r\nActionID: t1\r\n"));
+        let res = ami.action("Bare", [("ActionID", "b1")]);
+        assert_eq!(
+            res.response.unwrap().raw(),
+            &b"Response: Error\r\nActionID: b1\r\nMessage: one line.\n\r\n\r\n"[..]
+        );
         let lines = ami.command("show things").unwrap();
         assert_eq!(
             lines,
