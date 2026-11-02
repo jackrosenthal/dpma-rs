@@ -40,7 +40,7 @@ rand_chacha = "0.3"
 rsa = { version = "0.9", features = ["sha1", "sha2", "pem", "hazmat"] }
 sha1 = { version = "0.10", features = ["oid"] }
 sha2 = { version = "0.10", features = ["oid"] }
-x509-cert = { version = "0.2", features = ["builder", "hazmat", "pem"] }
+x509-cert = { version = "0.2", default-features = false }
 
 # RSA key generation for the test PKI (dpma-tests) is very slow unoptimized.
 [profile.dev.package.num-bigint-dig]

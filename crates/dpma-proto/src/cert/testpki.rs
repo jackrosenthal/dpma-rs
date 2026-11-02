@@ -1,8 +1,7 @@
 //! A throwaway PKI for the verifier tests, made with x509-cert's
 //! certificate builder (nothing from the original binary).  Keys are
 //! generated from fixed seeds and cached; certificates are made per test.
-//! Signatures are made with the `rsa` crate's PKCS#1 v1.5 signer (its own
-//! DigestInfo prefixes, independent of the verifier's).
+//! Signatures are made with the `rsa` crate's PKCS#1 v1.5 signer.
 
 use rsa::pkcs1v15::Signature;
 use rsa::signature::Keypair;
@@ -11,9 +10,8 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Mutex, OnceLock};
 use x509_cert::builder::{Builder, CertificateBuilder, Profile};
-use x509_cert::der::asn1::{Any, Ia5String, OctetString};
+use x509_cert::der::asn1::{Any, OctetString};
 use x509_cert::der::{Decode, Encode};
-use x509_cert::ext::pkix::name::GeneralName;
 use x509_cert::ext::pkix::{AuthorityKeyIdentifier, BasicConstraints, KeyUsage, KeyUsages};
 use x509_cert::ext::{AsExtension, Extension};
 use x509_cert::name::Name;
@@ -22,9 +20,6 @@ use x509_cert::spki::{
     AlgorithmIdentifierOwned, DynSignatureAlgorithmIdentifier, ObjectIdentifier, SubjectPublicKeyInfoOwned,
 };
 use x509_cert::time::{Time, Validity};
-
-/// 2026-01-01T00:00:00Z, the "now" of the tests.
-pub const NOW: i64 = 1_767_225_600;
 
 /// An RSA key from a fixed seed (cached: generating keys is slow).
 pub fn key(bits: usize, seed: u64) -> RsaPrivateKey {
@@ -42,7 +37,6 @@ pub fn key(bits: usize, seed: u64) -> RsaPrivateKey {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hash {
-    Md5,
     Sha1,
     Sha224,
     Sha256,
@@ -54,7 +48,6 @@ impl Hash {
     /// The `<hash>WithRSAEncryption` OID.
     fn oid(self) -> &'static str {
         match self {
-            Hash::Md5 => "1.2.840.113549.1.1.4",
             Hash::Sha1 => "1.2.840.113549.1.1.5",
             Hash::Sha224 => "1.2.840.113549.1.1.14",
             Hash::Sha256 => "1.2.840.113549.1.1.11",
@@ -68,7 +61,6 @@ impl Hash {
 pub fn sign(key: &RsaPrivateKey, hash: Hash, msg: &[u8]) -> Vec<u8> {
     use sha1::Digest;
     let (scheme, digest) = match hash {
-        Hash::Md5 => (Pkcs1v15Sign::new::<md5::Md5>(), md5::Md5::digest(msg).to_vec()),
         Hash::Sha1 => (Pkcs1v15Sign::new::<sha1::Sha1>(), sha1::Sha1::digest(msg).to_vec()),
         Hash::Sha224 => (Pkcs1v15Sign::new::<sha2::Sha224>(), sha2::Sha224::digest(msg).to_vec()),
         Hash::Sha256 => (Pkcs1v15Sign::new::<sha2::Sha256>(), sha2::Sha256::digest(msg).to_vec()),
@@ -164,11 +156,6 @@ pub fn authority_key_id(id: &[u8]) -> Extension {
     ext("2.5.29.35", false, &akid)
 }
 
-pub fn dns_san(names: &[&str]) -> Extension {
-    let names: Vec<GeneralName> = names.iter().map(|n| GeneralName::DnsName(Ia5String::new(n).unwrap())).collect();
-    ext("2.5.29.17", false, &names)
-}
-
 /// UTCTime (or GeneralizedTime from 2050) at midnight of a date.
 pub fn time(y: u16, m: u8, d: u8) -> Time {
     let dt = x509_cert::der::DateTime::new(y, m, d, 0, 0, 0).unwrap();
@@ -189,8 +176,13 @@ pub struct Issued {
 
 impl Issued {
     pub fn pem(&self) -> String {
-        crate::x509::pem::encode("CERTIFICATE", &self.der)
+        pem_of(&self.der)
     }
+}
+
+/// A `CERTIFICATE` PEM block of any octets.
+pub fn pem_of(der: &[u8]) -> String {
+    x509_cert::der::pem::encode_string("CERTIFICATE", x509_cert::der::pem::LineEnding::LF, der).unwrap()
 }
 
 /// PEM text of several certificates.

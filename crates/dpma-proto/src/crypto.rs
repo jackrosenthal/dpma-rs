@@ -24,7 +24,7 @@ use crate::{LogLevel, ProtoError, Result};
 use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use dpma_bytes::bformat;
 
-pub use crate::x509::key::PublicKey;
+pub use crate::cert::PublicKey;
 
 type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
@@ -650,8 +650,8 @@ mod tests {
             // Each encryption pads with fresh random octets.
             assert_ne!(encrypt_common_password(&public, &pass).unwrap(), b64);
         }
-        // An EC key (id-ecPublicKey).
-        let (r, logs) = testlog::capture(|| encrypt_common_password(&PublicKey::Other(408), b"x"));
+        // A key that is not RSA.
+        let (r, logs) = testlog::capture(|| encrypt_common_password(&PublicKey::Other, b"x"));
         assert_eq!(r.unwrap_err().message(), "failed to get rsa during common password generation");
         assert_eq!(logs, vec!["failed to get rsa during common password generation\n"]);
         // A key too small for 40 octets (400 bits), with 1.1.1t's error.
