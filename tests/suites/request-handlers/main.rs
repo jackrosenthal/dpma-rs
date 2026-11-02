@@ -4,15 +4,19 @@
 //! real sessions (package P8; was `tests/request-handlers/users-flows.py`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n>
-//! cargo build -p res_dpma_rs --features devtest
+//! cargo xtask test request-handlers
+//! ```
+//!
+//! runs it in the test container after building the devtest module, as
+//!
+//! ```text
 //! cargo test -p dpma-tests --test request-handlers -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
-//! Prerequisites: a private instance (`DPMA_SLOT`) and the devtest build
-//! of the module (the checks use its `dpmadev` CLI commands).  The suite
-//! prepares the instance (fresh configuration; the simulator's test PKI
-//! and configuration; the P12 test phones of
+//! Prerequisites: the test instance and the devtest build of the module
+//! (the checks use its `dpmadev` CLI commands).  The suite prepares the
+//! instance (fresh configuration; the simulator's test PKI and
+//! configuration; the P12 test phones of
 //! `tests/data/request-handlers/res_digium_phone_p12.conf` included from
 //! `res_digium_phone.conf`; the debug build installed; Asterisk
 //! restarted; `--no-prepare` skips this).  It takes about two minutes,

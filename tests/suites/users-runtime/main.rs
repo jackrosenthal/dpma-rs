@@ -2,14 +2,18 @@
 //! (package P8; was `tests/users-runtime/check.sh`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n>
-//! cargo build -p res_dpma_rs --features devtest
+//! cargo xtask test users-runtime
+//! ```
+//!
+//! runs it in the test container after building the devtest module, as
+//!
+//! ```text
 //! cargo test -p dpma-tests --test users-runtime -- --ignored [--no-prepare] [PART...]
 //! ```
 //!
-//! Prerequisites: a private instance (`DPMA_SLOT`) and the devtest build
-//! of the module (the checks use its `dpmadev` CLI commands).  The suite
-//! prepares the instance (fresh configuration, the P8 test phones of
+//! Prerequisites: the test instance and the devtest build of the module
+//! (the checks use its `dpmadev` CLI commands).  The suite prepares the
+//! instance (fresh configuration, the P8 test phones of
 //! `tests/data/users-runtime/res_digium_phone_p8.conf` included from
 //! `res_digium_phone.conf`, the debug build installed, Asterisk
 //! restarted; `--no-prepare` skips this).  Before the first part it

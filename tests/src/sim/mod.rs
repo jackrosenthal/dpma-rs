@@ -15,7 +15,7 @@
 //! ```no_run
 //! use dpma_tests::sim::{Options, Phone};
 //! # fn main() -> anyhow::Result<()> {
-//! let phone = Phone::start(Options::for_slot(5))?;
+//! let phone = Phone::start(Options::default())?;
 //! let ex = phone.handshake().send()?;
 //! assert!(ex.ok(), "{:?}", ex);
 //! let ex = phone.get_token().user("simphone").config_password("344486").send()?;
@@ -104,7 +104,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub use framing::ChunkStyle;
-pub use phone::{ami_port_for, sip_port_for, Form, Options, Phone, RequestBuilder, SessionChoice};
+pub use phone::{Form, Options, Phone, RequestBuilder, SessionChoice};
 pub use reply::{Added, Exchange, Reassembler, Reply};
 
 pub use crate::sip::Transport;
@@ -200,8 +200,9 @@ pub fn repo_root() -> PathBuf {
         .unwrap_or_default()
 }
 
-/// The default test PKI directory: `$DPMA_PKI` if set, else
-/// `dev/sim/pki` in the repository (generated, not committed).
+/// The default test PKI directory: `$DPMA_PKI` if set (the test container
+/// sets it to `target/container/<release>/pki`), else `dev/sim/pki` in the
+/// repository (generated, not committed).
 pub fn default_pki_dir() -> PathBuf {
     match std::env::var_os("DPMA_PKI") {
         Some(p) => PathBuf::from(p),

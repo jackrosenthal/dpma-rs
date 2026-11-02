@@ -1,16 +1,23 @@
-# Build, lint, and test dpma-rs against every supported Asterisk version:
-# one job per major version pinned in tools/asterisk-versions.  Each
-# job is a thin wrapper around `cargo xtask ci job`, which runs the same
-# way locally:
+# Build, lint, and test dpma-rs against every pinned Asterisk version on
+# x86_64 and aarch64, and build the module for publishing.  Each test job
+# is a thin wrapper around `cargo xtask ci`, which runs the same way
+# locally (with podman or docker):
 #
-#   cargo xtask ci setup                       # once, on Ubuntu (uses sudo)
-#   DPMA_SLOT=<n> cargo xtask ci job <major>
+#   cargo xtask ci --asterisk <major>
+#
+# A pushed tag vX.Y.Z (the workspace version) also publishes the GitHub
+# Release of that tag, with the six modules, SHA256SUMS, and LICENSE
+# (the GPL's text accompanies the binaries), once every test job has
+# passed.
 name: CI
 
 on:
   push:
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   versions:
@@ -22,74 +29,111 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Rust 1.99
-        run: |
-          rustup toolchain install 1.99 --profile minimal
-          rustup default 1.99
+        run: rustup toolchain install 1.99 --profile minimal && rustup default 1.99
 
       - id: pins
-        run: echo "majors=$(cargo xtask asterisk majors)" >> "$GITHUB_OUTPUT"
+        run: echo "majors=$(cargo xtask majors)" >> "$GITHUB_OUTPUT"
 
   test:
-    name: Asterisk ${{ matrix.asterisk }}
+    name: Asterisk ${{ matrix.asterisk }} (${{ matrix.arch }})
     needs: versions
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
         asterisk: ${{ fromJSON(needs.versions.outputs.majors) }}
+        arch: [x86_64, aarch64]
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
     env:
-      DPMA_SLOT: 1
-      LOGDIR: ${{ github.workspace }}/test-logs
+      # The runners have both; the image cache below is docker's.
+      DPMA_ENGINE: docker
     steps:
       - uses: actions/checkout@v4
 
+      # Rust runs only the xtask on the runner; the build and the tests run
+      # in the test container.  (rustup is installed first where the
+      # runner image has none.)
       - name: Rust 1.99
         run: |
-          rustup toolchain install 1.99 --profile minimal --component clippy
-          rustup default 1.99
+          command -v rustup || { curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none && echo "$HOME/.cargo/bin" >> "$GITHUB_PATH" && export PATH="$HOME/.cargo/bin:$PATH"; }
+          rustup toolchain install 1.99 --profile minimal && rustup default 1.99
 
-      # Build dependencies, libclang, the suites' tools, and unprivileged
-      # user namespaces (apps-discovery's network namespace).  The xtask
-      # runs itself as root through sudo.
-      - name: Runner setup
-        run: cargo xtask ci setup
-
-      - name: Pinned release
-        id: pin
-        run: cargo xtask asterisk info ${{ matrix.asterisk }} >> "$GITHUB_OUTPUT"
-
-      # The configured, built, and installed Asterisk (source tree and
-      # prefix), keyed by the release and its checksum, the runner, and the
-      # build code and configuration.  It is saved right after the build,
-      # so a failing test run still caches it.
-      - name: Restore the Asterisk build
-        id: cache
+      # The test image (Asterisk built and installed, its headers, and
+      # Rust) as a `docker save` archive, keyed by the architecture and
+      # what its tag covers (tools/src/container.rs, image_tag), so that
+      # the xtask finds the image and does not build it again.
+      - name: Restore the test image
+        id: image
         uses: actions/cache/restore@v4
         with:
-          path: dev/asterisk-builds/${{ steps.pin.outputs.version }}
-          key: asterisk-${{ steps.pin.outputs.version }}-${{ steps.pin.outputs.sha256 }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/src/**', 'tools/asterisk-conf/**') }}
+          path: test-image.tar
+          key: test-image-${{ matrix.asterisk }}-${{ matrix.arch }}-${{ hashFiles('tools/Containerfile', 'tools/asterisk-conf/**', 'tools/asterisk-versions', 'tools/src/container.rs') }}
 
-      - name: Download, verify, configure, build, and install Asterisk ${{ steps.pin.outputs.version }}
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: cargo xtask asterisk build --install ${{ matrix.asterisk }}
+      - name: Load the test image
+        if: steps.image.outputs.cache-hit == 'true'
+        run: docker load -i test-image.tar && rm test-image.tar
 
-      - name: Save the Asterisk build
-        if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: dev/asterisk-builds/${{ steps.pin.outputs.version }}
-          key: ${{ steps.cache.outputs.cache-primary-key }}
-
-      # cargo build, both clippy runs, cargo test, a fresh instance, and
-      # every suite (cargo xtask test all, ami-expiry included).
+      # cargo build, both clippy runs, cargo test, every suite (ami-expiry
+      # included), and the module for publishing (release build, glibc
+      # baseline, smoke test).
       - name: Build, lint, and test dpma-rs
-        run: cargo xtask ci job ${{ matrix.asterisk }}
+        run: cargo xtask ci --asterisk ${{ matrix.asterisk }}
+
+      # Saved even when the tests fail, so that the next run does not
+      # build the image again.
+      - name: Save the test image
+        if: always() && steps.image.outputs.cache-hit != 'true'
+        run: docker save -o test-image.tar dpma-rs-asterisk
+
+      - uses: actions/cache/save@v4
+        if: always() && steps.image.outputs.cache-hit != 'true' && hashFiles('test-image.tar') != ''
+        with:
+          path: test-image.tar
+          key: ${{ steps.image.outputs.cache-primary-key }}
 
       - name: Upload the test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-logs-asterisk-${{ matrix.asterisk }}
-          path: test-logs
+          name: test-logs-asterisk${{ matrix.asterisk }}-${{ matrix.arch }}
+          path: target/container/*/logs
           if-no-files-found: ignore
+
+      - name: Upload the module
+        uses: actions/upload-artifact@v4
+        with:
+          name: res_dpma_rs-asterisk${{ matrix.asterisk }}-${{ matrix.arch }}
+          path: target/container/*/res_dpma_rs-asterisk${{ matrix.asterisk }}-${{ matrix.arch }}.so
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag names the workspace version
+        run: test "$GITHUB_REF_NAME" = "v$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: res_dpma_rs-*
+          path: dist
+          merge-multiple: true
+
+      - name: SHA256SUMS
+        run: cd dist && sha256sum res_dpma_rs-*.so > SHA256SUMS && cat SHA256SUMS
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* LICENSE --title "dpma-rs $GITHUB_REF_NAME" --notes "res_dpma_rs.so for Asterisk 22, 23, and 24 on x86_64 and aarch64, SHA256SUMS, and LICENSE; see README.md, Installation."

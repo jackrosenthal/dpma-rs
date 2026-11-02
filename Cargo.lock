@@ -1222,7 +1222,6 @@ dependencies = [
  "anyhow",
  "clap",
  "dpma-tests",
- "libc",
  "serde_json",
  "sha2",
 ]

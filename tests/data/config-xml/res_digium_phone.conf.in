@@ -1,7 +1,7 @@
 ; P4 test configuration: exercises every phone, line, network,
 ; application, ringtone, alert, firmware, and multicast page option that
 ; the configuration document uses.  Installed as res_digium_phone.conf
-; (@SLOT@ is the instance directory) by
+; (@INSTANCE@ is the instance directory) by
 ; dpma_tests::harness::setup::config_xml.
 [general]
 globalpin=344486
@@ -9,11 +9,11 @@ userlist_auth=globalpin
 config_auth=mac_globalpin
 service_discovery_enabled=no
 server_uuid=1b9c3a5e-0000-4000-8000-123456789abc
-file_directory=@SLOT@/var/lib/asterisk/digium_phones
+file_directory=@INSTANCE@/var/lib/asterisk/digium_phones
 registration_address=192.0.2.10
 registration_port=5070
 firmware_url_prefix=http://192.0.2.10/fw
-firmware_package_directory=@SLOT@/var/lib/asterisk/digium_phones/firmware
+firmware_package_directory=@INSTANCE@/var/lib/asterisk/digium_phones/firmware
 
 [network1]
 type=network

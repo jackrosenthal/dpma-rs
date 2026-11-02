@@ -3,16 +3,18 @@
 //! simulator (the Rust form of the former `tests/ami/run.py`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/<release>/src
-//! cargo build -p res_dpma_rs --features devtest
+//! cargo xtask test ami ami-expiry
+//! ```
+//!
+//! runs it (`ami-expiry` with `--expiry`) in the test container after
+//! building the devtest module, as
+//!
+//! ```text
 //! cargo test -p dpma-tests --test ami -- --ignored [--no-prepare] [-v] [--expiry] [--via phone|hook] [PART...]
 //! ```
 //!
-//! (or `cargo xtask test ami`, and `cargo xtask test ami-expiry` for
-//! `--expiry`; the runner builds the devtest module first).
-//!
-//! Prerequisites: a private instance (`DPMA_SLOT`) and a devtest build of
-//! the module.  The suite prepares the instance (fresh configuration, the
+//! Prerequisites: the test instance and a devtest build of the module.
+//! The suite prepares the instance (fresh configuration, the
 //! simulator's test PKI and configuration, the P13 test phones of
 //! `tests/data/ami/res_digium_phone_p13.conf` included from
 //! `res_digium_phone.conf`, the debug build installed, Asterisk
@@ -411,8 +413,7 @@ fn init(ctx: &mut Ctx, o: Opts) -> Result<State> {
         .contains("dpmadev ami queue")
     {
         bail!(
-            "needs a devtest build of res_dpma_rs running in slot {} ({})",
-            ctx.inst.slot,
+            "needs a devtest build of res_dpma_rs running in the instance ({})",
             fixtures::DEVTEST_HINT
         );
     }

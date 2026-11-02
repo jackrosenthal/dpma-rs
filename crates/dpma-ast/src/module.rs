@@ -16,17 +16,6 @@ pub type ModuleInfo = CStatic<sys::ast_module_info>;
 /// The module's info, set by the constructor `asterisk_module!` emits.
 static INFO: AtomicPtr<sys::ast_module_info> = AtomicPtr::new(std::ptr::null_mut());
 
-/// `AST_BUILDOPT_SUM` as the `buildopt_sum` field (`char[33]`).
-pub const fn buildopt_sum() -> [c_char; 33] {
-    let src = sys::AST_BUILDOPT_SUM;
-    let mut out = [0 as c_char; 33];
-    let mut i = 0;
-    while i < src.len() && i < 32 {
-        out[i] = src[i] as c_char;
-        i += 1;
-    }
-    out
-}
 
 /// The constructor's work (`__reg_module`): remember `info` and register
 /// it with the loader (`ast_module_register`), which is loading this
@@ -112,9 +101,9 @@ fn reopen() {
 }
 
 /// Declare an Asterisk module, as `AST_MODULE_INFO` does in C: the
-/// `struct ast_module_info` (name, flags, description, the GPL key, the
-/// build options checksum of the headers, support level, callbacks, load
-/// priority, and dependencies), a constructor that registers it with the
+/// `struct ast_module_info` (name, flags, description, the GPL key, an
+/// empty build options checksum, support level, callbacks, load priority,
+/// and dependencies), a constructor that registers it with the
 /// loader when the image is loaded (`.init_array`), a destructor that
 /// unregisters it (`.fini_array`), and the `AST_MODULE_SELF_SYM` function
 /// `__internal_<name>_self`.
@@ -163,7 +152,12 @@ macro_rules! asterisk_module {
                 description: concat!($description, "\0").as_ptr().cast(),
                 key: $crate::sys::ASTERISK_GPL_KEY.as_ptr().cast(),
                 flags: $flags as ::std::os::raw::c_uint,
-                buildopt_sum: $crate::module::buildopt_sum(),
+                // Empty, as in the original module: Asterisk's loader
+                // compares the build options checksum only when a module
+                // has one (`!ast_strlen_zero(mod->info->buildopt_sum) &&
+                // strcmp(...)`, main/loader.c:1836 in 22, 23, and 24), so
+                // the module loads into any build of a supported Asterisk.
+                buildopt_sum: [0; 33],
                 load_pri: $load_pri as ::std::os::raw::c_uchar,
                 requires: if $requires.is_empty() {
                     ::std::ptr::null()

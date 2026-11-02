@@ -470,10 +470,13 @@ impl Generator {
             "intermediate_serial": INTERMEDIATE_SERIAL,
             "bundles": bundles,
         });
-        std::fs::write(
-            self.dir.join("bundles.json"),
-            serde_json::to_string_pretty(&manifest)? + "\n",
-        )?;
+        // Through a temporary file renamed into place: suites running at
+        // the same time share the PKI and read the file.
+        let tmp = self
+            .dir
+            .join(format!("bundles.json.{}", crate::util::token_hex(4)));
+        std::fs::write(&tmp, serde_json::to_string_pretty(&manifest)? + "\n")?;
+        std::fs::rename(&tmp, self.dir.join("bundles.json"))?;
         let names: Vec<&str> = BUNDLES.iter().map(|b| b.0).collect();
         self.say(&format!("  wrote bundles.json: {}", names.join(", ")));
         Ok(())

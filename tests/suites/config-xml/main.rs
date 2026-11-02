@@ -2,17 +2,21 @@
 //! builds (package P4; was `tests/config-xml/check.py`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n>
-//! cargo build -p res_dpma_rs --features devtest
+//! cargo xtask test config-xml
+//! ```
+//!
+//! runs it in the test container after building the devtest module, as
+//!
+//! ```text
 //! cargo test -p dpma-tests --test config-xml -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
-//! Prerequisites: a private instance (`DPMA_SLOT`) and the devtest build
-//! of the module, whose `dpmadev` CLI commands print the documents.  The
-//! suite prepares the instance (fresh configuration, the configuration
-//! document test setup of [`dpma_tests::harness::setup::config_xml`],
-//! the debug build installed, Asterisk restarted; `--no-prepare` skips
-//! this).  `-v` prints the documents.  It takes a few seconds.
+//! Prerequisites: the test instance and the devtest build of the module,
+//! whose `dpmadev` CLI commands print the documents.  The suite prepares
+//! the instance (fresh configuration, the configuration document test
+//! setup of [`dpma_tests::harness::setup::config_xml`], the debug build
+//! installed, Asterisk restarted; `--no-prepare` skips this).  `-v`
+//! prints the documents.  It takes a few seconds.
 //!
 //! No expected documents are recorded (P4 compared them with the
 //! decompile by hand); the suite checks that every document the setup

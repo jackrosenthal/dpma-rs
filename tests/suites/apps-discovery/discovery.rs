@@ -2,7 +2,7 @@
 //! for several configurations; announcements and goodbyes at reload,
 //! disable, unload, load, Asterisk shutdown, and startup (this restarts
 //! Asterisk).  Queries are legacy unicast ([`dpma_tests::mdns`]), on the
-//! private namespace's loopback interface.
+//! test container's loopback interface.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;

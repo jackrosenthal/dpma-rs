@@ -571,10 +571,13 @@ pub fn marks(ctx: &mut Ctx) -> Result<()> {
     Ok(())
 }
 
+/// The simulator's port in [`restore`], fixed so that the restored phone
+/// is at the same address after the restart.
+const RESTORE_PORT: u16 = 16291;
+
 pub fn restore(ctx: &mut Ctx) -> Result<()> {
-    let port = u16::try_from(16290 + ctx.inst.slot)?;
     let mut opts = ctx.sim_options().mac(MAC_A);
-    opts.local_port = port;
+    opts.local_port = RESTORE_PORT;
     let (rsid, pw, token) = {
         let p = Phone::start(opts.clone())?;
         let ex = p.handshake().send()?;
@@ -603,7 +606,7 @@ pub fn restore(ctx: &mut Ctx) -> Result<()> {
         got,
         at(
             MAC_A,
-            &format!("pjsip:127.0.0.1:{port};transport=udp"),
+            &format!("pjsip:127.0.0.1:{RESTORE_PORT};transport=udp"),
             &rsid,
         ),
     );

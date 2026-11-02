@@ -66,7 +66,7 @@ impl<'a> Settings<'a> {
 }
 
 /// The part: `discovery_ok` is whether service discovery may be enabled
-/// (inside the private network namespace).
+/// (in a network namespace whose only interface is `lo`).
 pub fn run(ctx: &mut Ctx, discovery_ok: bool) -> Result<()> {
     with_conf(ctx, |ctx, orig| checks(ctx, orig, discovery_ok))
 }

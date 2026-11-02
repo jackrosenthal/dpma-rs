@@ -3,12 +3,14 @@
 //! `tests/sim/scripts/session-all.sh` and the scripts it ran).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/<release>/src
-//! cargo build -p res_dpma_rs --features devtest
-//! cargo test -p dpma-tests --test session -- --ignored [PART...]
+//! cargo xtask test session
 //! ```
 //!
-//! (or `cargo xtask test session`, which builds the devtest module first).
+//! runs it in the test container after building the devtest module, as
+//!
+//! ```text
+//! cargo test -p dpma-tests --test session -- --ignored [PART...]
+//! ```
 //!
 //! The suite prepares the instance (fresh configuration, the test PKI and
 //! the simulator's test configuration, the debug build installed,

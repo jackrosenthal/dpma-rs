@@ -1,113 +1,149 @@
-//! A private Asterisk instance (`DPMA_SLOT`).
-//!
-//! Instance management (start, stop, installing the module, resetting the
-//! configuration, and finding the instance's directories and ports) goes
-//! through the instance manager, [`crate::asterisk::Slot`], which
-//! `cargo xtask instance` uses too; [`AstTool`] and [`Instance`] wrap
-//! it.  Everything else talks to the instance directly: the CLI through
-//! its control socket ([`Cli`]), AMI ([`AmiClient`]), and its files.
+//! The test instance: the Asterisk of the test container (see
+//! [`Instance`]).
 
-use std::path::PathBuf;
-use std::time::Duration;
+use std::fs::{self, File};
+use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use anyhow::{bail, Result};
-use bstr::BString;
+use anyhow::{bail, Context, Result};
+use bstr::{BString, ByteSlice};
 
 use super::cli::Cli;
 use super::log::Log;
 use crate::ami::AmiClient;
-use crate::asterisk::Slot;
 use crate::sim;
 
-/// The instance manager of one slot, with the commands of `cargo xtask
-/// instance` ([`Slot::command`]).
-#[derive(Clone, Debug)]
-pub struct AstTool {
-    slot: Slot,
-}
+/// The instance: Asterisk's install in the test container.
+pub const DIR: &str = "/opt/asterisk";
 
-impl AstTool {
-    /// The instance manager of `slot`.
-    pub fn for_slot(slot: u32) -> Result<AstTool> {
-        Ok(AstTool {
-            slot: Slot::new(slot)?,
-        })
-    }
+/// The scratch configuration, which [`Instance::reset_conf`] copies into
+/// the instance.
+pub const SCRATCH_CONF: &str = "/opt/asterisk-conf";
 
-    /// The instance.
-    pub fn slot(&self) -> &Slot {
-        &self.slot
-    }
+/// The instance's SIP port (UDP and, with the simulator setup, TCP).
+pub const SIP_PORT: u16 = 15060;
 
-    /// Runs an instance command (`start`, `stop`, `cli WORDS...`,
-    /// `install [PROFILE]`, `reset-conf`, `info`, or `init [VERSION]`; see
-    /// [`Slot::command`]) for the slot; returns what it prints.
-    pub fn run(&self, args: &[&str]) -> Result<String> {
-        let out = Slot::command(self.slot.number(), args)?;
-        Ok(String::from_utf8_lossy(&out).into_owned())
-    }
+/// The instance's AMI port (user `test`, secret `test`).
+pub const AMI_PORT: u16 = 15038;
 
-    /// The `key: value` pairs of `info`.
-    pub fn info(&self) -> Result<Vec<(String, String)>> {
-        Ok(self
-            .slot
-            .info()
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect())
-    }
-}
+/// The modules of the original distribution, which [`Instance::install`]
+/// removes from the module directory: Asterisk would load them next to
+/// `res_dpma_rs.so`.
+pub const ORIGINAL_MODULES: [&str; 3] = [
+    "res_digium_phone.so",
+    "res_pjsip_endpoint_identifier_dpma.so",
+    "res_pjsip_dialog_info_digium_body_supplement.so",
+];
 
-/// A private Asterisk instance.
+/// How long [`Instance::start`] waits for Asterisk to boot, and
+/// [`Instance::stop`] for it to exit.
+const START_TIMEOUT: Duration = Duration::from_secs(60);
+const STOP_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The test instance: the Asterisk of the test container.
+///
+/// The suites run inside a container of the test image
+/// (`tools/Containerfile`, which `cargo xtask test` builds and starts).
+/// The image holds one pinned Asterisk release installed with
+/// `--prefix=/opt/asterisk` ([`DIR`]), and that install is the instance:
+/// its configuration, AstDB, spool, logs, and module directory are
+/// writable by every user, since the tests run as the host user's user ID.
+/// [`Instance::reset_conf`] copies the scratch configuration
+/// ([`SCRATCH_CONF`]: the samples with `tools/asterisk-conf/` and a few
+/// edits on top) into `etc/asterisk`.
+///
+/// The container has a network namespace of its own whose only interface
+/// is `lo`, so the ports are fixed: SIP on 127.0.0.1:15060 ([`SIP_PORT`])
+/// and AMI on 127.0.0.1:15038 ([`AMI_PORT`], user `test`, secret `test`).
+/// The CLI goes through the control socket ([`Cli`]); Asterisk's console
+/// output goes to `/opt/asterisk/ast-console.log` while it runs.
 #[derive(Clone, Debug)]
 pub struct Instance {
-    /// The slot number.
-    pub slot: u32,
-    /// The instance directory (`dev/run/slot<N>`).
+    /// The instance directory, [`DIR`].
     pub dir: PathBuf,
     /// Its configuration directory (`<dir>/etc/asterisk`).
     pub etc: PathBuf,
     /// Its `messages.log`.
     pub messages_log: PathBuf,
-    /// Its SIP port.
+    /// Its SIP port, [`SIP_PORT`].
     pub sip_port: u16,
-    /// Its AMI port (user `test`, secret `test`).
+    /// Its AMI port, [`AMI_PORT`] (user `test`, secret `test`).
     pub ami_port: u16,
-    tool: AstTool,
+}
+
+/// Whether `pid` is a live process (not a zombie).
+fn pid_alive(pid: u32) -> bool {
+    match fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Err(_) => false,
+        Ok(stat) => stat
+            .rfind(')')
+            .and_then(|i| stat[i + 1..].split_whitespace().next())
+            .is_some_and(|state| state != "Z" && state != "X"),
+    }
+}
+
+/// The value of `key => value` (or `key = value`) in `asterisk.conf`.
+fn conf_value(conf: &Path, key: &str) -> Option<String> {
+    let text = fs::read(conf).ok()?;
+    text.lines().find_map(|line| {
+        let line = line.trim_ascii();
+        if line.starts_with(b";") {
+            return None;
+        }
+        let i = line.find_byte(b'=')?;
+        if !line[..i].trim_ascii().eq_ignore_ascii_case(key.as_bytes()) {
+            return None;
+        }
+        let mut v = &line[i + 1..];
+        if v.first() == Some(&b'>') {
+            v = &v[1..];
+        }
+        Some(v.trim_ascii().to_str_lossy().into_owned())
+    })
+}
+
+/// Copies `src` to `dst` recursively, as `cp -a` does for regular files,
+/// directories, and symbolic links (permissions kept; other file types
+/// are skipped).  Existing directories are merged into.
+fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
+    let meta = fs::symlink_metadata(src).with_context(|| src.display().to_string())?;
+    let t = meta.file_type();
+    if t.is_symlink() {
+        let target = fs::read_link(src)?;
+        std::os::unix::fs::symlink(&target, dst).with_context(|| dst.display().to_string())?;
+    } else if t.is_dir() {
+        fs::create_dir_all(dst).with_context(|| dst.display().to_string())?;
+        for e in fs::read_dir(src).with_context(|| src.display().to_string())? {
+            let e = e?;
+            copy_tree(&e.path(), &dst.join(e.file_name()))?;
+        }
+        fs::set_permissions(dst, meta.permissions())?;
+    } else if t.is_file() {
+        fs::copy(src, dst).with_context(|| format!("copying {}", src.display()))?;
+    }
+    Ok(())
 }
 
 impl Instance {
-    /// The instance of `$DPMA_SLOT` (an error when it is not set: the
-    /// shared install is never used).
-    pub fn from_env() -> Result<Instance> {
-        Instance::for_slot(crate::asterisk::env_slot()?)
-    }
-
-    /// The instance of `slot`.
-    pub fn for_slot(slot: u32) -> Result<Instance> {
-        let tool = AstTool::for_slot(slot)?;
-        let s = tool.slot();
-        let etc = s.etc();
-        if !etc.is_dir() {
+    /// The test instance; an error outside the test container.
+    pub fn new() -> Result<Instance> {
+        let dir = PathBuf::from(DIR);
+        if !dir.join("sbin").join("asterisk").is_file() {
             bail!(
-                "no instance configuration in {} (create the instance: cargo xtask instance init {slot} [VERSION])",
-                etc.display()
+                "no Asterisk in {DIR}: the suites run inside the test container (cargo xtask test [SUITE...])"
             );
         }
         Ok(Instance {
-            slot,
-            dir: s.dir().to_path_buf(),
-            etc,
-            messages_log: s.messages_log(),
-            sip_port: s.sip_port(),
-            ami_port: s.ami_port(),
-            tool,
+            etc: dir.join("etc").join("asterisk"),
+            messages_log: dir.join("var/log/asterisk/messages.log"),
+            sip_port: SIP_PORT,
+            ami_port: AMI_PORT,
+            dir,
         })
-    }
-
-    /// The instance manager.
-    pub fn tool(&self) -> &AstTool {
-        &self.tool
     }
 
     /// A file in the configuration directory.
@@ -128,16 +164,15 @@ impl Instance {
     /// The module directory: `astmoddir` of the instance's
     /// `asterisk.conf` (default `<dir>/lib/asterisk/modules`).
     pub fn modules_dir(&self) -> PathBuf {
-        let conf = std::fs::read(self.conf("asterisk.conf")).unwrap_or_default();
-        conf.split(|&b| b == b'\n')
-            .filter_map(|l| {
-                let l = String::from_utf8_lossy(l);
-                let (k, v) = l.split_once('=')?;
-                (k.trim() == "astmoddir").then(|| v.trim_start_matches('>').trim().to_string())
-            })
-            .find(|v| !v.is_empty())
+        conf_value(&self.conf("asterisk.conf"), "astmoddir")
+            .filter(|v| !v.is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(|| self.dir.join("lib").join("asterisk").join("modules"))
+    }
+
+    /// Asterisk's console output while it runs (`<dir>/ast-console.log`).
+    pub fn console_log(&self) -> PathBuf {
+        self.dir.join("ast-console.log")
     }
 
     /// The instance's `messages.log`.
@@ -147,7 +182,7 @@ impl Instance {
 
     /// The CLI through the instance's control socket.
     pub fn cli(&self) -> Result<Cli> {
-        Cli::from_asterisk_conf(&self.etc.join("asterisk.conf"))
+        Cli::from_asterisk_conf(&self.conf("asterisk.conf"))
     }
 
     /// Runs a CLI command (see [`Cli::run`]).
@@ -173,11 +208,12 @@ impl Instance {
         )
     }
 
-    /// Phone simulator settings for this instance (slot and SIP port).
+    /// Phone simulator settings for this instance (its SIP port).
     pub fn sim_options(&self) -> sim::Options {
-        let mut o = sim::Options::for_slot(self.slot);
-        o.sip_port = self.sip_port;
-        o
+        sim::Options {
+            sip_port: self.sip_port,
+            ..sim::Options::default()
+        }
     }
 
     /// Whether Asterisk answers on the control socket.
@@ -185,35 +221,208 @@ impl Instance {
         self.cli().is_ok_and(|c| c.alive())
     }
 
-    /// (Re)starts Asterisk and waits until it is fully booted.
+    fn pid(&self) -> Option<u32> {
+        let run = conf_value(&self.conf("asterisk.conf"), "astrundir")?;
+        let text = fs::read_to_string(Path::new(&run).join("asterisk.pid")).ok()?;
+        text.trim().parse().ok()
+    }
+
+    /// (Re)starts Asterisk in the background (`asterisk -g -f -n`, its
+    /// console output in [`Instance::console_log`], in a process group of
+    /// its own) and waits until it is fully booted.
     pub fn start(&self) -> Result<()> {
-        self.tool.slot().start()?;
-        if !crate::util::wait_until(Duration::from_secs(10), Duration::from_millis(200), || {
-            self.running()
-        }) {
+        let conf = self.conf("asterisk.conf");
+        if !conf.is_file() {
+            bail!("no configuration in {}", self.etc.display());
+        }
+        self.shutdown()?;
+        let _ = fs::remove_file(&self.messages_log);
+        if let Some(run) = conf_value(&conf, "astrundir") {
+            let _ = fs::create_dir_all(run);
+        }
+        let log_path = self.console_log();
+        let log = File::create(&log_path).with_context(|| log_path.display().to_string())?;
+        let mut ld = self.dir.join("lib").into_os_string();
+        if let Some(old) = std::env::var_os("LD_LIBRARY_PATH").filter(|v| !v.is_empty()) {
+            ld.push(":");
+            ld.push(old);
+        }
+        let binary = self.dir.join("sbin").join("asterisk");
+        let mut child = Command::new(&binary)
+            .arg("-C")
+            .arg(&conf)
+            .args(["-g", "-f", "-n"])
+            .env("LD_LIBRARY_PATH", ld)
+            .stdin(Stdio::null())
+            .stdout(log.try_clone()?)
+            .stderr(log)
+            .process_group(0)
+            .spawn()
+            .with_context(|| format!("starting {}", binary.display()))?;
+        // Reap it when it exits, so that it never lingers as a zombie of
+        // a long-running caller (a suite restarts Asterisk many times).
+        let exited = Arc::new(AtomicBool::new(false));
+        {
+            let exited = exited.clone();
+            std::thread::spawn(move || {
+                let _ = child.wait();
+                exited.store(true, Ordering::SeqCst);
+            });
+        }
+        let cli = self.cli()?.timeout(START_TIMEOUT);
+        let deadline = Instant::now() + START_TIMEOUT;
+        loop {
+            if exited.load(Ordering::SeqCst) {
+                bail!(
+                    "Asterisk exited while starting (see {})",
+                    log_path.display()
+                );
+            }
+            if cli
+                .run("core waitfullybooted")
+                .is_ok_and(|o| o.contains_str("fully booted"))
+            {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                bail!(
+                    "Asterisk did not boot in {} s (see {})",
+                    START_TIMEOUT.as_secs(),
+                    log_path.display()
+                );
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    }
+
+    /// Stops Asterisk (`core stop now`) and waits until its process has
+    /// exited (no error when it is not running, or does not stop).
+    pub fn stop(&self) -> Result<()> {
+        let _ = self.shutdown();
+        Ok(())
+    }
+
+    /// [`Instance::stop`], but an error when Asterisk does not stop in
+    /// time.
+    fn shutdown(&self) -> Result<()> {
+        let Ok(cli) = self.cli() else {
+            return Ok(());
+        };
+        let cli = cli.timeout(STOP_TIMEOUT);
+        let pid = self.pid();
+        if cli.run("core stop now").is_err() {
+            return Ok(());
+        }
+        let stopped =
+            crate::util::wait_until(STOP_TIMEOUT, Duration::from_millis(100), || match pid {
+                Some(p) => !pid_alive(p),
+                None => !cli.alive(),
+            });
+        if !stopped {
             bail!(
-                "Asterisk did not start (see {})",
-                self.tool.slot().console_log().display()
+                "Asterisk{} did not stop in {} s",
+                pid.map(|p| format!(" (pid {p})")).unwrap_or_default(),
+                STOP_TIMEOUT.as_secs()
             );
         }
         Ok(())
     }
 
-    /// Stops Asterisk (no error when it is not running).
-    pub fn stop(&self) -> Result<()> {
-        let _ = self.tool.slot().stop();
+    /// The module build of a Cargo profile:
+    /// `<target>/<profile>/libres_dpma_rs.so`, where `<target>` is
+    /// `$CARGO_TARGET_DIR` (as Cargo uses it), else `target` in the
+    /// repository.
+    pub fn module_build(profile: &str) -> PathBuf {
+        std::env::var_os("CARGO_TARGET_DIR")
+            .filter(|d| !d.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| sim::repo_root().join("target"))
+            .join(profile)
+            .join("libres_dpma_rs.so")
+    }
+
+    /// Installs the module built in `profile` (`debug` or `release`) as
+    /// `res_dpma_rs.so` in the module directory, by copying it to a
+    /// temporary file and renaming that into place (so that a running
+    /// Asterisk is not hurt; restart it to use the new build), and removes
+    /// the [`ORIGINAL_MODULES`] from it.
+    pub fn install(&self, profile: &str) -> Result<()> {
+        let src = Instance::module_build(profile);
+        if !src.is_file() {
+            bail!(
+                "no module build {} (cargo build{} -p res_dpma_rs --features devtest)",
+                src.display(),
+                if profile == "release" {
+                    " --release"
+                } else {
+                    ""
+                }
+            );
+        }
+        let m = self.modules_dir();
+        let dest = m.join("res_dpma_rs.so");
+        let tmp = m.join(format!("res_dpma_rs.so.new.{}", std::process::id()));
+        fs::copy(&src, &tmp).with_context(|| format!("copying {}", src.display()))?;
+        fs::rename(&tmp, &dest).with_context(|| dest.display().to_string())?;
+        for name in ORIGINAL_MODULES {
+            match fs::remove_file(m.join(name)) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(e).with_context(|| m.join(name).display().to_string())
+                }
+                _ => {}
+            }
+        }
         Ok(())
     }
 
-    /// Installs the module built in the `debug` or `release` profile
-    /// (restart Asterisk to use it).
-    pub fn install(&self, profile: &str) -> Result<()> {
-        self.tool.slot().install(profile).map(|_| ())
+    /// Replaces the instance's configuration with a fresh copy of the
+    /// scratch configuration ([`SCRATCH_CONF`]; test setups and trust
+    /// material are gone afterwards).
+    pub fn reset_conf(&self) -> Result<()> {
+        if self.etc.exists() {
+            fs::remove_dir_all(&self.etc).with_context(|| self.etc.display().to_string())?;
+        }
+        copy_tree(Path::new(SCRATCH_CONF), &self.etc)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::harness::fixtures::TempDir;
+
+    #[test]
+    fn processes() {
+        assert!(pid_alive(std::process::id()));
+        assert!(!pid_alive(u32::MAX));
     }
 
-    /// Replaces the instance's configuration with a fresh copy of the
-    /// scratch configuration.
-    pub fn reset_conf(&self) -> Result<()> {
-        self.tool.slot().reset_conf()
+    #[test]
+    fn asterisk_conf_values() {
+        let dir = TempDir::new("dpma-instance-test").unwrap();
+        let conf = dir.path().join("asterisk.conf");
+        fs::write(
+            &conf,
+            "[directories]\n;astrundir => /no\nastetcdir => /etc/x\nastrundir => /tmp/r \n",
+        )
+        .unwrap();
+        assert_eq!(conf_value(&conf, "astrundir").as_deref(), Some("/tmp/r"));
+        assert_eq!(conf_value(&conf, "astetcdir").as_deref(), Some("/etc/x"));
+        assert_eq!(conf_value(&conf, "astlogdir"), None);
+    }
+
+    #[test]
+    fn tree_copies() {
+        let dir = TempDir::new("dpma-copy-tree").unwrap();
+        let src = dir.path().join("src");
+        fs::create_dir_all(src.join("d")).unwrap();
+        fs::write(src.join("d/f"), b"x").unwrap();
+        std::os::unix::fs::symlink("d/f", src.join("l")).unwrap();
+        copy_tree(&src, &dir.path().join("dst")).unwrap();
+        assert_eq!(fs::read(dir.path().join("dst/d/f")).unwrap(), b"x");
+        assert_eq!(
+            fs::read_link(dir.path().join("dst/l")).unwrap(),
+            Path::new("d/f")
+        );
     }
 }

@@ -93,10 +93,8 @@ pub fn prepare(inst: &Instance, setup: impl FnOnce(&Instance) -> Result<()>) -> 
 
 /// The module defaults to the certificates embedded in the original, so a
 /// suite that installed the test PKI must point `phone_ca_file` and
-/// `appserver_certificate` at it.  The settings go into the file's
-/// `[general]` section (the module reads the first section of that name
-/// only), or into a new one at the end when the file has none; a file that
-/// already sets `phone_ca_file` is left alone.
+/// `appserver_certificate` at it, in `[general]` itself: the module, as
+/// the original, reads the first `[general]` only.
 fn use_test_trust(inst: &Instance) -> Result<()> {
     let dpma = inst.etc.join("dpma");
     let ca = dpma.join("phone_ca.pem");
@@ -104,38 +102,14 @@ fn use_test_trust(inst: &Instance) -> Result<()> {
         return Ok(());
     }
     let appserver = dpma.join("appserver.pem");
-    let conf = ConfFile::new(&inst.conf("res_digium_phone.conf"));
-    let mut data = conf.read()?;
-    if data.find(b"\nphone_ca_file=").is_some() {
-        // Already done (sim_setup, then prepare).
-        return Ok(());
-    }
-    let settings = format!("phone_ca_file={}\nappserver_certificate={}\n", ca.display(), appserver.display());
-    let mut pos = 0;
-    let mut general = None;
-    for line in data.split_inclusive(|&c| c == b'\n') {
-        pos += line.len();
-        if line.trim_ascii().eq_ignore_ascii_case(b"[general]") {
-            general = Some(pos);
-            break;
-        }
-    }
-    match general {
-        Some(at) => {
-            let mut text = settings.into_bytes();
-            if !data[..at].ends_with(b"\n") {
-                text.insert(0, b'\n');
-            }
-            data.splice(at..at, text);
-        }
-        None => {
-            if !data.is_empty() && !data.ends_with(b"\n") {
-                data.push(b'\n');
-            }
-            data.extend_from_slice(format!("[general]\n{}", settings).as_bytes());
-        }
-    }
-    conf.write(data)
+    let (ca, appserver) = (ca.to_string_lossy(), appserver.to_string_lossy());
+    ConfFile::new(&inst.conf("res_digium_phone.conf")).set_options(
+        "general",
+        &[
+            ("phone_ca_file", Some(ca.as_bytes())),
+            ("appserver_certificate", Some(appserver.as_bytes())),
+        ],
+    )
 }
 
 /// Fails unless the running module has the `dpmadev` CLI commands.

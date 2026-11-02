@@ -4,21 +4,32 @@
 //! The Rust form of `tests/parity/run.py`.
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/24.0.0-rc4/src
-//! cargo build -p res_dpma_rs
+//! cargo xtask test --asterisk 24 --original DIR parity
+//! ```
+//!
+//! runs it in the test container after building the devtest module, as
+//!
+//! ```text
+//! cargo test -p dpma-tests --test parity -- --ignored --original /original
+//! ```
+//!
+//! where `/original` is `DIR`, mounted read-only.  The suite's arguments:
+//!
+//! ```text
 //! cargo test -p dpma-tests --test parity -- --ignored [--no-prepare] [-v] [--keep DIR] [--original DIR] [PART...]
 //! cargo test -p dpma-tests --test parity -- --capture ours|original [--keep DIR]
 //! cargo test -p dpma-tests --test parity -- [-v] --compare A B
 //! ```
 //!
-//! Prerequisites: a private instance (`DPMA_SLOT`) of Asterisk 24
-//! (24.0.0-rc4; the original binary is built for Asterisk 24, so the
-//! suite refuses older releases) and the original binaries:
-//! `res_digium_phone.so`, `res_pjsip_endpoint_identifier_dpma.so`, and
+//! Prerequisites: the test instance running Asterisk 24 (24.0.0-rc4; the
+//! original binary is built for Asterisk 24, so the suite refuses older
+//! releases) and the original binaries: `res_digium_phone.so`,
+//! `res_pjsip_endpoint_identifier_dpma.so`, and
 //! `res_pjsip_dialog_info_digium_body_supplement.so` in `--original DIR`
-//! (default `res_digium_phone-24.0_3.6.13-x86_64/` in the repository,
-//! which is not committed).  The original binaries go into the private
-//! instance's module directory only, never into a shared install.
+//! (default `res_digium_phone-24.0_3.6.13-x86_64/` in the repository;
+//! they are not distributed with dpma-rs, so parity runs only locally,
+//! never in CI).  The original binaries go into the test instance's
+//! module directory only.
 //!
 //! The suite prepares the instance (Asterisk stopped, a fresh
 //! configuration, and the test configuration below; then a check of the
@@ -333,7 +344,7 @@ fn prepare(inst: &Instance, original: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The instance's module directory, which must be inside the private
+/// The instance's module directory, which must be inside the test
 /// instance.
 fn private_modules_dir(inst: &Instance) -> Result<PathBuf> {
     let dir = inst.modules_dir();
@@ -346,7 +357,7 @@ fn private_modules_dir(inst: &Instance) -> Result<PathBuf> {
         .with_context(|| inst.dir.display().to_string())?;
     if !real.starts_with(&home) {
         bail!(
-            "the module directory {} is not inside the private instance {}: not installing the original binaries there",
+            "the module directory {} is not inside the test instance {}: not installing the original binaries there",
             real.display(),
             home.display()
         );
@@ -354,7 +365,7 @@ fn private_modules_dir(inst: &Instance) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// Replaces our module with the original three in the private instance's
+/// Replaces our module with the original three in the test instance's
 /// module directory (Asterisk stopped).
 fn install_original(inst: &Instance, original: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -797,7 +808,7 @@ fn compare_main(a: &Path, b: &Path, verbose: bool) -> ExitCode {
 /// `--capture ours|original`.
 fn capture_main(opts: &Opts, which: &str) -> ExitCode {
     let res = (|| -> Result<PathBuf> {
-        let inst = Instance::from_env()?;
+        let inst = Instance::new()?;
         let dir = keep_dir(opts, &inst).join(which);
         capture(&inst, &dir, which, &Checker::new())?;
         Ok(dir)

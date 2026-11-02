@@ -57,11 +57,10 @@ impl FromStr for Form {
 /// these.
 #[derive(Clone)]
 pub struct Options {
-    /// The instance slot (ports 15060+100·slot and 15038+100·slot).
-    pub slot: Option<u32>,
     /// Asterisk's address.
     pub server: String,
-    /// Asterisk's SIP port.
+    /// Asterisk's SIP port (default: the test instance's,
+    /// [`crate::harness::SIP_PORT`]).
     pub sip_port: u16,
     /// The simulator's address (`127.0.0.2` selects the loopback test
     /// path of the test configuration).
@@ -114,27 +113,11 @@ pub struct Options {
 }
 
 impl Default for Options {
+    /// Settings for the test instance.
     fn default() -> Self {
-        Options::for_slot_opt(None)
-    }
-}
-
-impl Options {
-    /// Settings for the instance `slot`.
-    pub fn for_slot(slot: u32) -> Options {
-        Options::for_slot_opt(Some(slot))
-    }
-
-    /// Settings for `$DPMA_SLOT` (or no slot: ports 15060 and 15038).
-    pub fn from_env() -> Options {
-        Options::for_slot_opt(std::env::var("DPMA_SLOT").ok().and_then(|s| s.parse().ok()))
-    }
-
-    fn for_slot_opt(slot: Option<u32>) -> Options {
         Options {
-            slot,
             server: "127.0.0.1".into(),
-            sip_port: sip_port_for(slot),
+            sip_port: crate::harness::SIP_PORT,
             local_host: "127.0.0.1".into(),
             local_port: 0,
             transport: Transport::Udp,
@@ -158,7 +141,9 @@ impl Options {
             state: None,
         }
     }
+}
 
+impl Options {
     /// Sets the MAC address (colons removed, lowercase).
     pub fn mac(mut self, mac: &str) -> Self {
         self.mac = mac.replace(':', "").to_lowercase();
@@ -183,21 +168,6 @@ impl Options {
         self.verbose = -1;
         self
     }
-
-    /// The AMI port of the slot (15038+100·slot).
-    pub fn ami_port(&self) -> u16 {
-        ami_port_for(self.slot)
-    }
-}
-
-/// The SIP port of an instance slot.
-pub fn sip_port_for(slot: Option<u32>) -> u16 {
-    slot.map_or(15060, |s| 15060 + 100 * s as u16)
-}
-
-/// The AMI port of an instance slot.
-pub fn ami_port_for(slot: Option<u32>) -> u16 {
-    slot.map_or(15038, |s| 15038 + 100 * s as u16)
 }
 
 /// Which session a request carries.
@@ -1063,7 +1033,7 @@ enum Kind {
 /// ```no_run
 /// # use dpma_tests::sim::{Options, Phone};
 /// # fn main() -> anyhow::Result<()> {
-/// # let phone = Phone::start(Options::for_slot(5))?;
+/// # let phone = Phone::start(Options::default())?;
 /// let ex = phone.request("PingRequest").body("x".repeat(500)).chunk_size(64).send()?;
 /// let ex = phone.request("PingRequest").session("999999999").encrypt(false).send()?;
 /// let ex = phone.handshake().bundle("legacy").pem_cuts().send()?;

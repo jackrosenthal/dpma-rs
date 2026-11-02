@@ -3,17 +3,18 @@
 //! `tests/raw-bytes/run.py`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/<release>/src
-//! cargo build -p res_dpma_rs --features devtest
+//! cargo xtask test raw-bytes
+//! ```
+//!
+//! runs it in the test container after building the devtest module, as
+//!
+//! ```text
 //! cargo test -p dpma-tests --test raw-bytes -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
-//! (or `cargo xtask test raw-bytes`, which builds the devtest module
-//! first).
-//!
-//! Prerequisites: a private instance (`DPMA_SLOT`) and a devtest build of
-//! the module.  The suite prepares the instance (fresh configuration, the
-//! simulator's test PKI and configuration, then the configuration of
+//! Prerequisites: the test instance and a devtest build of the module.
+//! The suite prepares the instance (fresh configuration, the simulator's
+//! test PKI and configuration, then the configuration of
 //! [`fixtures`]: `res_digium_phone.conf` and `voicemail.conf` with
 //! Latin-1 text, the files the phones refer to, and voicemail messages
 //! for 1001@default; the debug build installed, Asterisk restarted;
