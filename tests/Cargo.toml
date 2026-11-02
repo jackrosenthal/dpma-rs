@@ -73,3 +73,18 @@ harness = false
 name = "parity"
 path = "suites/parity/main.rs"
 harness = false
+
+[[test]]
+name = "ami"
+path = "suites/ami/main.rs"
+harness = false
+
+[[test]]
+name = "apps-discovery"
+path = "suites/apps-discovery/main.rs"
+harness = false
+
+[[test]]
+name = "raw-bytes"
+path = "suites/raw-bytes/main.rs"
+harness = false
