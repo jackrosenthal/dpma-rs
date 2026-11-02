@@ -5,6 +5,28 @@
 //! dpma-sim [global options] COMMAND [command options]
 //! ```
 //!
+//! Requests that need a session handshake first, unless
+//! `--no-auto-handshake` is given; `--state FILE` keeps the session (id,
+//! common password, token, and local port) across invocations.  Examples:
+//!
+//! ```text
+//! dpma-sim handshake                        # chain form
+//! dpma-sim --form legacy -v ping            # handshake, then an encrypted ping
+//! dpma-sim token --user simphone --config-pass 344486
+//! dpma-sim --state s.json token --user simphone --config-pass 344486
+//! dpma-sim --state s.json config            # reuses session, token, and port
+//! dpma-sim asterisk --auth simphone:1234 --method test.dpma.api.echo --params '{"x": 1}'
+//! dpma-sim --local-port 15599 listen        # events (e.g., reconfigure)
+//! dpma-sim --local-host 127.0.0.2 --no-digium-ua-header echo hi   # loopback: no module needed
+//! dpma-sim selftest                         # no server needed
+//! ```
+//!
+//! Output: `>>` describes what was sent (type, transaction id, chunks,
+//! encryption, and the SIP status of each chunk), `<<` the reply: its
+//! `X-` headers, decrypted fields, problems, and body.  The body shown is
+//! the payload: for events and error replies the server's `Command: `
+//! prefix is removed from every chunk.
+//!
 //! Exit status: 0 when the expected response type arrives without an
 //! error (`raw`: any reply), 1 otherwise, 2 on setup errors.
 

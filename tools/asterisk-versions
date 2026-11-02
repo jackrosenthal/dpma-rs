@@ -3,9 +3,10 @@
 # (a tarball in https://downloads.asterisk.org/pub/telephony/asterisk/releases/),
 # and the SHA-256 checksum of asterisk-<release>.tar.gz.
 #
-# Read by tools/asterisk-build.sh (and through it by tools/ast.sh,
-# tools/ci-job.sh, and .github/workflows/ci.yml, whose test
-# matrix is this list of major versions).  Versions are bumped by hand:
+# Read by the xtask (cargo xtask asterisk, instance, and ci; tools/src)
+# and the dpma-tests crate (its instances), and through the xtask by
+# .github/workflows/ci.yml, whose test matrix is this list of major
+# versions.  Versions are bumped by hand:
 # download the new tarball, check it against the release's .sha256 file,
 # and replace the release and checksum here.
 22  22.11.0     3bd5ee040509a3d3cd9b1ba9520c18e6ec0a7e7981ca68c457dcd36ba3c54d94

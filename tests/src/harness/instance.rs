@@ -2,78 +2,58 @@
 //!
 //! Instance management (start, stop, installing the module, resetting the
 //! configuration, and finding the instance's directories and ports) goes
-//! through the instance manager script, `tools/ast.sh`, and only through
-//! [`AstTool`] in this module, so that
-//! replacing the script touches nothing else.  Everything else talks to
-//! the instance directly: the CLI through its control socket
-//! ([`Cli`]), AMI ([`AmiClient`]), and its files.
+//! through the instance manager, [`crate::asterisk::Slot`], which
+//! `cargo xtask instance` uses too; [`AstTool`] and [`Instance`] wrap
+//! it.  Everything else talks to the instance directly: the CLI through
+//! its control socket ([`Cli`]), AMI ([`AmiClient`]), and its files.
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Result};
 use bstr::BString;
 
 use super::cli::Cli;
 use super::log::Log;
 use crate::ami::AmiClient;
-use crate::sim::{self, repo_root};
+use crate::asterisk::Slot;
+use crate::sim;
 
-/// The instance manager script: the one place that runs it.
+/// The instance manager of one slot, with the commands of `cargo xtask
+/// instance` ([`Slot::command`]).
 #[derive(Clone, Debug)]
 pub struct AstTool {
-    script: PathBuf,
-    slot: u32,
+    slot: Slot,
 }
 
 impl AstTool {
-    /// The script for `slot`: `$DPMA_AST` if set, else `tools/ast.sh` in
-    /// the repository.
+    /// The instance manager of `slot`.
     pub fn for_slot(slot: u32) -> Result<AstTool> {
-        let script = match std::env::var_os("DPMA_AST") {
-            Some(p) => PathBuf::from(p),
-            None => {
-                let script = repo_root().join("tools").join("ast.sh");
-                if !script.exists() {
-                    bail!("no instance manager script {}", script.display());
-                }
-                script
-            }
-        };
-        Ok(AstTool { script, slot })
+        Ok(AstTool {
+            slot: Slot::new(slot)?,
+        })
     }
 
-    /// Runs `ast.sh ARGS...` for the slot; returns its standard output.
+    /// The instance.
+    pub fn slot(&self) -> &Slot {
+        &self.slot
+    }
+
+    /// Runs an instance command (`start`, `stop`, `cli WORDS...`,
+    /// `install [PROFILE]`, `reset-conf`, `info`, or `init [VERSION]`; see
+    /// [`Slot::command`]) for the slot; returns what it prints.
     pub fn run(&self, args: &[&str]) -> Result<String> {
-        let out = Command::new(&self.script)
-            .args(args)
-            .env("DPMA_SLOT", self.slot.to_string())
-            .output()
-            .with_context(|| format!("running {}", self.script.display()))?;
-        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-        if !out.status.success() {
-            bail!(
-                "{} {} failed ({}): {}{}",
-                self.script.display(),
-                args.join(" "),
-                out.status,
-                stdout,
-                String::from_utf8_lossy(&out.stderr)
-            );
-        }
-        Ok(stdout)
+        let out = Slot::command(self.slot.number(), args)?;
+        Ok(String::from_utf8_lossy(&out).into_owned())
     }
 
-    /// The `key: value` lines of `ast.sh info`.
+    /// The `key: value` pairs of `info`.
     pub fn info(&self) -> Result<Vec<(String, String)>> {
         Ok(self
-            .run(&["info"])?
-            .lines()
-            .filter_map(|l| {
-                l.split_once(':')
-                    .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
-            })
+            .slot
+            .info()
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
             .collect())
     }
 }
@@ -96,73 +76,36 @@ pub struct Instance {
     tool: AstTool,
 }
 
-fn port_of(addr: &str) -> Option<u16> {
-    addr.split_whitespace()
-        .next()?
-        .rsplit(':')
-        .next()?
-        .parse()
-        .ok()
-}
-
 impl Instance {
     /// The instance of `$DPMA_SLOT` (an error when it is not set: the
     /// shared install is never used).
     pub fn from_env() -> Result<Instance> {
-        let slot = std::env::var("DPMA_SLOT")
-            .map_err(|_| anyhow!("DPMA_SLOT is not set (never use the shared install)"))?;
-        Instance::for_slot(
-            slot.trim()
-                .parse()
-                .with_context(|| format!("DPMA_SLOT={slot}"))?,
-        )
+        Instance::for_slot(crate::asterisk::env_slot()?)
     }
 
-    /// The instance of `slot`, as `ast.sh info` describes it.
+    /// The instance of `slot`.
     pub fn for_slot(slot: u32) -> Result<Instance> {
         let tool = AstTool::for_slot(slot)?;
-        let info = tool.info()?;
-        let get = |k: &str| {
-            info.iter()
-                .find(|(key, _)| key == k)
-                .map(|(_, v)| v.clone())
-        };
-        let dir =
-            PathBuf::from(get("instance").ok_or_else(|| anyhow!("ast.sh info: no instance"))?);
-        let conf = get("config")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| dir.join("etc/asterisk/asterisk.conf"));
-        let etc = conf
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| dir.join("etc/asterisk"));
-        let messages_log = get("messages")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| dir.join("var/log/asterisk/messages.log"));
-        let sip_port = get("SIP")
-            .and_then(|v| port_of(&v))
-            .unwrap_or_else(|| sim::sip_port_for(Some(slot)));
-        let ami_port = get("AMI")
-            .and_then(|v| port_of(&v))
-            .unwrap_or_else(|| sim::ami_port_for(Some(slot)));
+        let s = tool.slot();
+        let etc = s.etc();
         if !etc.is_dir() {
             bail!(
-                "no instance configuration in {} (create the instance: ast.sh init {slot})",
+                "no instance configuration in {} (create the instance: cargo xtask instance init {slot} [VERSION])",
                 etc.display()
             );
         }
         Ok(Instance {
             slot,
-            dir,
+            dir: s.dir().to_path_buf(),
             etc,
-            messages_log,
-            sip_port,
-            ami_port,
+            messages_log: s.messages_log(),
+            sip_port: s.sip_port(),
+            ami_port: s.ami_port(),
             tool,
         })
     }
 
-    /// The instance manager script.
+    /// The instance manager.
     pub fn tool(&self) -> &AstTool {
         &self.tool
     }
@@ -229,13 +172,13 @@ impl Instance {
 
     /// (Re)starts Asterisk and waits until it is fully booted.
     pub fn start(&self) -> Result<()> {
-        self.tool.run(&["start"])?;
+        self.tool.slot().start()?;
         if !crate::util::wait_until(Duration::from_secs(10), Duration::from_millis(200), || {
             self.running()
         }) {
             bail!(
                 "Asterisk did not start (see {})",
-                self.dir.join("ast-console.log").display()
+                self.tool.slot().console_log().display()
             );
         }
         Ok(())
@@ -243,19 +186,19 @@ impl Instance {
 
     /// Stops Asterisk (no error when it is not running).
     pub fn stop(&self) -> Result<()> {
-        let _ = self.tool.run(&["stop"]);
+        let _ = self.tool.slot().stop();
         Ok(())
     }
 
     /// Installs the module built in the `debug` or `release` profile
     /// (restart Asterisk to use it).
     pub fn install(&self, profile: &str) -> Result<()> {
-        self.tool.run(&["install", profile]).map(|_| ())
+        self.tool.slot().install(profile).map(|_| ())
     }
 
     /// Replaces the instance's configuration with a fresh copy of the
     /// scratch configuration.
     pub fn reset_conf(&self) -> Result<()> {
-        self.tool.run(&["reset-conf"]).map(|_| ())
+        self.tool.slot().reset_conf()
     }
 }

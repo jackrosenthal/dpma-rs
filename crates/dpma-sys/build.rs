@@ -14,9 +14,9 @@
 //!   `pjmedia/include`, and `pjsip/include` are used).  The defines are
 //!   those of `PJPROJECT_INCLUDE` in Asterisk's `makeopts`.
 //!
-//! `tools/asterisk-build.sh` prepares such a tree for the pinned
-//! releases.  The bindings follow the headers of the tree, so one source
-//! builds against every supported release.
+//! `cargo xtask asterisk build <version>` prepares such a tree for the
+//! pinned releases.  The bindings follow the headers of the tree, so one
+//! source builds against every supported release.
 //!
 //! Only the functions, types, and constants that dpma-rs uses are
 //! generated (the lists below); add to them as needed.  Static inline
