@@ -1,16 +1,22 @@
 //! Generates the raw bindings to Asterisk and pjproject with `bindgen`.
 //!
 //! This is the one place that knows where the headers are and how to read
-//! them:
+//! them.  `ASTERISK_SOURCE_DIR` names a configured Asterisk source tree
+//! (22, 23, or 24) built with the bundled pjproject:
 //!
-//! * `ASTERISK_INCLUDE_DIR`: the directory holding `asterisk.h` and the
-//!   `asterisk/` headers (default `/usr/include`).
-//! * `PJPROJECT_DIR`: either a pjproject source tree (its `pjlib/include`,
-//!   `pjlib-util/include`, `pjnath/include`, `pjmedia/include`, and
-//!   `pjsip/include` are used) or a directory of installed pjproject
-//!   headers (the one holding `pjsip.h`).  The default is the pjproject
-//!   bundled with the Asterisk source tree in `dev/asterisk-24-src`.  The
-//!   defines are those of `PJPROJECT_INCLUDE` in Asterisk's `makeopts`.
+//! * `<ASTERISK_SOURCE_DIR>/include`: `asterisk.h` and the `asterisk/`
+//!   headers, with `autoconfig.h` (written by configure) and `buildopts.h`
+//!   (written by make: `make include/asterisk/buildopts.h` after
+//!   configure, or any full build);
+//! * `<ASTERISK_SOURCE_DIR>/third-party/pjproject/source`: the bundled
+//!   pjproject, which configure downloads and configures (its
+//!   `pjlib/include`, `pjlib-util/include`, `pjnath/include`,
+//!   `pjmedia/include`, and `pjsip/include` are used).  The defines are
+//!   those of `PJPROJECT_INCLUDE` in Asterisk's `makeopts`.
+//!
+//! `dev/tools/asterisk-build.sh` prepares such a tree for the pinned
+//! releases.  The bindings follow the headers of the tree, so one source
+//! builds against every supported release.
 //!
 //! Only the functions, types, and constants that dpma-rs uses are
 //! generated (the lists below); add to them as needed.  Static inline
@@ -384,29 +390,37 @@ fn gpl_key(asterisk: &std::path::Path) -> String {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-env-changed=ASTERISK_INCLUDE_DIR");
-    println!("cargo:rerun-if-env-changed=PJPROJECT_DIR");
+    println!("cargo:rerun-if-env-changed=ASTERISK_SOURCE_DIR");
 
-    let asterisk = PathBuf::from(std::env::var("ASTERISK_INCLUDE_DIR").unwrap_or_else(|_| "/usr/include".into()));
-    if !asterisk.join("asterisk.h").exists() {
-        println!("cargo:warning=asterisk.h not found in {} (set ASTERISK_INCLUDE_DIR)", asterisk.display());
+    let source = match std::env::var_os("ASTERISK_SOURCE_DIR") {
+        Some(d) if !d.is_empty() => PathBuf::from(d),
+        _ => panic!(
+            "ASTERISK_SOURCE_DIR is not set: set it to a configured Asterisk source tree \
+             (see README.md, \"Building\")"
+        ),
+    };
+    let asterisk = source.join("include");
+    for header in ["asterisk.h", "asterisk/autoconfig.h", "asterisk/buildopts.h"] {
+        if !asterisk.join(header).exists() {
+            panic!(
+                "{} not found: ASTERISK_SOURCE_DIR={} must be a configured Asterisk source tree \
+                 (./configure, then make include/asterisk/buildopts.h)",
+                asterisk.join(header).display(),
+                source.display()
+            );
+        }
+    }
+    let pjproject = source.join("third-party/pjproject/source");
+    if !pjproject.join("pjlib/include/pj/config_site.h").exists() {
+        panic!(
+            "the bundled pjproject is not configured in {} (configure Asterisk with \
+             --with-pjproject-bundled)",
+            pjproject.display()
+        );
     }
     let mut includes = vec![asterisk];
-
-    let pjproject = match std::env::var("PJPROJECT_DIR") {
-        Ok(d) if !d.is_empty() => PathBuf::from(d),
-        _ => PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .join("../../dev/asterisk-24-src/third-party/pjproject/source"),
-    };
-    if pjproject.join("pjlib/include").is_dir() {
-        for s in ["pjlib", "pjlib-util", "pjnath", "pjmedia", "pjsip"] {
-            includes.push(pjproject.join(s).join("include"));
-        }
-    } else {
-        if !pjproject.join("pjsip.h").exists() {
-            println!("cargo:warning=pjproject headers not found in {} (set PJPROJECT_DIR)", pjproject.display());
-        }
-        includes.push(pjproject);
+    for s in ["pjlib", "pjlib-util", "pjnath", "pjmedia", "pjsip"] {
+        includes.push(pjproject.join(s).join("include"));
     }
 
     let mut header: String = HEADERS.iter().map(|h| format!("#include \"{}\"\n", h)).collect();
