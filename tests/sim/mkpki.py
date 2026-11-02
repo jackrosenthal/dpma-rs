@@ -23,7 +23,7 @@ order and the key that decrypts the common password.
 The instance install copies `root-ca.pem` to
 `<instance>/etc/asterisk/dpma/phone_ca.pem` and `appserver.pem` to
 `<instance>/etc/asterisk/dpma/appserver.pem` (the defaults of `phone_ca_file`
-and `appserver_certificate`).  The instance is chosen like dev/tools/ast.sh
+and `appserver_certificate`).  The instance is chosen like tools/ast.sh
 does: --instance DIR, else --slot N or $DPMA_SLOT (dev/run/slot<N>), else the
 scratch install dev/asterisk-24.
 
@@ -289,7 +289,7 @@ def check(directory):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--dir", default=os.path.join(HERE, "pki"),
+    ap.add_argument("--dir", default=os.path.join(REPO, "dev", "sim", "pki"),
                     help="PKI directory (default: %(default)s)")
     ap.add_argument("--force", action="store_true", help="regenerate existing files")
     ap.add_argument("--mac", default=DEFAULT_MAC, help="MAC used in the subject names")

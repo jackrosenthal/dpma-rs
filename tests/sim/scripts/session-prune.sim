@@ -6,7 +6,7 @@
 # at once), completes a transaction (an Echo) to start a new cycle, then
 # pings.  Needs a devtest build and the setup of session.sim.
 #
-#   DPMA_SLOT=<n> dev/sim/dpma_sim.py script dev/sim/scripts/session-prune.sim
+#   DPMA_SLOT=<n> tests/sim/dpma_sim.py script tests/sim/scripts/session-prune.sim
 
 # Unauthenticated: kept at 118 s, pruned at 121 s.
 handshake

@@ -10,8 +10,8 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-sys.path.insert(0, os.path.join(ROOT, "dev", "sim"))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+sys.path.insert(0, os.path.join(ROOT, "tests", "sim"))
 from ami import AmiClient  # noqa: E402
 from dpma_sim import Options, Phone, method_request  # noqa: E402
 

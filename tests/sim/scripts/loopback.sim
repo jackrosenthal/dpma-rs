@@ -1,6 +1,6 @@
 # Simulator smoke test that needs no module: the loopback dialplan of
 # conf/extensions_dpma_sim.conf answers Echo from 127.0.0.2.
-#   DPMA_SLOT=5 dev/sim/dpma_sim.py --local-host 127.0.0.2 --no-digium-ua-header script dev/sim/scripts/loopback.sim
+#   DPMA_SLOT=5 tests/sim/dpma_sim.py --local-host 127.0.0.2 --no-digium-ua-header script tests/sim/scripts/loopback.sim
 # (--no-digium-ua-header: with the module loaded, a request carrying
 # X-Digium-User-Agent goes to the module instead of the loopback context.)
 

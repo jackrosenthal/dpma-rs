@@ -1,5 +1,5 @@
 //! Cross-check vectors for other implementations of the protocol (the
-//! Python phone simulator in dev/sim checks its crypto and framing against
+//! Python phone simulator in tests/sim checks its crypto and framing against
 //! `tests/fixtures/proto_vectors.json`).
 //!
 //! `verify_fixture` recomputes every deterministic value from the inputs in

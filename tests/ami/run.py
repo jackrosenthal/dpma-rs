@@ -5,10 +5,10 @@ scheduler) and for the phone users runtime's messages to phones
 (reconfigure from the CLI, AMI, and reloads; events), against a private
 Asterisk instance with the phone simulator.
 
-    DPMA_SLOT=<n> python3 -I dev/tests/ami/run.py [-v] [--via phone|hook] [--expiry]
+    DPMA_SLOT=<n> python3 -I tests/ami/run.py [-v] [--via phone|hook] [--expiry]
 
-Prerequisites: the simulator setup (dev/sim/mkpki.py,
-dev/sim/install-conf.sh), the P13 phones (dev/tests/ami/setup.sh), a
+Prerequisites: the simulator setup (tests/sim/mkpki.py,
+tests/sim/install-conf.sh), the P13 phones (tests/ami/setup.sh), a
 devtest build installed in the instance (cargo build -p res_dpma_rs
 --features devtest), and Asterisk running.
 
@@ -42,8 +42,8 @@ import time
 import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, "../../.."))
-sys.path.insert(0, os.path.join(ROOT, "dev/sim"))
+ROOT = os.path.abspath(os.path.join(HERE, "../.."))
+sys.path.insert(0, os.path.join(ROOT, "tests/sim"))
 from dpma_sim import Exchange, Options, Phone, method_request  # noqa: E402
 
 SLOT = os.environ.get("DPMA_SLOT")
@@ -82,7 +82,7 @@ def same(name, got, want):
 
 
 def cli(cmd):
-    r = subprocess.run([os.path.join(ROOT, "dev/tools/ast.sh"), "cli", cmd], capture_output=True, text=True)
+    r = subprocess.run([os.path.join(ROOT, "tools/ast.sh"), "cli", cmd], capture_output=True, text=True)
     return r.stdout
 
 

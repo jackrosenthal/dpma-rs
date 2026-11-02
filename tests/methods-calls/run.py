@@ -2,12 +2,12 @@
 """Checks for the P10 call methods (queues, parking, recording, phonebook,
 echo) against a private Asterisk instance.
 
-    DPMA_SLOT=<n> python3 -I dev/tests/methods-calls/run.py [-v] [--via hook|phone|http]
+    DPMA_SLOT=<n> python3 -I tests/methods-calls/run.py [-v] [--via hook|phone|http]
 
 Prerequisites: a devtest build installed in the instance
 (cargo build && cargo build -p res_dpma_rs --features devtest, then
-dev/tools/ast.sh install), the test
-setup (dev/tests/methods-calls/setup.sh), and Asterisk running.  The
+tools/ast.sh install), the test
+setup (tests/methods-calls/setup.sh), and Asterisk running.  The
 methods are invoked through "dpmadev method call" (JSON)
 and "dpmadev calls xml" (XML); the expected documents are the ones the
 original's phone_method_internal_api.c builds.  Recording INFOs and the
@@ -16,12 +16,12 @@ module's PJSIP side for dpma_info_send and dpma_pjsip_endpoint_is_dphone).
 
 With "--via phone" (package P12) the methods are called the way phones
 call them instead: encrypted AsteriskRequests from the phone simulator
-(dev/sim; run mkpki.py first), authenticated as the phone (the test
+(tests/sim; run mkpki.py first), authenticated as the phone (the test
 phones have no pin); "--via http" sends HTTPRequests.  The reply body
 must be the HTTP wrapper around the same document; return codes are not
 visible that way.  The simulator is identified by the PJSIP side (its
 X-Digium-User-Agent header), so leave the simulator's test identify out
-(dev/sim/install-conf.sh --remove): it would also catch phone.py's
+(tests/sim/install-conf.sh --remove): it would also catch phone.py's
 REGISTER.
 
 Exit status 0 when every check passes.
@@ -36,7 +36,7 @@ import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, "../../.."))
+ROOT = os.path.abspath(os.path.join(HERE, "../.."))
 SLOT = os.environ.get("DPMA_SLOT")
 if not SLOT:
     sys.exit("DPMA_SLOT is not set")
@@ -59,7 +59,7 @@ def start_phone():
     never pruned)."""
     global sim
     import io
-    sys.path.insert(0, os.path.join(ROOT, "dev/sim"))
+    sys.path.insert(0, os.path.join(ROOT, "tests/sim"))
     from dpma_sim import Options, Phone
     sim = Phone(Options(slot=SLOT, mac="000fd3000010"), out=io.StringIO())
     sim.start()
@@ -91,7 +91,7 @@ def rc_ok(rc, want):
 
 
 def cli(cmd):
-    r = subprocess.run([os.path.join(ROOT, "dev/tools/ast.sh"), "cli", cmd], capture_output=True, text=True)
+    r = subprocess.run([os.path.join(ROOT, "tools/ast.sh"), "cli", cmd], capture_output=True, text=True)
     return r.stdout
 
 

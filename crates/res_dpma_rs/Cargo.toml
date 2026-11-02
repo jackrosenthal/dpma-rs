@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 # Test-only CLI commands (`dpmadev ...`) used by the test suites in
-# dev/tests; never enabled in release builds.
+# tests/; never enabled in release builds.
 devtest = []
 
 [dependencies]

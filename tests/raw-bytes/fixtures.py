@@ -7,7 +7,7 @@ import struct
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 SLOT = int(os.environ.get("DPMA_SLOT", "0"))
 INST = os.path.join(ROOT, "dev", "run", "slot%d" % SLOT)
 ETC = os.path.join(INST, "etc", "asterisk")
@@ -77,7 +77,7 @@ VM_UTF8 = ("Family", "1640995300-00000002", '"Frédéric" <300>'.encode(), 16409
 def conf():
     """res_digium_phone.conf."""
     lines = [
-        b"; dpma-rs raw-bytes test (dev/tests/raw-bytes): Latin-1 text",
+        b"; dpma-rs raw-bytes test (tests/raw-bytes): Latin-1 text",
         b"[general]",
         b"globalpin=" + GLOBALPIN,
         b"userlist_auth=globalpin",
@@ -181,7 +181,7 @@ def conf():
     return b"\n".join(lines)
 
 
-VOICEMAIL_CONF = b"""; dpma-rs raw-bytes test (dev/tests/raw-bytes)
+VOICEMAIL_CONF = b"""; dpma-rs raw-bytes test (tests/raw-bytes)
 [general]
 format=wav
 
