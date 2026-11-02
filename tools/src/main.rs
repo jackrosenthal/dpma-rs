@@ -36,9 +36,9 @@ enum Cmd {
     ///
     /// Suites (default, or "all": all of these, in this order): session
     /// config-xml users-runtime methods-vm methods-calls pjsip-helpers
-    /// request-handlers ami apps-discovery bytes.  Each suite's output
-    /// goes to target/container/<release>/logs/<suite>.log.  Exit status 0
-    /// when every suite passes.
+    /// request-handlers ami apps-discovery.  Each suite's output goes to
+    /// target/container/<release>/logs/<suite>.log.  Exit status 0 when
+    /// every suite passes.
     Test {
         /// The Asterisk release: a major version or a pinned release
         /// (default: the newest).

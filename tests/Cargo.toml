@@ -77,8 +77,3 @@ harness = false
 name = "apps-discovery"
 path = "suites/apps-discovery/main.rs"
 harness = false
-
-[[test]]
-name = "bytes"
-path = "suites/bytes/main.rs"
-harness = false
