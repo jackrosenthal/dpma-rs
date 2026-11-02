@@ -93,7 +93,8 @@ pub fn prepare(inst: &Instance, setup: impl FnOnce(&Instance) -> Result<()>) -> 
 
 /// The module defaults to the certificates embedded in the original, so a
 /// suite that installed the test PKI must point `phone_ca_file` and
-/// `appserver_certificate` at it.
+/// `appserver_certificate` at it, in `[general]` itself: the module, as
+/// the original, reads the first `[general]` only.
 fn use_test_trust(inst: &Instance) -> Result<()> {
     let dpma = inst.etc.join("dpma");
     let ca = dpma.join("phone_ca.pem");
@@ -101,16 +102,14 @@ fn use_test_trust(inst: &Instance) -> Result<()> {
         return Ok(());
     }
     let appserver = dpma.join("appserver.pem");
-    let conf = ConfFile::new(&inst.conf("res_digium_phone.conf"));
-    let mut data = conf.read()?;
-    if !data.ends_with(b"\n") {
-        data.push(b'\n');
-    }
-    data.extend_from_slice(
-        format!("[general]\nphone_ca_file={}\nappserver_certificate={}\n", ca.display(), appserver.display())
-            .as_bytes(),
-    );
-    conf.write(data)
+    let (ca, appserver) = (ca.to_string_lossy(), appserver.to_string_lossy());
+    ConfFile::new(&inst.conf("res_digium_phone.conf")).set_options(
+        "general",
+        &[
+            ("phone_ca_file", Some(ca.as_bytes())),
+            ("appserver_certificate", Some(appserver.as_bytes())),
+        ],
+    )
 }
 
 /// Fails unless the running module has the `dpmadev` CLI commands.

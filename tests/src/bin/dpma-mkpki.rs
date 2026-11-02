@@ -8,13 +8,13 @@
 //! dpma-mkpki --check         verify every certificate with `openssl verify`
 //! ```
 //!
-//! The instance is `--instance DIR`, else the slot of `--slot N` or
-//! `$DPMA_SLOT`.
+//! The instance is `--instance DIR`, else the test instance (inside the
+//! test container).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 use dpma_tests::harness::Instance;
 use dpma_tests::{mkpki, sim};
@@ -34,10 +34,7 @@ struct Args {
     /// MAC used in the subject names.
     #[arg(long, default_value = sim::DEFAULT_MAC)]
     mac: String,
-    /// Instance slot (default: $DPMA_SLOT).
-    #[arg(long)]
-    slot: Option<u32>,
-    /// Instance directory (overrides --slot).
+    /// Instance directory (default: the test instance).
     #[arg(long)]
     instance: Option<PathBuf>,
     /// Do not install into an instance.
@@ -61,15 +58,9 @@ fn run(a: Args) -> Result<bool> {
     if a.no_install {
         return Ok(true);
     }
-    let etc = match (a.instance, a.slot) {
-        (Some(i), _) => i.join("etc").join("asterisk"),
-        (None, Some(s)) => Instance::for_slot(s)?.etc,
-        (None, None) => match std::env::var("DPMA_SLOT") {
-            Ok(_) => Instance::from_env()?.etc,
-            Err(_) => {
-                bail!("no instance: give --slot, --instance, or $DPMA_SLOT (or --no-install)")
-            }
-        },
+    let etc = match a.instance {
+        Some(i) => i.join("etc").join("asterisk"),
+        None => Instance::new()?.etc,
     };
     mkpki::install(&dir, &etc, false)?;
     Ok(true)

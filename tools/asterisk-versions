@@ -3,8 +3,9 @@
 # (a tarball in https://downloads.asterisk.org/pub/telephony/asterisk/releases/),
 # and the SHA-256 checksum of asterisk-<release>.tar.gz.
 #
-# Read by the xtask (cargo xtask asterisk, instance, and ci; tools/src)
-# and the dpma-tests crate (its instances), and through the xtask by
+# Read by the xtask (tools/src/pins.rs), which builds one test image per
+# release from tools/Containerfile (which downloads the tarball and
+# checks its checksum), and through the xtask by
 # .github/workflows/ci.yml, whose test matrix is this list of major
 # versions.  Versions are bumped by hand:
 # download the new tarball, check it against the release's .sha256 file,

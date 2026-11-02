@@ -7,12 +7,16 @@
 //! `stress.py`, and `setup.sh`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/24.0.0-rc4/src
-//! cargo build -p res_dpma_rs --features devtest
+//! cargo xtask test pjsip-helpers
+//! ```
+//!
+//! runs it in the test container after building the devtest module, as
+//!
+//! ```text
 //! cargo test -p dpma-tests --test pjsip-helpers -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
-//! Prerequisites: a private instance (`DPMA_SLOT`) of Asterisk 22, 23, or
+//! Prerequisites: the test instance running Asterisk 22, 23, or
 //! 24 with the default outbound endpoint the scratch configuration sets
 //! (`default_outbound_endpoint` in `pjsip.conf`'s `[global]`; without it
 //! the module fails to load, as the original did), and the devtest build
@@ -41,8 +45,7 @@
 //! The suite installs the snippets of `tests/data/pjsip-helpers/` into the
 //! instance (`#include` lines in `pjsip.conf`, `extensions.conf`,
 //! `res_digium_phone.conf`, `sorcery.conf`, and `ari.conf`) and an
-//! `http.conf` that enables the HTTP server, for ARI, on
-//! 127.0.0.1:15088+100·slot:
+//! `http.conf` that enables the HTTP server, for ARI, on 127.0.0.1:15088:
 //!
 //! | File | Contents |
 //! |---|---|
@@ -72,7 +75,7 @@
 //! helper, and diffed the two transcripts: they were identical up to the
 //! last step, where the original crashes Asterisk.
 //! `expected-identifier.txt` is the transcript of the merged module
-//! (2026-11-01, slot 19).  It is the original helper's transcript of that
+//! (2026-11-01).  It is the original helper's transcript of that
 //! time except for what the merge changes by design: one module
 //! (`res_dpma_rs.so`) where there were three, so the `module show`,
 //! `module unload`, and `module load` steps name one module and its use
@@ -260,22 +263,19 @@ const CONF: [(&str, &str, &str); 5] = [
     ),
 ];
 
-/// The HTTP (ARI) port of slot `slot`: 15088+100·slot.
-pub fn http_port(slot: u32) -> u16 {
-    u16::try_from(15088 + 100 * slot).unwrap_or(15088)
-}
+/// The HTTP (ARI) port.
+pub const HTTP_PORT: u16 = 15088;
 
 /// Installs the test configuration (`setup.sh`): the snippets and their
 /// `#include` lines, and an `http.conf` that enables the HTTP server on
-/// 127.0.0.1:15088+100·slot.  Asterisk must be restarted afterwards
+/// 127.0.0.1:15088 ([`HTTP_PORT`]).  Asterisk must be restarted afterwards
 /// (`sorcery.conf` is read at startup only).
 fn install_conf(inst: &Instance) -> Result<()> {
     for (main, snippet, text) in CONF {
         setup::install_snippet(inst, snippet, main, text.as_bytes())?;
     }
-    let port = http_port(inst.slot);
     ConfFile::new(&inst.conf("http.conf")).write(format!(
-        "[general]\nenabled=yes\nbindaddr=127.0.0.1\nbindport={port}\n"
+        "[general]\nenabled=yes\nbindaddr=127.0.0.1\nbindport={HTTP_PORT}\n"
     ))
 }
 
@@ -351,7 +351,7 @@ impl Scenario {
             lines: Vec::new(),
             echo,
             log_pos: 0,
-            ari: Ari::new("127.0.0.1", http_port(inst.slot), ARI_USER.0, ARI_USER.1),
+            ari: Ari::new("127.0.0.1", HTTP_PORT, ARI_USER.0, ARI_USER.1),
         };
         s.log_mark();
         s

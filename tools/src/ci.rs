@@ -1,82 +1,31 @@
-//! `cargo xtask ci`: the CI job of `.github/workflows/ci.yml`, which
-//! runs the same way locally.
+//! `cargo xtask ci`: the CI job of `.github/workflows/ci.yml` for one
+//! pinned release, which runs the same way locally.  This is its part
+//! inside the test container (`cargo xtask inside ci <release>`):
 //!
-//! `ci setup` prepares an Ubuntu machine (a GitHub Actions runner) as
-//! root.  It installs
-//!
-//! - Asterisk's build dependencies: the basic set of Asterisk's
-//!   `contrib/scripts/install_prereq`, OpenSSL, `curl` for the downloads,
-//!   and `bzip2` and `patch` for the bundled pjproject;
-//! - `pkg-config` and the OpenSSL headers for the openssl crate, and
-//!   libclang for bindgen;
-//! - what the test suites use: `openssl`, `iproute2`, `util-linux`
-//!   (`unshare` and `nsenter`), and `binutils`;
-//!
-//! and allows unprivileged user namespaces, which apps-discovery's network
-//! namespace needs (`unshare -rn`): Ubuntu 23.10 and later restrict them
-//! through AppArmor (`kernel.apparmor_restrict_unprivileged_userns`).
-//! Building the xtask itself needs Rust and a C linker (`cc`), which the
-//! GitHub runners have.
-//!
-//! `ci job <VERSION>` (with `$DPMA_SLOT`) is the whole job for one
-//! release: the Asterisk build and install (skipped when done), `cargo
-//! build` against the release's source tree, both clippy runs with
-//! warnings as errors, `cargo test` for the crates whose tests run outside
-//! Asterisk, the devtest build, the instance of `$DPMA_SLOT` created
-//! afresh for the release, and every suite (`cargo xtask test all`).
+//! 1. `cargo build`, both clippy runs (`--all-targets`, and `-p
+//!    res_dpma_rs --features devtest`) with warnings as errors, and `cargo
+//!    test` for the crates whose tests run outside Asterisk;
+//! 2. every suite (`cargo xtask test all`);
+//! 3. when they pass, the module for publishing: `cargo build --release
+//!    -p res_dpma_rs` (without devtest); a check that it needs no newer
+//!    glibc than [`GLIBC_BASELINE`]; a smoke test (loaded into the
+//!    container's Asterisk: `module show like res_dpma_rs` lists it, and
+//!    `digium_phones show version` answers); and a copy as
+//!    `target/container/<release>/res_dpma_rs-asterisk<major>-<arch>.so`,
+//!    which the workflow uploads.
 
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::Result;
-use dpma_tests::asterisk::{self, slot_dir, Slot};
+use anyhow::{bail, Context, Result};
+use dpma_tests::harness::Instance;
 
-use crate::build::{run, Build};
-use crate::suites::{self, cargo};
+use crate::container::OUT;
+use crate::{pins, run, suites};
 
-/// The Ubuntu packages the job needs.
-pub const PACKAGES: [&str; 17] = [
-    "build-essential",
-    "pkg-config",
-    "curl",
-    "ca-certificates",
-    "bzip2",
-    "patch",
-    "libedit-dev",
-    "libjansson-dev",
-    "libsqlite3-dev",
-    "uuid-dev",
-    "libxml2-dev",
-    "libssl-dev",
-    "libclang-dev",
-    "openssl",
-    "iproute2",
-    "util-linux",
-    "binutils",
-];
-
-const USERNS_KNOB: &str = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns";
-
-/// `ci setup`: installs the packages and allows unprivileged user
-/// namespaces.  Not as root, it runs itself through `sudo`.
-pub fn setup() -> Result<()> {
-    // SAFETY: geteuid has no preconditions.
-    if unsafe { libc::geteuid() } != 0 {
-        let exe = std::env::current_exe()?;
-        println!("ci setup needs root: sudo {} ci setup", exe.display());
-        return run(Command::new("sudo").arg(exe).args(["ci", "setup"]));
-    }
-    run(Command::new("apt-get")
-        .arg("update")
-        .env("DEBIAN_FRONTEND", "noninteractive"))?;
-    run(Command::new("apt-get")
-        .args(["install", "-y", "--no-install-recommends"])
-        .args(PACKAGES)
-        .env("DEBIAN_FRONTEND", "noninteractive"))?;
-    if std::path::Path::new(USERNS_KNOB).exists() {
-        run(Command::new("sysctl").args(["-w", "kernel.apparmor_restrict_unprivileged_userns=0"]))?;
-    }
-    Ok(())
-}
+/// The newest glibc symbol version that the module may need: the minimum
+/// glibc of the published module (README.md, "Installation").
+pub const GLIBC_BASELINE: [u32; 2] = [2, 34];
 
 fn step(what: &str, version: &str) {
     println!("\n==> {what} (Asterisk {version})");
@@ -84,24 +33,81 @@ fn step(what: &str, version: &str) {
 
 fn cargo_step(what: &str, version: &str, args: &[&str]) -> Result<()> {
     step(what, version);
-    run(cargo().args(args))
+    run(crate::cargo().args(args))
 }
 
-/// `ci job <VERSION>`; the exit status of the suites.
-pub fn job(version: &str) -> Result<u8> {
-    let n = asterisk::env_slot()?;
-    let b = Build::new(version)?;
-    let v = b.pin.version.clone();
+/// The newest `GLIBC_x.y[.z]` symbol version in `objdump -T` output.
+fn newest_glibc(dynamic_symbols: &str) -> Option<Vec<u32>> {
+    dynamic_symbols
+        .split(|c: char| c.is_whitespace() || c == '(' || c == ')')
+        .filter_map(|w| w.strip_prefix("GLIBC_"))
+        .filter_map(|v| {
+            v.split('.')
+                .map(|n| n.parse().ok())
+                .collect::<Option<Vec<u32>>>()
+        })
+        .max()
+}
+
+/// Fails when `so` needs a newer glibc than [`GLIBC_BASELINE`].
+fn check_glibc(so: &Path) -> Result<()> {
+    let out = Command::new("objdump")
+        .arg("-T")
+        .arg(so)
+        .output()
+        .context("running objdump")?;
+    if !out.status.success() {
+        bail!("objdump -T {} failed ({})", so.display(), out.status);
+    }
+    let fmt = |v: &[u32]| v.iter().map(u32::to_string).collect::<Vec<_>>().join(".");
+    let newest = newest_glibc(&String::from_utf8_lossy(&out.stdout))
+        .context("no GLIBC symbol versions in the module")?;
+    println!("newest glibc symbol version: GLIBC_{}", fmt(&newest));
+    if newest.as_slice() > GLIBC_BASELINE.as_slice() {
+        bail!(
+            "the module needs GLIBC_{}, newer than the baseline GLIBC_{} (the minimum glibc \
+             README.md states); find what pulls it in, or raise the baseline (tools/src/ci.rs) \
+             and the README together",
+            fmt(&newest),
+            fmt(&GLIBC_BASELINE)
+        );
+    }
+    Ok(())
+}
+
+/// Loads the release build into the container's Asterisk.
+fn smoke_test() -> Result<()> {
+    let inst = Instance::new()?;
+    inst.stop()?;
+    inst.reset_conf()?;
+    inst.install("release")?;
+    inst.start()?;
+    let shown = inst.cli_run("module show like res_dpma_rs");
+    let version = inst.cli_run("digium_phones show version");
+    inst.stop()?;
+    let (shown, version) = (shown?.to_string(), version?.to_string());
+    print!("{shown}{version}");
+    if !shown.contains("res_dpma_rs.so") || !shown.contains("1 modules loaded") {
+        bail!("module show like res_dpma_rs does not list it");
+    }
+    let want = format!("dpma-rs version {}", env!("CARGO_PKG_VERSION"));
+    if !version.contains(&want) {
+        bail!("digium_phones show version does not answer {want:?}");
+    }
+    Ok(())
+}
+
+/// `cargo xtask inside ci <release>`; the exit status.
+pub fn job(release: &str) -> Result<u8> {
+    let pin = pins::pin(Some(release))?;
+    let v = pin.version.as_str();
     // For every cargo run below (no other threads run yet).
-    std::env::set_var("ASTERISK_SOURCE_DIR", &b.src);
     std::env::set_var("CARGO_INCREMENTAL", "0");
 
-    step("Asterisk", &v);
-    b.run(None, true)?;
-    cargo_step("cargo build", &v, &["build", "--locked"])?;
+    cargo_step("cargo build", v, &["build", "--locked"])?;
     cargo_step(
         "cargo clippy --all-targets",
-        &v,
+        v,
         &[
             "clippy",
             "--locked",
@@ -113,7 +119,7 @@ pub fn job(version: &str) -> Result<u8> {
     )?;
     cargo_step(
         "cargo clippy -p res_dpma_rs --features devtest",
-        &v,
+        v,
         &[
             "clippy",
             "--locked",
@@ -130,7 +136,7 @@ pub fn job(version: &str) -> Result<u8> {
     // imports Asterisk's symbols), so cargo test covers the other crates.
     cargo_step(
         "cargo test",
-        &v,
+        v,
         &[
             "test",
             "--locked",
@@ -140,25 +146,49 @@ pub fn job(version: &str) -> Result<u8> {
         ],
     )?;
 
-    step("test suites", &v);
-    run(cargo().args([
-        "build",
-        "--locked",
-        "-p",
-        "res_dpma_rs",
-        "--features",
-        "devtest",
-    ]))?;
-    let dir = slot_dir(n);
-    if std::fs::symlink_metadata(&dir).is_ok() {
-        if let Ok(s) = Slot::new(n) {
-            let _ = s.stop();
-        }
-        std::fs::remove_dir_all(&dir)?;
+    step("test suites", v);
+    let code = suites::run_suites(&suites::selection(&["all".into()]))?;
+    if code != 0 {
+        return Ok(code);
     }
-    print!(
-        "{}",
-        String::from_utf8_lossy(&Slot::command(n, &["init", &v])?)
+
+    cargo_step(
+        "the module for publishing",
+        v,
+        &["build", "--locked", "--release", "-p", "res_dpma_rs"],
+    )?;
+    let so = Instance::module_build("release");
+    check_glibc(&so)?;
+    step("smoke test of the release build", v);
+    smoke_test()?;
+    let asset = PathBuf::from(OUT).join(format!(
+        "res_dpma_rs-asterisk{}-{}.so",
+        pin.major,
+        std::env::consts::ARCH
+    ));
+    std::fs::copy(&so, &asset).with_context(|| asset.display().to_string())?;
+    println!(
+        "\nthe module for Asterisk {}: target/container/{v}/{}",
+        pin.major,
+        asset.file_name().unwrap_or_default().to_string_lossy()
     );
-    suites::run(&["all".to_string()])
+    Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn glibc_versions() {
+        let dump = "0000000000000000      DF *UND*\t0000000000000000 (GLIBC_2.2.5) free\n\
+                    0000000000000000      DF *UND*\t0000000000000000 (GLIBC_2.34) pthread_create\n\
+                    0000000000000000  w   DF *UND*\t0000000000000000 (GLIBC_2.3.4) x\n\
+                    0000000000000000      DF *UND*\t0000000000000000  GLIBC_PRIVATE y\n";
+        assert_eq!(newest_glibc(dump), Some(vec![2, 34]));
+        assert_eq!(newest_glibc("nothing"), None);
+        assert!([2, 35].as_slice() > GLIBC_BASELINE.as_slice());
+        assert!([2, 34].as_slice() <= GLIBC_BASELINE.as_slice());
+        assert!([2, 3, 4].as_slice() <= GLIBC_BASELINE.as_slice());
+    }
 }

@@ -3,12 +3,13 @@
 //! is a Cargo test target (`harness = false`):
 //!
 //! ```text
-//! DPMA_SLOT=<n> cargo test -p dpma-tests --test <suite> -- --ignored [FILTER...]
+//! cargo test -p dpma-tests --test <suite> -- --ignored [FILTER...]
 //! ```
 //!
-//! Without `--ignored` (or `--include-ignored`), as in a plain `cargo
-//! test`, the suite runs nothing and passes: suites need a private
-//! instance and restart its Asterisk.  Other arguments:
+//! `cargo xtask test` runs it so inside the test container.  Without
+//! `--ignored` (or `--include-ignored`), as in a plain `cargo test`, the
+//! suite runs nothing and passes: suites need the test instance and
+//! restart its Asterisk.  Other arguments:
 //!
 //! | Argument | Meaning |
 //! |---|---|
@@ -219,26 +220,21 @@ impl Suite {
         }
         if !args.run {
             println!(
-                "suite {}: {} parts ignored (it needs a private instance: DPMA_SLOT=<n> cargo test -p dpma-tests --test {} -- --ignored)",
+                "suite {}: {} parts ignored (it runs in the test container: cargo xtask test {})",
                 self.name,
                 selected.len(),
                 self.name
             );
             return ExitCode::SUCCESS;
         }
-        let inst = match Instance::from_env() {
+        let inst = match Instance::new() {
             Ok(i) => i,
             Err(e) => {
                 eprintln!("suite {}: {e:#}", self.name);
                 return ExitCode::FAILURE;
             }
         };
-        println!(
-            "suite {}: instance {} (slot {})",
-            self.name,
-            inst.dir.display(),
-            inst.slot
-        );
+        println!("suite {}: instance {}", self.name, inst.dir.display());
         if let (true, Some(prepare)) = (args.prepare, &self.prepare) {
             println!("\n== prepare");
             let t = Instant::now();

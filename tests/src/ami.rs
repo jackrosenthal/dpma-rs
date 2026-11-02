@@ -8,7 +8,7 @@
 //! ```no_run
 //! use dpma_tests::ami::AmiClient;
 //! # fn main() -> anyhow::Result<()> {
-//! let ami = AmiClient::for_slot(5)?;
+//! let ami = dpma_tests::harness::Instance::new()?.ami()?;
 //! let res = ami.action("DPMAShowPhones", [("ActionID", "x")]);
 //! println!("{:?} {}", res.response.as_ref().and_then(|r| r.get_str("Response")), res.events.len());
 //! let ev = ami.wait_event(Some("DPMAMessage"), &[], std::time::Duration::from_secs(30));
@@ -25,12 +25,6 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail, Context, Result};
 use bstr::{BString, ByteSlice};
 use regex::bytes::Regex;
-
-/// The default AMI port of an instance slot (15038+100·slot; 15038
-/// without a slot).
-pub fn default_port(slot: Option<u32>) -> u16 {
-    crate::sim::ami_port_for(slot)
-}
 
 /// One AMI message: its fields in order (keys may repeat, for example
 /// `Output` in a Command response) and the raw bytes it arrived as.
@@ -245,19 +239,6 @@ pub struct AmiClient {
 const MAX_EVENTS: usize = 20000;
 
 impl AmiClient {
-    /// Connects to the AMI of instance `slot` on 127.0.0.1 and logs in as
-    /// test/test with events on.
-    pub fn for_slot(slot: u32) -> Result<AmiClient> {
-        AmiClient::connect(
-            "127.0.0.1",
-            default_port(Some(slot)),
-            "test",
-            "test",
-            true,
-            Duration::from_secs(10),
-        )
-    }
-
     /// Connects and logs in; `timeout` is the default action timeout.
     pub fn connect(
         host: &str,

@@ -5,28 +5,29 @@
 //! `mdns_probe.py`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/<release>/src
-//! cargo build -p res_dpma_rs --features devtest
+//! cargo xtask test apps-discovery
+//! ```
+//!
+//! which runs, inside the test container, after building the devtest
+//! module:
+//!
+//! ```text
 //! cargo test -p dpma-tests --test apps-discovery -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
-//! (or `cargo xtask test apps-discovery`, which builds the devtest module
-//! first).
+//! Prerequisites: the test instance with a devtest build of the module,
+//! and `ip` and `ss` (iproute2), all of which the test container has.
 //!
-//! Prerequisites: a private instance (`DPMA_SLOT`), a devtest build of the
-//! module, unprivileged user namespaces (`unshare -rn`), and `ip` and `ss`
-//! (iproute2).
-//!
-//! The suite runs itself again inside a private network namespace
-//! ([`dpma_tests::netns`]) whose only interface is `lo`, so that the mDNS
-//! announcements never reach a real network, and runs Asterisk there:
-//! inside, it prepares the instance (fresh configuration, the voicemail
-//! setup of the methods-vm suite from `tests/data/methods-vm`, this
-//! suite's dialplan `extensions_dpma_apps.conf`, a 3 second test tone
+//! The test container's network namespace has no interface but `lo`, on
+//! which `cargo xtask test` turns multicast on and routes 224.0.0.0/4, so
+//! that the mDNS announcements never reach a real network.  The suite
+//! prepares the instance (fresh configuration, the voicemail setup of the
+//! methods-vm suite from `tests/data/methods-vm`, this suite's dialplan
+//! `extensions_dpma_apps.conf`, a 3 second test tone
 //! `<astvarlibdir>/sounds/dpma-apps-tone.wav`, the debug build installed,
-//! Asterisk restarted; with `--no-prepare`, Asterisk is only restarted,
-//! since it must run inside the namespace), runs the parts, and stops
-//! Asterisk at the end.
+//! Asterisk restarted) and runs the parts.  Without such a network
+//! namespace (an interface other than `lo`, or `lo` without multicast),
+//! the mDNS checks are skipped and service discovery stays off.
 //!
 //! | Part | Checks |
 //! |---|---|
@@ -43,12 +44,11 @@ mod apps;
 mod discovery;
 mod settings;
 
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 
 use anyhow::Result;
 use bstr::BString;
 use dpma_tests::harness::{fixtures, ConfFile, Ctx, Instance, Suite};
-use dpma_tests::netns;
 
 const VM_PHONE_CONF: &str = include_str!("../../data/methods-vm/res_digium_phone.conf");
 const VM_VOICEMAIL_CONF: &str = include_str!("../../data/methods-vm/voicemail.conf");
@@ -157,39 +157,24 @@ pub fn with_conf(ctx: &mut Ctx, f: impl FnOnce(&mut Ctx, &[u8]) -> Result<()>) -
     r
 }
 
-fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let has = |a: &str| args.iter().any(|x| x == a);
-    let run = has("--ignored") || has("--include-ignored");
-    if run && !has("--list") && !netns::inside() {
-        println!("suite apps-discovery: running inside a private network namespace (unshare -rn)");
-        return netns::reexec().unwrap_or_else(|e| {
-            println!("FAIL suite apps-discovery: {e:#}");
-            ExitCode::FAILURE
-        });
-    }
-    let inst = if netns::inside() {
-        let setup = netns::setup_loopback().and_then(|()| Instance::from_env());
-        match setup {
-            Ok(i) => Some(i),
-            Err(e) => {
-                println!("FAIL suite apps-discovery: {e:#}");
-                return ExitCode::FAILURE;
-            }
-        }
-    } else {
-        None
+/// Whether the network namespace's only interface is `lo`, with multicast
+/// on (`ip -o link`).
+fn isolated() -> bool {
+    let Ok(out) = Command::new("ip").args(["-o", "link"]).output() else {
+        return false;
     };
-    // Asterisk must run inside the namespace: restart it there even
-    // without the preparation.
-    if let (Some(i), true) = (&inst, has("--no-prepare")) {
-        if let Err(e) = i.start().and_then(|()| fixtures::check_devtest(i)) {
-            println!("FAIL suite apps-discovery: {e:#}");
-            return ExitCode::FAILURE;
-        }
-    }
-    let discovery_ok = netns::isolated();
-    let code = Suite::new("apps-discovery")
+    let text = String::from_utf8_lossy(&out.stdout);
+    let names: Vec<&str> = text
+        .lines()
+        .filter_map(|l| l.split(':').nth(1))
+        .map(str::trim)
+        .collect();
+    names == ["lo"] && text.contains("MULTICAST")
+}
+
+fn main() -> ExitCode {
+    let discovery_ok = isolated();
+    Suite::new("apps-discovery")
         .prepare(|inst| fixtures::prepare(inst, setup))
         .part("applications", apps::registered)
         .part("controlplayback", apps::controlplayback)
@@ -201,14 +186,10 @@ fn main() -> ExitCode {
             } else {
                 ctx.c.skip(
                     "mDNS checks",
-                    "not inside a private network namespace whose only interface is lo",
+                    "not in a network namespace whose only interface is lo, with multicast",
                 );
                 Ok(())
             }
         })
-        .main();
-    if let Some(i) = inst {
-        let _ = i.stop();
-    }
-    code
+        .main()
 }

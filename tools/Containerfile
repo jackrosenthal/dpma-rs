@@ -1,0 +1,87 @@
+# The test image of one pinned Asterisk release, for cargo xtask test and
+# ci (see tests/README.md), which build it with the release and its
+# checksum from tools/asterisk-versions and tools/ as the context:
+#
+#   <podman|docker> build -f tools/Containerfile \
+#       --build-arg ASTERISK_VERSION=<release> \
+#       --build-arg ASTERISK_SHA256=<sha256> tools
+#
+#   /opt/asterisk          Asterisk, configured with --prefix=/opt/asterisk:
+#                          the test instance (writable by every user, since
+#                          the tests run as the host user's user ID)
+#   /opt/asterisk-conf     the scratch configuration, which the harness
+#                          copies into /opt/asterisk/etc/asterisk
+#   /opt/asterisk-headers  the configured headers that bindgen reads
+#                          (ASTERISK_SOURCE_DIR): include/ and the bundled
+#                          pjproject's include directories
+#   /usr/local/rustup, /usr/local/cargo   Rust 1.99 with clippy
+
+FROM docker.io/library/ubuntu:24.04
+
+# Asterisk's build dependencies (the basic set of its
+# contrib/scripts/install_prereq; curl, bzip2, and patch for the bundled
+# pjproject), libclang for bindgen (the library and clang's own headers,
+# without the static libraries of libclang-dev), and ip and ss (iproute2)
+# for the suites.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential pkg-config curl ca-certificates bzip2 patch libedit-dev \
+      libjansson-dev libsqlite3-dev uuid-dev libxml2-dev libssl-dev \
+      libclang1-18 libclang-common-18-dev iproute2 \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rustup-init.sh https://sh.rustup.rs \
+ && sh /tmp/rustup-init.sh -y --no-modify-path --profile minimal \
+      --default-toolchain 1.99 --component clippy \
+ && rm /tmp/rustup-init.sh && cargo clippy --version
+
+# Download and verify the release; configure it as dpma-rs always has
+# (BUILD_NATIVE off, so that the build runs on any CPU of the
+# architecture); build and install it (ASTDATADIR given explicitly:
+# with a --prefix of its own, makeopts defines it through ${prefix},
+# which the bundled pjproject's install step sees as pjproject's
+# /opt/pjproject, an Asterisk bug); strip the debugging information
+# (the build has -g3); keep the headers; and remove the source tree.
+ARG ASTERISK_VERSION
+ARG ASTERISK_SHA256
+RUN mkdir /usr/src/asterisk && cd /usr/src/asterisk \
+ && curl -fsSL --retry 3 -o asterisk.tar.gz \
+      https://downloads.asterisk.org/pub/telephony/asterisk/releases/asterisk-${ASTERISK_VERSION}.tar.gz \
+ && echo "${ASTERISK_SHA256}  asterisk.tar.gz" | sha256sum -c - \
+ && tar -xzf asterisk.tar.gz --strip-components=1 && rm asterisk.tar.gz \
+ && ./configure --prefix=/opt/asterisk --with-pjproject-bundled \
+      --with-jansson-bundled=no --without-pwlib --disable-xmldoc >/dev/null \
+ && make menuselect.makeopts >/dev/null \
+ && menuselect/menuselect --disable BUILD_NATIVE menuselect.makeopts \
+ && make -j"$(nproc)" >/dev/null \
+ && make install ASTDATADIR=/opt/asterisk/var/lib/asterisk >/dev/null \
+ && make samples >/dev/null \
+ && strip --strip-debug /opt/asterisk/sbin/asterisk /opt/asterisk/lib/*.so.* \
+      /opt/asterisk/lib/asterisk/modules/*.so \
+ && mkdir /opt/asterisk-headers \
+ && cp -a --parents include third-party/pjproject/source/pjlib/include \
+      third-party/pjproject/source/pjlib-util/include \
+      third-party/pjproject/source/pjnath/include \
+      third-party/pjproject/source/pjmedia/include \
+      third-party/pjproject/source/pjsip/include /opt/asterisk-headers \
+ && test -f /opt/asterisk-headers/include/asterisk/buildopts.h \
+ && test -f /opt/asterisk-headers/third-party/pjproject/source/pjlib/include/pj/config_site.h \
+ && mv /opt/asterisk/etc/asterisk /opt/asterisk-conf \
+ && chmod -R a+rwX /opt/asterisk \
+ && cd / && rm -rf /usr/src/asterisk
+ENV ASTERISK_SOURCE_DIR=/opt/asterisk-headers
+
+# The scratch configuration: the samples with tools/asterisk-conf/ and
+# these edits on top (the greps fail the build if the samples change);
+# asterisk.conf's [directories] section is made active.
+COPY asterisk-conf/ /opt/asterisk-conf/
+RUN cd /opt/asterisk-conf \
+ && sed -i -e 's/^rtpstart=.*/rtpstart=21000/' -e 's/^rtpend=.*/rtpend=21100/' rtp.conf \
+ && sed -i 's/^\[default\]$/[default]\nbob101 => -9876,Bob Example/' voicemail.conf \
+ && sed -i 's/^\[directories\](!)$/[directories]/' asterisk.conf \
+ && grep -qx 'rtpstart=21000' rtp.conf && grep -qx 'rtpend=21100' rtp.conf \
+ && grep -q '^bob101 => ' voicemail.conf && grep -qx '\[directories\]' asterisk.conf \
+ && grep -qx 'astmoddir => /opt/asterisk/lib/asterisk/modules' asterisk.conf \
+ && cp -a /opt/asterisk-conf /opt/asterisk/etc/asterisk \
+ && chmod -R a+rwX /opt/asterisk/etc/asterisk

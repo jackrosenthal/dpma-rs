@@ -27,7 +27,7 @@ use dpma_tests::ari::Ari;
 use dpma_tests::harness::{fixtures, Cli, Ctx, Instance};
 use regex::bytes::Regex;
 
-use crate::{http_port, restart, ARI_USER};
+use crate::{restart, ARI_USER, HTTP_PORT};
 
 /// How long a CLI command or ARI request may take.
 const TIMEOUT: Duration = Duration::from_secs(20);
@@ -190,13 +190,7 @@ pub fn run(ctx: &mut Ctx, seconds: f64) -> Result<()> {
     restart(ctx)?;
     let sh = Shared {
         inst: ctx.inst.clone(),
-        ari: Ari::with_timeout(
-            "127.0.0.1",
-            http_port(ctx.inst.slot),
-            ARI_USER.0,
-            ARI_USER.1,
-            TIMEOUT,
-        ),
+        ari: Ari::with_timeout("127.0.0.1", HTTP_PORT, ARI_USER.0, ARI_USER.1, TIMEOUT),
         stop: AtomicBool::new(false),
         stats: Mutex::new(Stats::default()),
     };

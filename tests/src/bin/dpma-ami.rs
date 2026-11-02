@@ -9,23 +9,24 @@
 //! For example:
 //!
 //! ```text
-//! DPMA_SLOT=5 dpma-ami DPMAShowPhones
-//! dpma-ami --slot 5 Command Command="digium_phones show sessions"
-//! dpma-ami --slot 5 --wait-event DPMAMessage --events 60 DPMAMessageRegister Method=m
-//! dpma-ami --slot 5 --listen 30
+//! dpma-ami DPMAShowPhones
+//! dpma-ami Command Command="digium_phones show sessions"
+//! dpma-ami --wait-event DPMAMessage --events 60 DPMAMessageRegister Method=m
+//! dpma-ami --listen 30
 //! ```
 //!
-//! Logs in to the AMI port of 127.0.0.1 as test/test.  For list actions it
-//! waits for `EventList: Complete`; otherwise it prints the events of the
-//! next `--events` seconds.  Exit status 0 when the response is
-//! `Success`.
+//! Logs in to AMI as test/test, by default on 127.0.0.1:15038, the test
+//! instance's (inside the test container).  For list actions it waits for
+//! `EventList: Complete`; otherwise it prints the events of the next
+//! `--events` seconds.  Exit status 0 when the response is `Success`.
 
 use std::io::Write;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use dpma_tests::ami::{default_port, parse_fields, AmiClient};
+use dpma_tests::ami::{parse_fields, AmiClient};
+use dpma_tests::harness::AMI_PORT;
 
 #[derive(Parser)]
 #[command(
@@ -40,12 +41,9 @@ struct Args {
     /// AMI host.
     #[arg(long, default_value = "127.0.0.1")]
     host: String,
-    /// AMI port (default: from --slot or $DPMA_SLOT).
-    #[arg(long)]
-    port: Option<u16>,
-    /// Instance slot.
-    #[arg(long)]
-    slot: Option<u32>,
+    /// AMI port.
+    #[arg(long, default_value_t = AMI_PORT)]
+    port: u16,
     /// AMI user.
     #[arg(long, default_value = "test")]
     user: String,
@@ -75,10 +73,7 @@ fn main() -> ExitCode {
         eprintln!("dpma-ami: an action or --listen is required");
         return ExitCode::from(2);
     }
-    let slot = a
-        .slot
-        .or_else(|| std::env::var("DPMA_SLOT").ok().and_then(|s| s.parse().ok()));
-    let port = a.port.unwrap_or_else(|| default_port(slot));
+    let port = a.port;
     let ami = match AmiClient::connect(
         &a.host,
         port,

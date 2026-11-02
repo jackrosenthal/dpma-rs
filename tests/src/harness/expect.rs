@@ -6,7 +6,7 @@
 //! # use dpma_tests::harness::Checker;
 //! # use dpma_tests::sim::{Options, Phone};
 //! # fn main() -> anyhow::Result<()> {
-//! # let phone = Phone::start(Options::for_slot(5))?;
+//! # let phone = Phone::start(Options::default())?;
 //! # let mut c = Checker::new();
 //! let ex = phone.ping().send()?;
 //! c.exchange("encrypted ping", &ex).ty("PingResponse").no_error().encrypted(true).body("empty body");

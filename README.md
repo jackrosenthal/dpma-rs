@@ -21,74 +21,75 @@ modules of the original distribution:
 
 It is written in Rust only: there is no C code to compile.
 
-## Supported Asterisk versions
+## Installation
 
-dpma-rs supports Asterisk 22, 23, and 24.
+### Requirements
 
-## Building
+- Asterisk 22, 23, or 24 with PJSIP (`res_pjsip`, `res_pjsip_session`,
+  and `res_pjsip_pubsub`), on Linux.
+- x86_64 or aarch64 (64-bit ARM).
+- glibc 2.34 or newer (for example, Debian 12, Ubuntu 22.04, or RHEL 9
+  and newer).
 
-You need:
+### Download
 
-- A stable Rust toolchain with Cargo (dpma-rs is developed with Rust
-  1.99).
-- libclang (from LLVM/Clang; dpma-rs is developed with libclang 18): the
-  build reads the Asterisk and pjproject headers with `bindgen`, which
-  uses it.  If it is not found, set `LIBCLANG_PATH` to the directory
-  that holds `libclang.so`.
-- The source tree of the Asterisk you build for (22, 23, or 24; the
-  same release and configuration as the installed Asterisk), configured
-  with the bundled pjproject (`./configure --with-pjproject-bundled`,
-  which downloads and configures pjproject in
-  `third-party/pjproject/source`) and with
-  `include/asterisk/buildopts.h` made (`make
-  include/asterisk/buildopts.h`, or a full `make`).  Set
-  `ASTERISK_SOURCE_DIR` to it; the build reads the Asterisk headers from
-  its `include/` and the pjproject headers from its bundled pjproject.
-  The module is built for that release (and Asterisk declines a module
-  whose build options, from `buildopts.h`, differ from its own).
-- The OpenSSL development files (headers and `pkg-config` data), for the
-  `openssl` crate.
+Each release has one module per Asterisk major version and
+architecture:
 
-Then:
+| | x86_64 | aarch64 |
+|---|---|---|
+| Asterisk 22 | [res_dpma_rs-asterisk22-x86_64.so](https://github.com/jackrosenthal/dpma-rs/releases/latest/download/res_dpma_rs-asterisk22-x86_64.so) | [res_dpma_rs-asterisk22-aarch64.so](https://github.com/jackrosenthal/dpma-rs/releases/latest/download/res_dpma_rs-asterisk22-aarch64.so) |
+| Asterisk 23 | [res_dpma_rs-asterisk23-x86_64.so](https://github.com/jackrosenthal/dpma-rs/releases/latest/download/res_dpma_rs-asterisk23-x86_64.so) | [res_dpma_rs-asterisk23-aarch64.so](https://github.com/jackrosenthal/dpma-rs/releases/latest/download/res_dpma_rs-asterisk23-aarch64.so) |
+| Asterisk 24 | [res_dpma_rs-asterisk24-x86_64.so](https://github.com/jackrosenthal/dpma-rs/releases/latest/download/res_dpma_rs-asterisk24-x86_64.so) | [res_dpma_rs-asterisk24-aarch64.so](https://github.com/jackrosenthal/dpma-rs/releases/latest/download/res_dpma_rs-asterisk24-aarch64.so) |
+
+[SHA256SUMS](https://github.com/jackrosenthal/dpma-rs/releases/latest/download/SHA256SUMS)
+lists their SHA-256 checksums.  To download and check the module for
+Asterisk 24 on x86_64:
 
 ```
-export ASTERISK_SOURCE_DIR=/usr/src/asterisk-24.0.0
-cargo build --release
+curl -fLO https://github.com/jackrosenthal/dpma-rs/releases/latest/download/res_dpma_rs-asterisk24-x86_64.so
+curl -fLO https://github.com/jackrosenthal/dpma-rs/releases/latest/download/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
 ```
 
-The module is built as `target/release/libres_dpma_rs.so`.
+`asterisk -V` prints Asterisk's version, and `uname -m` the
+architecture.
 
-At run time the module uses the OpenSSL libraries and the libxml2 that
-Asterisk itself loads.
+### Installing the module
 
-## Installing
+1. Copy the module into Asterisk's module directory (`astmoddir` in
+   `asterisk.conf`, often `/usr/lib/asterisk/modules`) as
+   `res_dpma_rs.so`.  Copy it in while Asterisk is stopped, or copy and
+   rename as here: writing over a loaded module crashes the running
+   Asterisk.
 
-Copy the module into Asterisk's module directory (`astmoddir` in
-`asterisk.conf`, often `/usr/lib/asterisk/modules`) as `res_dpma_rs.so`
-(without the `lib` prefix), and take the original modules out of it:
+   ```
+   MODDIR=/usr/lib/asterisk/modules
+   cp res_dpma_rs-asterisk24-x86_64.so $MODDIR/res_dpma_rs.so.new && mv $MODDIR/res_dpma_rs.so.new $MODDIR/res_dpma_rs.so
+   ```
 
-```
-MODDIR=/usr/lib/asterisk/modules
-cp target/release/libres_dpma_rs.so $MODDIR/res_dpma_rs.so.new && mv $MODDIR/res_dpma_rs.so.new $MODDIR/res_dpma_rs.so
-rm -f $MODDIR/res_digium_phone.so $MODDIR/res_pjsip_endpoint_identifier_dpma.so \
-    $MODDIR/res_pjsip_dialog_info_digium_body_supplement.so
-```
+2. Take the original modules out: `res_dpma_rs.so` does everything the
+   three original modules do, so they must not be loaded with it
+   (Asterisk would load both, and both would answer the phones).  Remove
+   them:
 
-`res_dpma_rs.so` does everything the three original modules do, so they
-must not be loaded with it: Asterisk would load both, and both would
-answer the phones.  Remove them as above, or keep the files and add
-`noload` lines to `modules.conf`:
+   ```
+   rm -f $MODDIR/res_digium_phone.so $MODDIR/res_pjsip_endpoint_identifier_dpma.so \
+       $MODDIR/res_pjsip_dialog_info_digium_body_supplement.so
+   ```
 
-```
-noload => res_digium_phone.so
-noload => res_pjsip_endpoint_identifier_dpma.so
-noload => res_pjsip_dialog_info_digium_body_supplement.so
-```
+   or keep the files and add `noload` lines to `modules.conf`:
 
-Copy the module in while Asterisk is stopped, or copy and rename as
-above: writing over a loaded module crashes the running Asterisk.  Then
-restart Asterisk; after an upgrade, `module unload` and `module load` do
-not reliably pick up the new code of the module, so restart instead.
+   ```
+   noload => res_digium_phone.so
+   noload => res_pjsip_endpoint_identifier_dpma.so
+   noload => res_pjsip_dialog_info_digium_body_supplement.so
+   ```
+
+3. Restart Asterisk, or load the module (`module load res_dpma_rs.so`)
+   when no earlier version of it is loaded: after an upgrade, `module
+   unload` and `module load` do not reliably pick up the new code of the
+   module, so restart instead.
 
 The module loads with Asterisk's usual autoloading (or a
 `load => res_dpma_rs.so` line in `modules.conf`, in place of the
@@ -103,6 +104,9 @@ needs a PJSIP endpoint named by `default_outbound_endpoint` in the
 `[global]` section of `pjsip.conf` (default name
 `default_outbound_endpoint`).  Without it the module fails to load, which
 stops Asterisk from starting.
+
+At run time the module uses the OpenSSL libraries and the libxml2 that
+Asterisk itself loads.  To build it yourself, see "Development".
 
 ## Configuration
 
@@ -220,33 +224,78 @@ dpma-rs is licensed under the GNU General Public License, version 2 or
 
 dpma-rs is Rust throughout, its test tooling included:
 
+- `crates/`: the module (`res_dpma_rs`) and its libraries.
 - `tests/`: the crate `dpma-tests`, with the phone simulator
   (`dpma-sim`), the test PKI (`dpma-mkpki`), an AMI client
   (`dpma-ami`), the other test clients, the harness, and the test
-  suites, which run against private Asterisk instances
-  (`cargo doc -p dpma-tests --open` documents them).
-- `tools/`: the crate `xtask`, run as `cargo xtask`: it downloads,
-  verifies, builds, and installs the pinned Asterisk releases
-  (`tools/asterisk-versions`, with the test configuration of
-  `tools/asterisk-conf/`), manages the private instances, runs the
-  suites, and is the CI job of `.github/workflows/ci.yml`, which also
-  runs locally.
-- Runtime state stays in the ignored `dev/`: Asterisk builds
-  (`dev/asterisk-builds/`), instances (`dev/run/`), and the simulator's
-  generated PKI (`dev/sim/pki/`).
+  suites (`cargo doc -p dpma-tests --open` documents them).
+- `tools/`: the crate `xtask`, run as `cargo xtask`, and the test image
+  (`tools/Containerfile`).  Every suite runs in a container (podman or
+  docker) that holds one pinned Asterisk release
+  (`tools/asterisk-versions`), with the test configuration of
+  `tools/asterisk-conf/`.  The xtask also is the CI job of
+  `.github/workflows/ci.yml`, which runs the same way locally.
 
-`tests/README.md` describes the tooling.  For example, to build against
-Asterisk 24 and run every suite in the private instance of slot `<n>`:
+`tests/README.md` describes the tooling.
+
+### Building from source
+
+You need:
+
+- Rust 1.99 or a newer stable toolchain, with Cargo.
+- libclang (from LLVM/Clang; dpma-rs is developed with libclang 18): the
+  build reads the Asterisk and pjproject headers with `bindgen`, which
+  uses it.  If it is not found, set `LIBCLANG_PATH` to the directory
+  that holds `libclang.so`.
+- The configured headers of the Asterisk you build for (22, 23, or 24),
+  in `ASTERISK_SOURCE_DIR`: its `include/` (with `autoconfig.h` from
+  configure and `buildopts.h`) and the bundled pjproject's include
+  directories (`third-party/pjproject/source/*/include`, with
+  `pj/config_site.h`).  Either
+  - `cargo xtask headers [--asterisk VERSION]` (podman or docker
+    needed) copies them out of the test image of a pinned release
+    (default: the newest) and prints their directory, or
+  - use the source tree of the Asterisk you run, configured with the
+    bundled pjproject (`./configure --with-pjproject-bundled`) and with
+    `include/asterisk/buildopts.h` made (`make
+    include/asterisk/buildopts.h`, or a full `make`).
+- The OpenSSL development files (headers and `pkg-config` data), for the
+  `openssl` crate.
+
+Then:
 
 ```
-export DPMA_SLOT=<n> CARGO_INCREMENTAL=0
-cargo xtask asterisk build --install 24
-eval "$(cargo xtask asterisk info 24)" && export ASTERISK_SOURCE_DIR=$src
-cargo xtask instance init <n> 24
-cargo build && cargo test --workspace --exclude res_dpma_rs
-cargo xtask test all
+export ASTERISK_SOURCE_DIR=$(cargo xtask headers --asterisk 24)
+cargo build --release
 ```
+
+The module is built as `target/release/libres_dpma_rs.so`; install it
+as in "Installation".  The module carries no build options checksum (as
+the original does not), so Asterisk loads it whatever its own build
+options; build it with the headers of the major version you run.
 
 Building with `--features devtest` adds `dpmadev ...` CLI commands that
 the test suites use (`cargo xtask test` builds it); never enable it in
 production builds.
+
+### Testing
+
+The crates' own tests run on the host; the suites run in the test
+container:
+
+```
+cargo test --workspace --exclude res_dpma_rs
+cargo xtask test                          # the default suites, newest Asterisk
+cargo xtask test --asterisk 22 all        # every suite against Asterisk 22
+cargo xtask ci --asterisk 23              # the CI job for Asterisk 23
+```
+
+### Releases
+
+CI runs `cargo xtask ci` for every pinned major version on x86_64 and
+aarch64; each job builds the module as it is published
+(`res_dpma_rs-asterisk<major>-<arch>.so`, a release build without
+devtest), checks its glibc baseline, and smoke-tests it in Asterisk.
+Pushing a tag `vX.Y.Z` that names the workspace version (`version` in
+`Cargo.toml`) publishes the GitHub Release of that tag with the six
+modules and `SHA256SUMS`, once every job has passed.

@@ -23,10 +23,9 @@
 //! }
 //! ```
 //!
-//! Instance management (start, stop, install, resetting the
-//! configuration) goes through the instance manager,
-//! [`crate::asterisk::Slot`], which [`Instance`] and [`AstTool`] wrap;
-//! the CLI goes through the control socket ([`Cli`]).
+//! The suites run inside the test container (`cargo xtask test`), against
+//! its Asterisk ([`Instance`]); the CLI goes through the control socket
+//! ([`Cli`]).
 
 mod check;
 mod cli;
@@ -42,6 +41,6 @@ pub use check::{contains_bytes, regex_capture, regex_search, Checker};
 pub use cli::{filter_verbose, Cli};
 pub use conf::{ConfBackup, ConfFile};
 pub use expect::{AmiCheck, ExchangeCheck};
-pub use instance::{AstTool, Instance};
+pub use instance::{Instance, AMI_PORT, DIR, ORIGINAL_MODULES, SCRATCH_CONF, SIP_PORT};
 pub use log::{Log, LogMark};
 pub use suite::{option_value, Ctx, Suite};

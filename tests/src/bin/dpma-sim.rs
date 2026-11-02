@@ -49,13 +49,10 @@ use dpma_tests::sim::{
 #[derive(Parser)]
 #[command(name = "dpma-sim", about = "Simulate a Digium phone against dpma-rs.")]
 struct Cli {
-    /// Instance slot: SIP port 15060+100*slot (default: $DPMA_SLOT).
-    #[arg(long)]
-    slot: Option<u32>,
     /// Asterisk address.
     #[arg(long, default_value = "127.0.0.1")]
     server: String,
-    /// Asterisk SIP port (overrides --slot).
+    /// Asterisk SIP port (default: the test instance's, 15060).
     #[arg(long)]
     sip_port: Option<u16>,
     /// The simulator's address (127.0.0.2: the loopback test path).
@@ -346,13 +343,7 @@ fn b(s: &OsString) -> &[u8] {
 }
 
 fn options(a: &Cli) -> Result<Options> {
-    let slot = a
-        .slot
-        .or_else(|| std::env::var("DPMA_SLOT").ok().and_then(|s| s.parse().ok()));
-    let mut o = match slot {
-        Some(s) => Options::for_slot(s),
-        None => Options::default(),
-    };
+    let mut o = Options::default();
     if let Some(p) = a.sip_port {
         o.sip_port = p;
     }

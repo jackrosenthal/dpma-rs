@@ -3,8 +3,13 @@
 //! Rust form of `tests/methods-vm/run.py`, `vm_uas.py`, and `setup.sh`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-24-src
-//! cargo build -p res_dpma_rs --features devtest
+//! cargo xtask test methods-vm methods-vm-phone
+//! ```
+//!
+//! runs it (`methods-vm-phone` with `--via phone`) in the test container
+//! after building the devtest module, as
+//!
+//! ```text
 //! cargo test -p dpma-tests --test methods-vm -- --ignored [--via hook|phone] [PART...]
 //! ```
 //!
@@ -15,7 +20,7 @@
 //! `--via phone` also the test PKI; then the debug build is installed and
 //! Asterisk restarted; `--no-prepare` skips this).  The instance's
 //! `pjsip.conf` must have the endpoint 1001 (auth 1001/secret1001), as
-//! instances made by `ast.sh init` do.
+//! the scratch configuration has.
 //!
 //! It leaves messages with the dialplan (Local channels into
 //! `VoiceMail()`), adds hand-made spool messages for unusual caller ids,

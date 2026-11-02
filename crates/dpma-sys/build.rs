@@ -2,7 +2,8 @@
 //!
 //! This is the one place that knows where the headers are and how to read
 //! them.  `ASTERISK_SOURCE_DIR` names a configured Asterisk source tree
-//! (22, 23, or 24) built with the bundled pjproject:
+//! (22, 23, or 24) built with the bundled pjproject, or a copy of its
+//! headers in the same layout:
 //!
 //! * `<ASTERISK_SOURCE_DIR>/include`: `asterisk.h` and the `asterisk/`
 //!   headers, with `autoconfig.h` (written by configure) and `buildopts.h`
@@ -14,8 +15,9 @@
 //!   `pjmedia/include`, and `pjsip/include` are used).  The defines are
 //!   those of `PJPROJECT_INCLUDE` in Asterisk's `makeopts`.
 //!
-//! `cargo xtask asterisk build <version>` prepares such a tree for the
-//! pinned releases.  The bindings follow the headers of the tree, so one
+//! `cargo xtask headers` copies such headers out of the test image of a
+//! pinned release (`/opt/asterisk-headers`, which is `ASTERISK_SOURCE_DIR`
+//! in the image).  The bindings follow the headers of the tree, so one
 //! source builds against every supported release.
 //!
 //! Only the functions, types, and constants that dpma-rs uses are
@@ -293,7 +295,6 @@ const VARS: &[&str] = &[
     "ast_config_AST_CONFIG_DIR",
     // string and numeric macros (ASTERISK_GPL_KEY: see `gpl_key`)
     "DPMA_SYS_GPL_KEY",
-    "AST_BUILDOPT_SUM",
     "AST_MAX_CMD_LEN",
     "PJSIP_MAX_URL_SIZE",
     "AST_PRES_RESTRICTION",

@@ -3,8 +3,14 @@
 //! `tests/methods-calls/run.py`, `phone.py`, and `setup.sh`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-24-src
-//! cargo build -p res_dpma_rs --features devtest
+//! cargo xtask test methods-calls methods-calls-phone methods-calls-http
+//! ```
+//!
+//! runs it (`methods-calls-phone` with `--via phone`, `methods-calls-http`
+//! with `--via http`) in the test container after building the devtest
+//! module, as
+//!
+//! ```text
 //! cargo test -p dpma-tests --test methods-calls -- --ignored [--via hook|phone|http] [PART...]
 //! ```
 //!
@@ -17,7 +23,7 @@
 //! `--via phone` or `--via http` also the test PKI; then the debug build is
 //! installed and Asterisk restarted; `--no-prepare` skips this).  The
 //! instance's `pjsip.conf` must have the endpoints 1001 (auth
-//! 1001/secret1001) and 1002, as instances made by `ast.sh init` do.
+//! 1001/secret1001) and 1002, as the scratch configuration has.
 //!
 //! The expected documents are the ones the original's
 //! `phone_method_internal_api.c` builds.  How the methods are called
