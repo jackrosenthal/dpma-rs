@@ -298,4 +298,4 @@ aarch64; each job builds the module as it is published
 devtest), checks its glibc baseline, and smoke-tests it in Asterisk.
 Pushing a tag `vX.Y.Z` that names the workspace version (`version` in
 `Cargo.toml`) publishes the GitHub Release of that tag with the six
-modules and `SHA256SUMS`, once every job has passed.
+modules, `SHA256SUMS`, and `LICENSE`, once every job has passed.
