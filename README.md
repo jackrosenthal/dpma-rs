@@ -36,22 +36,24 @@ You need:
   build reads the Asterisk and pjproject headers with `bindgen`, which
   uses it.  If it is not found, set `LIBCLANG_PATH` to the directory
   that holds `libclang.so`.
-- The Asterisk 24 development headers (`asterisk.h` and the `asterisk/`
-  directory).  Set `ASTERISK_INCLUDE_DIR` to the directory that holds
-  `asterisk.h`; the default is `/usr/include`.
-- The pjproject headers Asterisk was built with.  Set `PJPROJECT_DIR` to
-  either a pjproject source tree (for the pjproject bundled with
-  Asterisk, `third-party/pjproject/source` in the Asterisk source tree)
-  or a directory of installed pjproject headers (the one containing
-  `pjsip.h`).
+- The source tree of the Asterisk you build for (22, 23, or 24; the
+  same release and configuration as the installed Asterisk), configured
+  with the bundled pjproject (`./configure --with-pjproject-bundled`,
+  which downloads and configures pjproject in
+  `third-party/pjproject/source`) and with
+  `include/asterisk/buildopts.h` made (`make
+  include/asterisk/buildopts.h`, or a full `make`).  Set
+  `ASTERISK_SOURCE_DIR` to it; the build reads the Asterisk headers from
+  its `include/` and the pjproject headers from its bundled pjproject.
+  The module is built for that release (and Asterisk declines a module
+  whose build options, from `buildopts.h`, differ from its own).
 - The OpenSSL development files (headers and `pkg-config` data), for the
   `openssl` crate.
 
 Then:
 
 ```
-export ASTERISK_INCLUDE_DIR=/usr/include
-export PJPROJECT_DIR=/usr/src/asterisk-24/third-party/pjproject/source
+export ASTERISK_SOURCE_DIR=/usr/src/asterisk-24.0.0
 cargo build --release
 ```
 

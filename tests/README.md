@@ -42,14 +42,16 @@ script).
 ## Running them all
 
 ```
-export DPMA_SLOT=<n> ASTERISK_INCLUDE_DIR=$PWD/dev/asterisk-24/include CARGO_INCREMENTAL=0
+export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-24-src CARGO_INCREMENTAL=0
 dev/tools/ast.sh init <n>          # once
 cargo build && cargo build -p res_dpma_rs --features devtest
-cargo test -p dpma-proto -p dpma-bytes -p dpma-sys
+cargo test --workspace --exclude res_dpma_rs
 dev/tests/run-all.sh               # or: dev/tests/run-all.sh session methods-calls
 ```
 
-(For another Asterisk version, see "Asterisk versions" below.)
+(`dev/asterisk-24-src` is the configured source tree of
+`dev/asterisk-24`.  For another Asterisk version, see "Asterisk versions"
+below.)
 `run-all.sh` runs the suites in the order of the table (`ami-expiry`
 only when named, or with `run-all.sh all`), prints one line per suite
 (`ok` or `FAIL`), and keeps each suite's
@@ -84,26 +86,32 @@ an unversioned source checkout) stays the default for `ast.sh`.
 
 | Tool | Purpose |
 |---|---|
-| `dev/tools/asterisk-build.sh [-j N] [--install] <version>` | Downloads the pinned tarball into `dev/asterisk-builds/downloads/` (unless already there), checks its checksum, extracts and configures it in `dev/asterisk-builds/<release>/src` (with `dev/asterisk-24`'s configure options and BUILD_NATIVE off), and generates `buildopts.h`.  With `--install` it builds it (`make -jN`, N = the number of CPUs) and installs it into `dev/asterisk-builds/<release>/prefix`, with the samples and the scratch configuration of `dev/tools/asterisk-conf/` on top (as in `dev/asterisk-24`).  Steps already done are skipped.  `<version>` is a major version (`22`) or a release (`22.11.0`). |
+| `dev/tools/asterisk-build.sh [-j N] [--install] <version>` | Downloads the pinned tarball into `dev/asterisk-builds/downloads/` (unless already there), checks its checksum, extracts and configures it in `dev/asterisk-builds/<release>/src` (with `dev/asterisk-24`'s configure options and BUILD_NATIVE off), and generates `buildopts.h`: the tree is then ready for `ASTERISK_SOURCE_DIR`.  With `--install` it builds it (`make -jN`, N = the number of CPUs) and installs it into `dev/asterisk-builds/<release>/prefix`, with the samples and the scratch configuration of `dev/tools/asterisk-conf/` on top (as in `dev/asterisk-24`).  Steps already done are skipped.  `<version>` is a major version (`22`) or a release (`22.11.0`). |
 | `dev/tools/asterisk-build.sh info <version>` | Prints `major=`, `version=`, `sha256=`, `src=`, and `prefix=`. |
 | `dev/tools/ast.sh init <n> <version>` | Creates an instance of that version: it records the release in `dev/run/slot<n>/asterisk-version`, and every later `ast.sh` command on the instance (and so `run-all.sh`) uses that release's install.  `DPMA_AST_VERSION=<version>` does the same at `init`; on an existing instance it must agree with the recorded version.  Instances made without a version use `dev/asterisk-24`.  An instance cannot change versions: delete `dev/run/slot<n>` and run `init` again. |
 | `DPMA_SLOT=<n> dev/tools/ci-job.sh <version>` | The CI job for one version (below), run locally. |
 | `sudo dev/tools/ci-setup.sh` | Installs what the job needs on Ubuntu (Asterisk's build dependencies, libclang, Python with `cryptography`, and the suites' tools) and allows unprivileged user namespaces. |
 
-The module build takes the headers from the configured source tree:
+The module build takes the headers from the configured source tree
+(`ASTERISK_SOURCE_DIR`); bindgen generates the same bindings from the
+headers of all three pinned releases:
 
 ```
 dev/tools/asterisk-build.sh --install 22
 eval "$(dev/tools/asterisk-build.sh info 22)"
-export DPMA_SLOT=<n> CARGO_INCREMENTAL=0 ASTERISK_INCLUDE_DIR=$src/include
-export PJPROJECT_DIR=$src/third-party/pjproject/source
-cargo build && cargo build -p res_digium_phone --features devtest
+export DPMA_SLOT=<n> CARGO_INCREMENTAL=0 ASTERISK_SOURCE_DIR=$src
+cargo build && cargo build -p res_dpma_rs --features devtest
 rm -rf dev/run/slot<n> && dev/tools/ast.sh init <n> 22
 dev/tests/run-all.sh all
 ```
 
 Build against the same version as the instance: `ast.sh install`
 copies whatever `target/debug` holds.
+
+On 22.11.0 and 23.5.0, `pjsip-helpers` expects no dialog-info
+supplement: those releases leave the ringing channel out of the
+extension state data (Asterisk issue #2186, fixed in 22.12.0, 23.6.0,
+and 24.0.0), so the supplement finds none, as the original's would.
 
 ### CI
 
@@ -119,11 +127,12 @@ majors`); then one job per major version, on `ubuntu-24.04`:
    `dev/tools/asterisk-conf/`.  On a miss it runs
    `asterisk-build.sh --install <major>` and saves the cache right away,
    so a failing test run does not lose the build.
-3. `DPMA_SLOT=1 dev/tools/ci-job.sh <major>`: `cargo build`, both clippy
-   runs (`--all-targets`, and `-p res_digium_phone --features devtest`)
-   with warnings as errors, `cargo test` for the crates whose tests run
-   outside Asterisk (all but the three module crates, whose test
-   binaries cannot link without Asterisk), the devtest build, a fresh
+3. `DPMA_SLOT=1 dev/tools/ci-job.sh <major>`: `cargo build` with
+   `ASTERISK_SOURCE_DIR` set to the release's source tree, both clippy
+   runs (`--all-targets`, and `-p res_dpma_rs --features devtest`) with
+   warnings as errors, `cargo test` for the crates whose tests run
+   outside Asterisk (all but `res_dpma_rs`, whose test binary cannot
+   link without Asterisk), the devtest build, a fresh
    instance of the version, and `dev/tests/run-all.sh all` (every suite,
    `ami-expiry` included).
 4. Uploads the suites' logs (`$LOGDIR`) as an artifact.
