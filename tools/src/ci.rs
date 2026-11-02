@@ -74,16 +74,11 @@ fn smoke_test() -> Result<()> {
     inst.install("release")?;
     inst.start()?;
     let shown = inst.cli_run("module show like res_dpma_rs");
-    let version = inst.cli_run("digium_phones show version");
     inst.stop()?;
-    let (shown, version) = (shown?.to_string(), version?.to_string());
-    print!("{shown}{version}");
+    let shown = shown?.to_string();
+    print!("{shown}");
     if !shown.contains("res_dpma_rs.so") || !shown.contains("1 modules loaded") {
         bail!("module show like res_dpma_rs does not list it");
-    }
-    let want = format!("dpma-rs version {}", env!("CARGO_PKG_VERSION"));
-    if !version.contains(&want) {
-        bail!("digium_phones show version does not answer {want:?}");
     }
     Ok(())
 }

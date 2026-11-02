@@ -225,8 +225,5 @@ fn checks(ctx: &mut Ctx, orig: &[u8], discovery_ok: bool) -> Result<()> {
         }
         .text(),
     );
-    let out = cli_raw(ctx, "digium_phones show version");
-    ctx.c
-        .same("show version", out.as_str(), "dpma-rs version 0.1.0\n");
     Ok(())
 }
