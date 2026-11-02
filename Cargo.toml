@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 license = "GPL-2.0-or-later"
 edition = "2021"
 repository = "https://github.com/jackrosenthal/dpma-rs"
@@ -50,5 +50,5 @@ opt-level = 3
 opt-level = 3
 
 [profile.release]
-debug = 1
+strip = "debuginfo"
 panic = "unwind"
