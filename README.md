@@ -21,6 +21,10 @@ same name in the original distribution:
 | `res_pjsip_endpoint_identifier_dpma.so` | PJSIP support: matches the phones' messages to the module, fills phone lines from the PJSIP configuration, records where phones register, and sends SIP INFO messages to phones during calls. |
 | `res_pjsip_dialog_info_digium_body_supplement.so` | Adds the ringing caller's details to dialog-info (BLF) notifications sent to Digium and Sangoma phones. |
 
+## Supported Asterisk versions
+
+dpma-rs supports Asterisk 22, 23, and 24.
+
 ## Building
 
 You need:

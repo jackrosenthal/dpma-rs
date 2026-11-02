@@ -1,0 +1,87 @@
+# Build, lint, and test dpma-rs against every supported Asterisk version:
+# one job per major version pinned in dev/tools/asterisk-versions.  Each
+# job is a thin wrapper around dev/tools/ci-job.sh, which runs the same way
+# locally:
+#
+#   sudo dev/tools/ci-setup.sh                     # once, on Ubuntu
+#   DPMA_SLOT=<n> dev/tools/ci-job.sh <major>
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  versions:
+    name: Pinned Asterisk versions
+    runs-on: ubuntu-24.04
+    outputs:
+      majors: ${{ steps.pins.outputs.majors }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pins
+        run: echo "majors=$(dev/tools/asterisk-build.sh majors)" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Asterisk ${{ matrix.asterisk }}
+    needs: versions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        asterisk: ${{ fromJSON(needs.versions.outputs.majors) }}
+    env:
+      DPMA_SLOT: 1
+      LOGDIR: ${{ github.workspace }}/test-logs
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build dependencies, libclang, the suites' tools, and unprivileged
+      # user namespaces (apps-discovery's network namespace).
+      - name: Runner setup
+        run: sudo dev/tools/ci-setup.sh
+
+      - name: Rust 1.99
+        run: |
+          rustup toolchain install 1.99 --profile minimal --component clippy
+          rustup default 1.99
+
+      - name: Pinned release
+        id: pin
+        run: dev/tools/asterisk-build.sh info ${{ matrix.asterisk }} >> "$GITHUB_OUTPUT"
+
+      # The configured, built, and installed Asterisk (source tree and
+      # prefix), keyed by the release and its checksum.  It is saved right
+      # after the build, so a failing test run still caches it.
+      - name: Restore the Asterisk build
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: dev/asterisk-builds/${{ steps.pin.outputs.version }}
+          key: asterisk-${{ steps.pin.outputs.version }}-${{ steps.pin.outputs.sha256 }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dev/tools/asterisk-build.sh', 'dev/tools/asterisk-conf/*') }}
+
+      - name: Download, verify, configure, build, and install Asterisk ${{ steps.pin.outputs.version }}
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: dev/tools/asterisk-build.sh --install ${{ matrix.asterisk }}
+
+      - name: Save the Asterisk build
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: dev/asterisk-builds/${{ steps.pin.outputs.version }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      # cargo build, both clippy runs, cargo test, and dev/tests/run-all.sh
+      # with every suite (ami-expiry included).
+      - name: Build, lint, and test dpma-rs
+        run: dev/tools/ci-job.sh ${{ matrix.asterisk }}
+
+      - name: Upload the test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-asterisk-${{ matrix.asterisk }}
+          path: test-logs
+          if-no-files-found: ignore
