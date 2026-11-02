@@ -49,7 +49,12 @@ pub fn register_actions() {
     let mut all = messages::actions();
     all.extend(crate::session::ami::actions());
     all.extend(crate::auth::ami_actions());
-    all.sort_by_key(|a| ORDER.iter().position(|n| *n == a.name).unwrap_or(ORDER.len()));
+    all.sort_by_key(|a| {
+        ORDER
+            .iter()
+            .position(|n| *n == a.name)
+            .unwrap_or(ORDER.len())
+    });
     let mut reg = REGISTERED.lock().unwrap();
     for a in all {
         if manager::register(a.name, a.authority, "", "", a.handler) {

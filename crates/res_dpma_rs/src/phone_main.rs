@@ -118,7 +118,10 @@ pub fn start() -> Result<(), ()> {
             let _ = r.handle.join();
         }
     }
-    let control = Arc::new(Control { stop: Mutex::new(false), cond: Condvar::new() });
+    let control = Arc::new(Control {
+        stop: Mutex::new(false),
+        cond: Condvar::new(),
+    });
     let c = control.clone();
     let handle = std::thread::Builder::new()
         .name("phone_main".into())

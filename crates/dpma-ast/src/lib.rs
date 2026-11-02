@@ -46,8 +46,9 @@ pub use util::{cstr, from_ptr};
 /// Short names for the Asterisk types the wrappers hand around.
 pub mod types {
     pub use dpma_sys::{
-        ast_channel as AstChannel, ast_config as AstConfig, ast_db_entry as AstDbEntry, ast_module as AstModule,
-        ast_msg as AstMsg, ast_variable as AstVariable, mansession as Mansession, message as Message,
+        ast_channel as AstChannel, ast_config as AstConfig, ast_db_entry as AstDbEntry,
+        ast_module as AstModule, ast_msg as AstMsg, ast_variable as AstVariable,
+        mansession as Mansession, message as Message,
     };
 }
 
@@ -68,7 +69,9 @@ pub fn var_dir() -> Vec<u8> {
 /// The Asterisk configuration directory (normally /etc/asterisk).
 pub fn config_dir() -> Vec<u8> {
     // SAFETY: as in `var_dir`.
-    unsafe { from_ptr(std::ptr::addr_of!(sys::ast_config_AST_CONFIG_DIR).read()).unwrap_or_default() }
+    unsafe {
+        from_ptr(std::ptr::addr_of!(sys::ast_config_AST_CONFIG_DIR).read()).unwrap_or_default()
+    }
 }
 
 /// Run `f`, catching any panic so it can never unwind into C.

@@ -75,7 +75,11 @@ struct Entry {
 
 /// The handler of every entry (`char *(*handler)(struct ast_cli_entry *e,
 /// int cmd, struct ast_cli_args *a)`).
-unsafe extern "C" fn handler(e: *mut sys::ast_cli_entry, cmd: c_int, a: *mut sys::ast_cli_args) -> *mut c_char {
+unsafe extern "C" fn handler(
+    e: *mut sys::ast_cli_entry,
+    cmd: c_int,
+    a: *mut sys::ast_cli_args,
+) -> *mut c_char {
     // SAFETY: every entry registered with this handler is the first field
     // of an `Entry` that lives until it is unregistered.
     let entry = &*(e as *const Entry);
@@ -107,7 +111,9 @@ unsafe extern "C" fn handler(e: *mut sys::ast_cli_entry, cmd: c_int, a: *mut sys
     }
     let exec = entry.exec;
     crate::guard(CLI_FAILURE, || {
-        let argv = (0..a.argc.max(0) as usize).map(|i| from_ptr(*a.argv.add(i)).unwrap_or_default()).collect();
+        let argv = (0..a.argc.max(0) as usize)
+            .map(|i| from_ptr(*a.argv.add(i)).unwrap_or_default())
+            .collect();
         match exec(&CliArgs { fd: a.fd, argv }) {
             CliResult::Success => CLI_SUCCESS,
             CliResult::ShowUsage => CLI_SHOWUSAGE,
@@ -152,7 +158,8 @@ impl CliGroup {
             e.raw.handler = Some(handler);
             // SAFETY: the entry stays at this address (the slice is never
             // moved or resized) until `drop` unregisters it.
-            failed |= unsafe { sys::__ast_cli_register(&mut e.raw, crate::module::self_ptr()) } != 0;
+            failed |=
+                unsafe { sys::__ast_cli_register(&mut e.raw, crate::module::self_ptr()) } != 0;
         }
         if failed {
             crate::ast_log!(crate::log::LOG_ERROR, "Unable to register CLI commands");
@@ -172,7 +179,10 @@ impl Drop for CliGroup {
 
 /// Standard completion over a list of candidate names: returns the n-th name
 /// that starts with `word` (`strncasecmp`).
-pub fn complete_from<I: IntoIterator<Item = Vec<u8>>>(args: &CompleteArgs, names: I) -> Option<Vec<u8>> {
+pub fn complete_from<I: IntoIterator<Item = Vec<u8>>>(
+    args: &CompleteArgs,
+    names: I,
+) -> Option<Vec<u8>> {
     names
         .into_iter()
         .filter(|n| starts_with_ic(n, &args.word))

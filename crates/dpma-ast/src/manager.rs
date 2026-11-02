@@ -19,7 +19,9 @@ impl Request {
     pub fn header(&self, name: &str) -> Vec<u8> {
         let c = cstr(name);
         // SAFETY: the request is valid while its action runs.
-        unsafe { from_ptr(sys::astman_get_header(self.m, c.as_ptr() as *mut c_char)).unwrap_or_default() }
+        unsafe {
+            from_ptr(sys::astman_get_header(self.m, c.as_ptr() as *mut c_char)).unwrap_or_default()
+        }
     }
 
     /// `astman_append(s, "%s", text)` (up to a NUL).
@@ -32,7 +34,14 @@ impl Request {
     pub fn send_ack(&self, msg: Option<&[u8]>) {
         let c = msg.map(cstr);
         // SAFETY: as above.
-        unsafe { sys::astman_send_ack(self.s, self.m, c.as_ref().map_or(std::ptr::null_mut(), |c| c.as_ptr() as *mut c_char)) };
+        unsafe {
+            sys::astman_send_ack(
+                self.s,
+                self.m,
+                c.as_ref()
+                    .map_or(std::ptr::null_mut(), |c| c.as_ptr() as *mut c_char),
+            )
+        };
     }
 
     pub fn send_error(&self, msg: impl AsRef<[u8]>) {
@@ -45,7 +54,14 @@ impl Request {
         let c = cstr(msg);
         let l = cstr(listflag);
         // SAFETY: as above.
-        unsafe { sys::astman_send_listack(self.s, self.m, c.as_ptr() as *mut c_char, l.as_ptr() as *mut c_char) };
+        unsafe {
+            sys::astman_send_listack(
+                self.s,
+                self.m,
+                c.as_ptr() as *mut c_char,
+                l.as_ptr() as *mut c_char,
+            )
+        };
     }
 }
 
@@ -69,8 +85,17 @@ pub const AUTH_REPORTING: i32 = sys::EVENT_FLAG_REPORTING as i32;
 pub const AUTH_MESSAGE: i32 = sys::EVENT_FLAG_MESSAGE as i32;
 
 /// Register a manager action (`ast_manager_register2`, for this module).
-pub fn register(action: &str, authority: i32, synopsis: &str, description: &str, f: ActionFn) -> bool {
-    actions().lock().unwrap().insert(action.as_bytes().to_ascii_lowercase(), f);
+pub fn register(
+    action: &str,
+    authority: i32,
+    synopsis: &str,
+    description: &str,
+    f: ActionFn,
+) -> bool {
+    actions()
+        .lock()
+        .unwrap()
+        .insert(action.as_bytes().to_ascii_lowercase(), f);
     // ast_manager_register2() keeps the action name pointer.
     let a = crate::util::intern(action);
     let s = cstr(synopsis);
@@ -78,8 +103,14 @@ pub fn register(action: &str, authority: i32, synopsis: &str, description: &str,
     // SAFETY: the name lives as long as the module; the synopsis and
     // description are copied.
     unsafe {
-        sys::ast_manager_register2(a.as_ptr(), authority, Some(action_handler), crate::module::self_ptr(), s.as_ptr(), d.as_ptr())
-            == 0
+        sys::ast_manager_register2(
+            a.as_ptr(),
+            authority,
+            Some(action_handler),
+            crate::module::self_ptr(),
+            s.as_ptr(),
+            d.as_ptr(),
+        ) == 0
     }
 }
 
@@ -87,7 +118,10 @@ pub fn unregister(action: &str) {
     let a = cstr(action);
     // SAFETY: a valid C string.
     unsafe { sys::ast_manager_unregister(a.as_ptr()) };
-    actions().lock().unwrap().remove(&action.as_bytes().to_ascii_lowercase());
+    actions()
+        .lock()
+        .unwrap()
+        .remove(&action.as_bytes().to_ascii_lowercase());
 }
 
 /// The handler of every action this module registers; it dispatches on
@@ -110,7 +144,14 @@ unsafe extern "C" fn action_handler(s: *mut Mansession, m: *const Message) -> c_
 /// Raise a manager event that names `file`, `line`, and `func` as its
 /// origin (the `File`, `Line`, and `Func` headers shown with `manager set
 /// debug on`), as the official DPMA's `manager_event` calls do.
-pub fn event_at(category: i32, event: &str, file: &str, line: u32, func: &str, body: impl AsRef<[u8]>) {
+pub fn event_at(
+    category: i32,
+    event: &str,
+    file: &str,
+    line: u32,
+    func: &str,
+    body: impl AsRef<[u8]>,
+) {
     let e = cstr(event);
     let f = cstr(file);
     let fu = cstr(func);
@@ -137,7 +178,11 @@ thread_local! {
 }
 
 /// The custom hook's helper: collect the response text.
-unsafe extern "C" fn hook_collect(_category: c_int, _event: *const c_char, content: *mut c_char) -> c_int {
+unsafe extern "C" fn hook_collect(
+    _category: c_int,
+    _event: *const c_char,
+    content: *mut c_char,
+) -> c_int {
     crate::guard(0, || {
         // SAFETY: Asterisk passes the response text as a C string.
         let text = crate::util::bytes_or_empty(content);

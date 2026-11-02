@@ -9,7 +9,10 @@
 use dpma_proto::{cert, crypto, errors, framing};
 use serde_json::{json, Value};
 
-const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/proto_vectors.json");
+const FIXTURE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/proto_vectors.json"
+);
 
 /// A 40-byte printable password (the KDF vector was also computed with
 /// Python's hashlib).
@@ -20,8 +23,11 @@ fn pass_binary() -> Vec<u8> {
 }
 
 fn text(n: usize) -> String {
-    const ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ<>&\"' ";
-    (0..n).map(|i| ALPHABET[i % ALPHABET.len()] as char).collect()
+    const ALPHABET: &[u8] =
+        b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ<>&\"' ";
+    (0..n)
+        .map(|i| ALPHABET[i % ALPHABET.len()] as char)
+        .collect()
 }
 
 fn h(b: &[u8]) -> String {
@@ -53,18 +59,47 @@ fn split_inputs() -> Vec<(usize, &'static str, usize, bool)> {
         (0, p, framing::UDP_ENCRYPTED_LIMIT, false),
         (10, "", framing::UDP_PLAIN_LIMIT, true),
         (framing::UDP_PLAIN_LIMIT, "", framing::UDP_PLAIN_LIMIT, true),
-        (framing::UDP_PLAIN_LIMIT + 1, "", framing::UDP_PLAIN_LIMIT, true),
-        (framing::UDP_ENCRYPTED_LIMIT - p.len(), p, framing::UDP_ENCRYPTED_LIMIT, false),
-        (framing::UDP_ENCRYPTED_LIMIT - p.len() + 1, p, framing::UDP_ENCRYPTED_LIMIT, false),
-        (framing::UDP_ENCRYPTED_LIMIT, "", framing::UDP_ENCRYPTED_LIMIT, false),
-        (2 * framing::UDP_ENCRYPTED_LIMIT + 1, "", framing::UDP_ENCRYPTED_LIMIT, false),
+        (
+            framing::UDP_PLAIN_LIMIT + 1,
+            "",
+            framing::UDP_PLAIN_LIMIT,
+            true,
+        ),
+        (
+            framing::UDP_ENCRYPTED_LIMIT - p.len(),
+            p,
+            framing::UDP_ENCRYPTED_LIMIT,
+            false,
+        ),
+        (
+            framing::UDP_ENCRYPTED_LIMIT - p.len() + 1,
+            p,
+            framing::UDP_ENCRYPTED_LIMIT,
+            false,
+        ),
+        (
+            framing::UDP_ENCRYPTED_LIMIT,
+            "",
+            framing::UDP_ENCRYPTED_LIMIT,
+            false,
+        ),
+        (
+            2 * framing::UDP_ENCRYPTED_LIMIT + 1,
+            "",
+            framing::UDP_ENCRYPTED_LIMIT,
+            false,
+        ),
         (2 * framing::TCP_LIMIT + 1, "", framing::TCP_LIMIT, false),
         (framing::TCP_LIMIT, p, framing::TCP_LIMIT, false),
     ]
 }
 
 fn build() -> Value {
-    let salts: [[u8; 8]; 3] = [[1, 2, 3, 4, 5, 6, 7, 8], [0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22, 0x33], [0xff; 8]];
+    let salts: [[u8; 8]; 3] = [
+        [1, 2, 3, 4, 5, 6, 7, 8],
+        [0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22, 0x33],
+        [0xff; 8],
+    ];
     let passwords = [PASS_TEXT.to_vec(), pass_binary()];
 
     let mut kdf = Vec::new();
@@ -77,7 +112,13 @@ fn build() -> Value {
 
     let mut fields = Vec::new();
     let long = text(100);
-    for (plain, pi, si) in [("", 0, 1), ("1234", 1, 1), ("Hello, phone!", 0, 0), ("exactly 16 bytes", 1, 0), (long.as_str(), 0, 2)] {
+    for (plain, pi, si) in [
+        ("", 0, 1),
+        ("1234", 1, 1),
+        ("Hello, phone!", 0, 0),
+        ("exactly 16 bytes", 1, 0),
+        (long.as_str(), 0, 2),
+    ] {
         let p = &passwords[pi];
         let sl = &salts[si];
         fields.push(json!({
@@ -86,21 +127,37 @@ fn build() -> Value {
         }));
     }
 
-    let salt_hex: Vec<Value> = ["0123456789ABCDEF", "0123456789abcdef", "aBcD", "A", "123", "", "0123456789ABCDEF0", "12G4"]
-        .iter()
-        .map(|x| match crypto::salt_from_hex(x) {
-            Ok(b) => json!({"hex": x, "bytes_hex": h(&b)}),
-            Err(_) => json!({"hex": x, "error": true}),
-        })
-        .collect();
+    let salt_hex: Vec<Value> = [
+        "0123456789ABCDEF",
+        "0123456789abcdef",
+        "aBcD",
+        "A",
+        "123",
+        "",
+        "0123456789ABCDEF0",
+        "12G4",
+    ]
+    .iter()
+    .map(|x| match crypto::salt_from_hex(x) {
+        Ok(b) => json!({"hex": x, "bytes_hex": h(&b)}),
+        Err(_) => json!({"hex": x, "error": true}),
+    })
+    .collect();
 
-    let b64: Vec<Value> = [("Zm9vYmFy", None), ("Zg==Zm9v", None), ("Zm9v\nYmFy", None), ("Zm9v YmFy", None), ("Zm9", None), ("Zm9vYmFy", Some(4usize))]
-        .iter()
-        .map(|(t, max)| {
-            let out = crypto::base64_decode_max(t, max.unwrap_or(usize::MAX));
-            json!({"text": t, "max": max, "bytes_hex": h(&out)})
-        })
-        .collect();
+    let b64: Vec<Value> = [
+        ("Zm9vYmFy", None),
+        ("Zg==Zm9v", None),
+        ("Zm9v\nYmFy", None),
+        ("Zm9v YmFy", None),
+        ("Zm9", None),
+        ("Zm9vYmFy", Some(4usize)),
+    ]
+    .iter()
+    .map(|(t, max)| {
+        let out = crypto::base64_decode_max(t, max.unwrap_or(usize::MAX));
+        json!({"text": t, "max": max, "bytes_hex": h(&out)})
+    })
+    .collect();
 
     let split: Vec<Value> = split_inputs()
         .into_iter()
@@ -112,9 +169,13 @@ fn build() -> Value {
         .collect();
 
     let mut outgoing = Vec::new();
-    for (i, (n, prefix, limit)) in [(30, framing::COMMAND_PREFIX, framing::UDP_ENCRYPTED_LIMIT), (1000, "", framing::UDP_ENCRYPTED_LIMIT), (2000, "", framing::TCP_LIMIT)]
-        .into_iter()
-        .enumerate()
+    for (i, (n, prefix, limit)) in [
+        (30, framing::COMMAND_PREFIX, framing::UDP_ENCRYPTED_LIMIT),
+        (1000, "", framing::UDP_ENCRYPTED_LIMIT),
+        (2000, "", framing::TCP_LIMIT),
+    ]
+    .into_iter()
+    .enumerate()
     {
         let body = text(n);
         let p = &passwords[i % 2];
@@ -126,8 +187,10 @@ fn build() -> Value {
             .zip(&b64)
             .map(|(c, b)| json!({"sequence": c.sequence, "finished": c.finished, "b64": b}))
             .collect();
-        outgoing.push(json!({"password_hex": h(p), "salt_hex": crypto::salt_to_hex(sl), "body": body,
-                             "prefix": prefix, "limit": limit, "chunks": wire}));
+        outgoing.push(
+            json!({"password_hex": h(p), "salt_hex": crypto::salt_to_hex(sl), "body": body,
+                             "prefix": prefix, "limit": limit, "chunks": wire}),
+        );
     }
 
     let body = text(700);
@@ -138,7 +201,10 @@ fn build() -> Value {
     use rsa::pkcs8::EncodePrivateKey;
     use rsa::traits::PublicKeyParts;
     let key = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), 1024).unwrap();
-    let public = cert::PublicKey::Rsa(cert::RsaKey::from_be_bytes(&key.n().to_bytes_be(), &key.e().to_bytes_be()));
+    let public = cert::PublicKey::Rsa(cert::RsaKey::from_be_bytes(
+        &key.n().to_bytes_be(),
+        &key.e().to_bytes_be(),
+    ));
     let common = pass_binary();
     let rsa = json!({
         "private_key_pem": key.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF).unwrap().to_string(),
@@ -178,7 +244,10 @@ fn verify_fixture() {
     let v: Value = serde_json::from_str(&std::fs::read_to_string(FIXTURE).unwrap()).unwrap();
 
     for c in v["kdf"].as_array().unwrap() {
-        let (k, iv) = crypto::derive_key_iv(&unh(&c["password_hex"]), &crypto::salt_from_hex(s(&c["salt_hex"])).unwrap());
+        let (k, iv) = crypto::derive_key_iv(
+            &unh(&c["password_hex"]),
+            &crypto::salt_from_hex(s(&c["salt_hex"])).unwrap(),
+        );
         assert_eq!(h(&k), s(&c["key_hex"]));
         assert_eq!(h(&iv), s(&c["iv_hex"]));
     }
@@ -192,10 +261,20 @@ fn verify_fixture() {
     for c in v["encrypt_field"].as_array().unwrap() {
         let p = unh(&c["password_hex"]);
         let sl = crypto::salt_from_hex(s(&c["salt_hex"])).unwrap();
-        assert_eq!(crypto::encrypt_field(&p, &sl, s(&c["plain"]).as_bytes()).unwrap(), s(&c["b64"]));
-        assert_eq!(crypto::decrypt_field(&p, s(&c["salt_hex"]), s(&c["b64"])).unwrap(), s(&c["plain"]).as_bytes());
+        assert_eq!(
+            crypto::encrypt_field(&p, &sl, s(&c["plain"]).as_bytes()).unwrap(),
+            s(&c["b64"])
+        );
+        assert_eq!(
+            crypto::decrypt_field(&p, s(&c["salt_hex"]), s(&c["b64"])).unwrap(),
+            s(&c["plain"]).as_bytes()
+        );
     }
-    assert!(v["encrypt_field"].as_array().unwrap().iter().any(|c| c["b64"] == "GS9WsQejwMVM/QGEVE8Ijw=="));
+    assert!(v["encrypt_field"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|c| c["b64"] == "GS9WsQejwMVM/QGEVE8Ijw=="));
 
     for c in v["salt_from_hex"].as_array().unwrap() {
         match crypto::salt_from_hex(s(&c["hex"])) {
@@ -206,7 +285,10 @@ fn verify_fixture() {
 
     for c in v["base64_decode"].as_array().unwrap() {
         let max = c["max"].as_u64().map(|m| m as usize).unwrap_or(usize::MAX);
-        assert_eq!(h(&crypto::base64_decode_max(s(&c["text"]), max)), s(&c["bytes_hex"]));
+        assert_eq!(
+            h(&crypto::base64_decode_max(s(&c["text"]), max)),
+            s(&c["bytes_hex"])
+        );
     }
 
     for c in v["split"].as_array().unwrap() {
@@ -222,7 +304,12 @@ fn verify_fixture() {
     for c in v["outgoing_encrypted"].as_array().unwrap() {
         let p = unh(&c["password_hex"]);
         let sl = crypto::salt_from_hex(s(&c["salt_hex"])).unwrap();
-        let chunks = framing::split(s(&c["body"]).as_bytes(), s(&c["prefix"]), c["limit"].as_u64().unwrap() as usize, false);
+        let chunks = framing::split(
+            s(&c["body"]).as_bytes(),
+            s(&c["prefix"]),
+            c["limit"].as_u64().unwrap() as usize,
+            false,
+        );
         let b64 = framing::encrypt_chunks(&chunks, &p, &sl).unwrap();
         let wire = c["chunks"].as_array().unwrap();
         assert_eq!(wire.len(), chunks.len());
@@ -242,15 +329,28 @@ fn verify_fixture() {
         let mut r = framing::Reassembly::new();
         let parts = c["parts"].as_array().unwrap();
         for (i, part) in parts.iter().enumerate() {
-            r.add(Some(i.to_string().as_bytes()), i + 1 == parts.len(), s(part).into());
+            r.add(
+                Some(i.to_string().as_bytes()),
+                i + 1 == parts.len(),
+                s(part).into(),
+            );
         }
         assert!(r.is_complete());
-        assert_eq!(crypto::decrypt_body(&p, s(&c["salt_hex"]), r.body()).unwrap(), s(&c["body"]).as_bytes());
+        assert_eq!(
+            crypto::decrypt_body(&p, s(&c["salt_hex"]), r.body()).unwrap(),
+            s(&c["body"]).as_bytes()
+        );
     }
 
     let rsa = &v["rsa_common_password"];
-    let key = <rsa::RsaPrivateKey as rsa::pkcs8::DecodePrivateKey>::from_pkcs8_pem(s(&rsa["private_key_pem"])).unwrap();
-    assert_eq!(h(&crypto::decrypt_common_password(&key, s(&rsa["password_b64"])).unwrap()), s(&rsa["common_password_hex"]));
+    let key = <rsa::RsaPrivateKey as rsa::pkcs8::DecodePrivateKey>::from_pkcs8_pem(s(
+        &rsa["private_key_pem"]
+    ))
+    .unwrap();
+    assert_eq!(
+        h(&crypto::decrypt_common_password(&key, s(&rsa["password_b64"])).unwrap()),
+        s(&rsa["common_password_hex"])
+    );
 
     for c in v["error_bodies"].as_array().unwrap() {
         let code = c["code"].as_i64().unwrap() as i32;

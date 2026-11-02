@@ -80,7 +80,12 @@ pub struct QueuedMsg {
 }
 
 impl QueuedMsg {
-    pub fn new(request_id: &[u8], method: &[u8], session_id: &[u8], outgoing: Option<Outgoing>) -> QueuedMsg {
+    pub fn new(
+        request_id: &[u8],
+        method: &[u8],
+        session_id: &[u8],
+        outgoing: Option<Outgoing>,
+    ) -> QueuedMsg {
         static NEXT: AtomicUsize = AtomicUsize::new(1);
         QueuedMsg {
             request_id: request_id.to_vec(),
@@ -198,7 +203,9 @@ pub fn queue_link(msg: QueuedMsg) -> Result<(), ()> {
 pub fn queue_unlink(request_id: &[u8]) -> Option<QueuedMsg> {
     let mut g = queue();
     let q = g.as_mut()?;
-    let i = q.iter().position(|m| m.request_id.eq_ignore_ascii_case(request_id))?;
+    let i = q
+        .iter()
+        .position(|m| m.request_id.eq_ignore_ascii_case(request_id))?;
     Some(q.remove(i))
 }
 
@@ -227,7 +234,13 @@ pub fn raise_event(request_id: &[u8], method: &[u8], format: &str, params: &[u8]
         "phone_request.c",
         0x192,
         "__handle_request_ami",
-        bformat!("RequestID: {}\r\nMethod: {}\r\nFormat: {}\r\nParameters: {}\r\n", request_id, method, format, params),
+        bformat!(
+            "RequestID: {}\r\nMethod: {}\r\nFormat: {}\r\nParameters: {}\r\n",
+            request_id,
+            method,
+            format,
+            params
+        ),
     );
 }
 
@@ -238,7 +251,11 @@ pub fn raise_event(request_id: &[u8], method: &[u8], format: &str, params: &[u8]
 /// the transaction for the handler to send (`send_and_destroy`), as the
 /// official DPMA does when the expiry cannot be scheduled.
 pub fn queue_request(tx: &Arc<Transaction>, method: &[u8]) -> Result<(), ()> {
-    let session_id = tx.session.as_ref().map(|s| s.id.clone()).unwrap_or_default();
+    let session_id = tx
+        .session
+        .as_ref()
+        .map(|s| s.id.clone())
+        .unwrap_or_default();
     let outgoing = tx.outgoing.lock().unwrap_or_else(|e| e.into_inner()).take();
     let mut msg = QueuedMsg::new(&tx.key, method, &session_id, outgoing);
     if schedule_expiry(&mut msg).is_ok() {
@@ -296,7 +313,10 @@ fn action_message_send(r: &Request) -> i32 {
     let phone = r.header("PhoneName");
     let idtext = action_id_text(r);
     // phone_user_find: no phone for an empty name.
-    let found = !phone.is_empty() && crate::users::read().as_ref().is_some_and(|reg| reg.phones.contains(&phone));
+    let found = !phone.is_empty()
+        && crate::users::read()
+            .as_ref()
+            .is_some_and(|reg| reg.phones.contains(&phone));
     let ok = if !found {
         dpma_log!("Phone '{}' could not be found.", phone);
         false
@@ -325,7 +345,13 @@ fn action_message_register(r: &Request) -> i32 {
 /// neither `Response` nor both `ErrorNum` and `ErrorMsg`, or with text
 /// jansson refuses (invalid UTF-8).  Any `Format` other than JSON and XML
 /// (ignoring case) gives an empty document.
-fn response_document(method: &[u8], format: &[u8], response: &[u8], num: &[u8], msg: &[u8]) -> Result<Vec<u8>, ()> {
+fn response_document(
+    method: &[u8],
+    format: &[u8],
+    response: &[u8],
+    num: &[u8],
+    msg: &[u8],
+) -> Result<Vec<u8>, ()> {
     let has_error = !num.is_empty() && !msg.is_empty();
     if format.eq_ignore_ascii_case(b"JSON") {
         let method = std::str::from_utf8(method).map_err(|_| ())?;
@@ -363,14 +389,23 @@ fn response_document(method: &[u8], format: &[u8], response: &[u8], num: &[u8], 
 }
 
 /// Complete and send the queued request `request_id`.
-fn respond(request_id: &[u8], format: &[u8], response: &[u8], num: &[u8], msg: &[u8]) -> Result<(), ()> {
+fn respond(
+    request_id: &[u8],
+    format: &[u8],
+    response: &[u8],
+    num: &[u8],
+    msg: &[u8],
+) -> Result<(), ()> {
     if request_id.is_empty() {
         return Err(());
     }
     let (mut queued, document) = {
         let mut g = queue();
         let q = g.as_mut().ok_or(())?;
-        let i = q.iter().position(|m| m.request_id.eq_ignore_ascii_case(request_id)).ok_or(())?;
+        let i = q
+            .iter()
+            .position(|m| m.request_id.eq_ignore_ascii_case(request_id))
+            .ok_or(())?;
         let document = response_document(&q[i].method, format, response, num, msg)?;
         (q.remove(i), document)
     };
@@ -401,9 +436,21 @@ fn action_message_response(r: &Request) -> i32 {
 /// "call", as FUN_00175750 registers them).
 pub fn actions() -> Vec<AmiAction> {
     vec![
-        AmiAction { name: "DPMAMessageRegister", authority: manager::AUTH_CALL, handler: action_message_register },
-        AmiAction { name: "DPMAMessageResponse", authority: manager::AUTH_CALL, handler: action_message_response },
-        AmiAction { name: "DPMAMessageSend", authority: manager::AUTH_CALL, handler: action_message_send },
+        AmiAction {
+            name: "DPMAMessageRegister",
+            authority: manager::AUTH_CALL,
+            handler: action_message_register,
+        },
+        AmiAction {
+            name: "DPMAMessageResponse",
+            authority: manager::AUTH_CALL,
+            handler: action_message_response,
+        },
+        AmiAction {
+            name: "DPMAMessageSend",
+            authority: manager::AUTH_CALL,
+            handler: action_message_send,
+        },
     ]
 }
 
@@ -460,7 +507,10 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             }
         };
         EXPIRY_OVERRIDE_MS.store(ms, Ordering::Relaxed);
-        a.out(bformat!("New AMI requests expire after {} ms\n", expiry_ms()));
+        a.out(bformat!(
+            "New AMI requests expire after {} ms\n",
+            expiry_ms()
+        ));
         CliResult::Success
     }
 
@@ -470,7 +520,11 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         if a.argc() != 3 {
             return CliResult::ShowUsage;
         }
-        let n = SCHED.read().unwrap_or_else(|e| e.into_inner()).as_ref().map(|c| c.runq());
+        let n = SCHED
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|c| c.runq());
         match n {
             Some(n) => a.out(bformat!("{} scheduled entries ran\n", n)),
             None => a.out("No scheduler context\n"),
@@ -503,7 +557,15 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         out.response_type = "AsteriskResponse".into();
         out.append_str(HTTP_PREAMBLE);
         let tx = Arc::new(Transaction {
-            key: bformat!("{}-{}", id, if mac.is_empty() { &b"unknown"[..] } else { mac.as_slice() }),
+            key: bformat!(
+                "{}-{}",
+                id,
+                if mac.is_empty() {
+                    &b"unknown"[..]
+                } else {
+                    mac.as_slice()
+                }
+            ),
             app_server_id: id.clone(),
             request_type: "AsteriskRequest".into(),
             response_uri: uri.clone(),
@@ -512,7 +574,12 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             outgoing: Mutex::new(Some(out)),
             ..Default::default()
         });
-        raise_event(&tx.key, method, &String::from_utf8_lossy(format).to_ascii_uppercase(), &params);
+        raise_event(
+            &tx.key,
+            method,
+            &String::from_utf8_lossy(format).to_ascii_uppercase(),
+            &params,
+        );
         match queue_request(&tx, method) {
             Ok(()) => a.out(bformat!("Queued {}\n", tx.key)),
             Err(()) => {

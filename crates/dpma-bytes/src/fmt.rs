@@ -135,7 +135,8 @@ impl fmt::Write for Sink<'_> {
             if u >= ESC_BASE {
                 self.0.push((u - ESC_BASE) as u8);
             } else {
-                self.0.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
+                self.0
+                    .extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
             }
         }
         Ok(())
@@ -309,12 +310,21 @@ mod tests {
         let v: Vec<u8> = b"Jos\xe9".to_vec();
         let s: &[u8] = b"\xff\xfe";
         let a = [0x80u8, b'x'];
-        assert_eq!(bformat!("{}|{}|{}|{}", v, s, a, &v), b"Jos\xe9|\xff\xfe|\x80x|Jos\xe9");
+        assert_eq!(
+            bformat!("{}|{}|{}|{}", v, s, a, &v),
+            b"Jos\xe9|\xff\xfe|\x80x|Jos\xe9"
+        );
         let c: Cow<[u8]> = Cow::Borrowed(b"\xe9");
         assert_eq!(bformat!("<{}>", c), b"<\xe9>");
-        assert_eq!(bformat!("{} {} {}", "str", String::from("s"), 42), b"str s 42");
+        assert_eq!(
+            bformat!("{} {} {}", "str", String::from("s"), 42),
+            b"str s 42"
+        );
         let t = "\u{10FF41}é";
-        assert_eq!(bformat!("{}|{}|{:<4}|", t, t.to_string(), "é"), "\u{10FF41}é|\u{10FF41}é|é  |".as_bytes());
+        assert_eq!(
+            bformat!("{}|{}|{:<4}|", t, t.to_string(), "é"),
+            "\u{10FF41}é|\u{10FF41}é|é  |".as_bytes()
+        );
         assert_eq!(bformat!("plain"), b"plain");
         let n = 5;
         assert_eq!(bformat!("{n}:{:02x}:{:>3}", 10, 7), b"5:0a:  7");
@@ -326,7 +336,10 @@ mod tests {
         let v = "a\u{10FF41}b\u{10FFFF}é".as_bytes().to_vec();
         assert_eq!(bformat!("{}", v), v);
         let mixed = b"\xc3\xa9\xc3\x28\xf4\x8f\xbd".to_vec();
-        assert_eq!(bformat!("[{}]", mixed), [b"[".as_slice(), &mixed, b"]"].concat());
+        assert_eq!(
+            bformat!("[{}]", mixed),
+            [b"[".as_slice(), &mixed, b"]"].concat()
+        );
     }
 
     #[test]

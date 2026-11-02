@@ -67,7 +67,9 @@ pub fn request_error_text(code: i32) -> &'static str {
         request::PHONE_EVENT_APP_FAILED => "Call to phone event application failed to complete",
         request::PHONEBOOK_ENTRY_EXISTS => "Phonebook entry already exists",
         request::NOT_PERMITTED => "Your account is not permitted to run this action",
-        request::PRESENCE_ACCOUNT_MISMATCH => "The account id does not match the owners presence option",
+        request::PRESENCE_ACCOUNT_MISMATCH => {
+            "The account id does not match the owners presence option"
+        }
         request::INVALID_PHONEBOOK_ID => "Invalid phonebook_id",
         request::INVALID_MAILBOX_FOLDER => "Invalid mailbox folder",
         request::INVALID_PRESENCE => "Invalid presence",
@@ -114,7 +116,10 @@ mod tests {
             (0x271c, "Call to phone event application failed to complete"),
             (0x3d48, "Phonebook entry already exists"),
             (0x6a20, "Your account is not permitted to run this action"),
-            (0xa41d, "The account id does not match the owners presence option"),
+            (
+                0xa41d,
+                "The account id does not match the owners presence option",
+            ),
             (0xc7c5, "Invalid phonebook_id"),
             (0xfa7d, "Invalid mailbox folder"),
             (0x15fb7, "Invalid presence"),

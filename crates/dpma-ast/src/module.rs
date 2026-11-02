@@ -16,7 +16,6 @@ pub type ModuleInfo = CStatic<sys::ast_module_info>;
 /// The module's info, set by the constructor `asterisk_module!` emits.
 static INFO: AtomicPtr<sys::ast_module_info> = AtomicPtr::new(std::ptr::null_mut());
 
-
 /// The constructor's work (`__reg_module`): remember `info` and register
 /// it with the loader (`ast_module_register`), which is loading this
 /// module's image right now.
@@ -95,7 +94,12 @@ fn reopen() {
         if libc::dlopen(info.dli_fname, libc::RTLD_LAZY | libc::RTLD_NOLOAD).is_null() {
             let err = crate::util::from_ptr(libc::dlerror()).unwrap_or_default();
             let name = crate::util::from_ptr(info.dli_fname).unwrap_or_default();
-            crate::ast_log!(crate::log::LOG_WARNING, "Unable to reference {}: {}", name, err);
+            crate::ast_log!(
+                crate::log::LOG_WARNING,
+                "Unable to reference {}: {}",
+                name,
+                err
+            );
         }
     }
 }

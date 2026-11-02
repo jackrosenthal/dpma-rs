@@ -17,7 +17,8 @@ use x509_cert::ext::{AsExtension, Extension};
 use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
 use x509_cert::spki::{
-    AlgorithmIdentifierOwned, DynSignatureAlgorithmIdentifier, ObjectIdentifier, SubjectPublicKeyInfoOwned,
+    AlgorithmIdentifierOwned, DynSignatureAlgorithmIdentifier, ObjectIdentifier,
+    SubjectPublicKeyInfoOwned,
 };
 use x509_cert::time::{Time, Validity};
 
@@ -61,11 +62,26 @@ impl Hash {
 pub fn sign(key: &RsaPrivateKey, hash: Hash, msg: &[u8]) -> Vec<u8> {
     use sha1::Digest;
     let (scheme, digest) = match hash {
-        Hash::Sha1 => (Pkcs1v15Sign::new::<sha1::Sha1>(), sha1::Sha1::digest(msg).to_vec()),
-        Hash::Sha224 => (Pkcs1v15Sign::new::<sha2::Sha224>(), sha2::Sha224::digest(msg).to_vec()),
-        Hash::Sha256 => (Pkcs1v15Sign::new::<sha2::Sha256>(), sha2::Sha256::digest(msg).to_vec()),
-        Hash::Sha384 => (Pkcs1v15Sign::new::<sha2::Sha384>(), sha2::Sha384::digest(msg).to_vec()),
-        Hash::Sha512 => (Pkcs1v15Sign::new::<sha2::Sha512>(), sha2::Sha512::digest(msg).to_vec()),
+        Hash::Sha1 => (
+            Pkcs1v15Sign::new::<sha1::Sha1>(),
+            sha1::Sha1::digest(msg).to_vec(),
+        ),
+        Hash::Sha224 => (
+            Pkcs1v15Sign::new::<sha2::Sha224>(),
+            sha2::Sha224::digest(msg).to_vec(),
+        ),
+        Hash::Sha256 => (
+            Pkcs1v15Sign::new::<sha2::Sha256>(),
+            sha2::Sha256::digest(msg).to_vec(),
+        ),
+        Hash::Sha384 => (
+            Pkcs1v15Sign::new::<sha2::Sha384>(),
+            sha2::Sha384::digest(msg).to_vec(),
+        ),
+        Hash::Sha512 => (
+            Pkcs1v15Sign::new::<sha2::Sha512>(),
+            sha2::Sha512::digest(msg).to_vec(),
+        ),
     };
     key.sign(scheme, &digest).unwrap()
 }
@@ -132,7 +148,14 @@ pub fn ext<T: Encode>(oid: &str, critical: bool, value: &T) -> Extension {
 }
 
 pub fn basic_constraints(ca: bool, path_len: Option<u8>) -> Extension {
-    ext("2.5.29.19", true, &BasicConstraints { ca, path_len_constraint: path_len })
+    ext(
+        "2.5.29.19",
+        true,
+        &BasicConstraints {
+            ca,
+            path_len_constraint: path_len,
+        },
+    )
 }
 
 pub fn key_usage(usages: impl Into<x509_cert::der::flagset::FlagSet<KeyUsages>>) -> Extension {
@@ -140,7 +163,10 @@ pub fn key_usage(usages: impl Into<x509_cert::der::flagset::FlagSet<KeyUsages>>)
 }
 
 pub fn ca_extensions() -> Vec<Extension> {
-    vec![basic_constraints(true, None), key_usage(KeyUsages::KeyCertSign | KeyUsages::CRLSign)]
+    vec![
+        basic_constraints(true, None),
+        key_usage(KeyUsages::KeyCertSign | KeyUsages::CRLSign),
+    ]
 }
 
 pub fn subject_key_id(id: &[u8]) -> Extension {
@@ -182,7 +208,8 @@ impl Issued {
 
 /// A `CERTIFICATE` PEM block of any octets.
 pub fn pem_of(der: &[u8]) -> String {
-    x509_cert::der::pem::encode_string("CERTIFICATE", x509_cert::der::pem::LineEnding::LF, der).unwrap()
+    x509_cert::der::pem::encode_string("CERTIFICATE", x509_cert::der::pem::LineEnding::LF, der)
+        .unwrap()
 }
 
 /// PEM text of several certificates.
@@ -263,22 +290,44 @@ impl Spec {
     /// Without extensions the builder makes a v1 certificate.
     pub fn issue(self, issuer: Option<&Issued>) -> Issued {
         let subject = Name::from_str(&self.subject).unwrap();
-        let signing_key = issuer.map(|i| i.key.clone()).unwrap_or_else(|| self.key.clone());
+        let signing_key = issuer
+            .map(|i| i.key.clone())
+            .unwrap_or_else(|| self.key.clone());
         let oid = self.sig_oid.unwrap_or(self.hash.oid());
         let signer = TestSigner {
             key: signing_key,
             hash: self.hash,
-            alg: AlgorithmIdentifierOwned { oid: ObjectIdentifier::new_unwrap(oid), parameters: Some(Any::null()) },
+            alg: AlgorithmIdentifierOwned {
+                oid: ObjectIdentifier::new_unwrap(oid),
+                parameters: Some(Any::null()),
+            },
         };
         let spki = SubjectPublicKeyInfoOwned::from_key(self.key.to_public_key()).unwrap();
-        let profile = Profile::Manual { issuer: issuer.map(|i| i.name.clone()) };
-        let validity = Validity { not_before: self.not_before, not_after: self.not_after };
-        let mut b = CertificateBuilder::new(profile, self.serial, validity, subject.clone(), spki, &signer).unwrap();
+        let profile = Profile::Manual {
+            issuer: issuer.map(|i| i.name.clone()),
+        };
+        let validity = Validity {
+            not_before: self.not_before,
+            not_after: self.not_after,
+        };
+        let mut b = CertificateBuilder::new(
+            profile,
+            self.serial,
+            validity,
+            subject.clone(),
+            spki,
+            &signer,
+        )
+        .unwrap();
         for e in self.extensions {
             b.add_extension(&Raw(e)).unwrap();
         }
         let cert = b.build::<Signature>().unwrap();
-        Issued { der: cert.to_der().unwrap(), key: self.key, name: subject }
+        Issued {
+            der: cert.to_der().unwrap(),
+            key: self.key,
+            name: subject,
+        }
     }
 }
 
@@ -288,12 +337,23 @@ fn tlv(b: &[u8]) -> (usize, usize) {
         return (2, usize::from(b[1]));
     }
     let n = usize::from(b[1] & 0x7f);
-    (2 + n, b[2..2 + n].iter().fold(0, |l, &x| (l << 8) | usize::from(x)))
+    (
+        2 + n,
+        b[2..2 + n]
+            .iter()
+            .fold(0, |l, &x| (l << 8) | usize::from(x)),
+    )
 }
 
 /// Ranges of the signed part, the outer signature algorithm, and the
 /// signature octets (after the unused-bits octet) of a DER certificate.
-pub fn parts(der: &[u8]) -> (std::ops::Range<usize>, std::ops::Range<usize>, std::ops::Range<usize>) {
+pub fn parts(
+    der: &[u8],
+) -> (
+    std::ops::Range<usize>,
+    std::ops::Range<usize>,
+    std::ops::Range<usize>,
+) {
     let (h, _) = tlv(der);
     let (th, tl) = tlv(&der[h..]);
     let tbs = h..h + th + tl;
@@ -306,7 +366,10 @@ pub fn parts(der: &[u8]) -> (std::ops::Range<usize>, std::ops::Range<usize>, std
 /// Replace the first occurrence of `from` with `to` (same length).
 pub fn patch(der: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
     assert_eq!(from.len(), to.len());
-    let i = der.windows(from.len()).position(|w| w == from).expect("pattern not found");
+    let i = der
+        .windows(from.len())
+        .position(|w| w == from)
+        .expect("pattern not found");
     let mut out = der.to_vec();
     out[i..i + to.len()].copy_from_slice(to);
     out

@@ -231,15 +231,14 @@ fn crypto_checks(c: &mut Checker) {
         "",
     );
     let kats_ok = BYTES_TO_KEY_KATS.iter().all(|(pw, salt, key, iv)| {
-        let (pw, salt) = (hex::decode(pw).unwrap_or_default(), hex::decode(salt).unwrap_or_default());
+        let (pw, salt) = (
+            hex::decode(pw).unwrap_or_default(),
+            hex::decode(salt).unwrap_or_default(),
+        );
         let (k, i) = evp_bytes_to_key(&pw, &salt);
         hex::encode(k) == *key && hex::encode(i) == *iv
     });
-    c.check(
-        "EVP_BytesToKey known answers (6 vectors)",
-        kats_ok,
-        "",
-    );
+    c.check("EVP_BytesToKey known answers (6 vectors)", kats_ok, "");
 
     let ct = encrypt(&KAT_PASSWORD, &KAT_SALT, KAT_PLAIN);
     c.check(

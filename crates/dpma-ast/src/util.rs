@@ -18,9 +18,13 @@ use std::sync::Mutex;
 macro_rules! here {
     ($func:literal) => {
         (
-            concat!(file!(), "\0").as_ptr().cast::<::std::os::raw::c_char>(),
+            concat!(file!(), "\0")
+                .as_ptr()
+                .cast::<::std::os::raw::c_char>(),
             line!() as ::std::os::raw::c_int,
-            concat!($func, "\0").as_ptr().cast::<::std::os::raw::c_char>(),
+            concat!($func, "\0")
+                .as_ptr()
+                .cast::<::std::os::raw::c_char>(),
         )
     };
 }
@@ -127,13 +131,17 @@ pub unsafe fn bytes_or_empty<'a>(p: *const c_char) -> &'a [u8] {
 /// Asterisk's `ast_true`: "yes", "true", "y", "t", "1", or "on", in any
 /// case.
 pub fn ast_true(s: &[u8]) -> bool {
-    [&b"yes"[..], b"true", b"y", b"t", b"1", b"on"].iter().any(|t| dpma_bytes::eq_ic(s, t))
+    [&b"yes"[..], b"true", b"y", b"t", b"1", b"on"]
+        .iter()
+        .any(|t| dpma_bytes::eq_ic(s, t))
 }
 
 /// Asterisk's `ast_false`: "no", "false", "n", "f", "0", or "off", in any
 /// case.
 pub fn ast_false(s: &[u8]) -> bool {
-    [&b"no"[..], b"false", b"n", b"f", b"0", b"off"].iter().any(|t| dpma_bytes::eq_ic(s, t))
+    [&b"no"[..], b"false", b"n", b"f", b"0", b"off"]
+        .iter()
+        .any(|t| dpma_bytes::eq_ic(s, t))
 }
 
 /// `ast_register_atexit(func)`: run `func` when Asterisk exits, also on a
@@ -163,4 +171,3 @@ pub fn random() -> c_long {
 pub unsafe fn strlen_zero(p: *const c_char) -> bool {
     p.is_null() || *p == 0
 }
-

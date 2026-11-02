@@ -18,12 +18,14 @@ pub type ExecFn = unsafe extern "C" fn(chan: *mut AstChannel, data: *const c_cha
 
 /// `ast_waitstream_fr_cb`: called by the playback functions with the
 /// position in milliseconds and one of the `WAITSTREAM_CB_*` values.
-pub type WaitstreamFrCb = unsafe extern "C" fn(chan: *mut AstChannel, ms: c_long, val: sys::ast_waitstream_fr_cb_values);
+pub type WaitstreamFrCb =
+    unsafe extern "C" fn(chan: *mut AstChannel, ms: c_long, val: sys::ast_waitstream_fr_cb_values);
 
 /// `AST_WAITSTREAM_CB_REWIND`.
 pub const WAITSTREAM_CB_REWIND: sys::ast_waitstream_fr_cb_values = sys::AST_WAITSTREAM_CB_REWIND;
 /// `AST_WAITSTREAM_CB_FASTFORWARD`.
-pub const WAITSTREAM_CB_FASTFORWARD: sys::ast_waitstream_fr_cb_values = sys::AST_WAITSTREAM_CB_FASTFORWARD;
+pub const WAITSTREAM_CB_FASTFORWARD: sys::ast_waitstream_fr_cb_values =
+    sys::AST_WAITSTREAM_CB_FASTFORWARD;
 /// `AST_WAITSTREAM_CB_START`.
 pub const WAITSTREAM_CB_START: sys::ast_waitstream_fr_cb_values = sys::AST_WAITSTREAM_CB_START;
 
@@ -35,7 +37,12 @@ pub struct AppOptions(pub [sys::ast_app_option; 128]);
 impl AppOptions {
     /// An empty table.
     pub const fn new() -> AppOptions {
-        AppOptions([sys::ast_app_option { flag: 0, arg_index: 0 }; 128])
+        AppOptions(
+            [sys::ast_app_option {
+                flag: 0,
+                arg_index: 0,
+            }; 128],
+        )
     }
 
     /// `AST_APP_OPTION(letter, flag)`.
@@ -47,7 +54,10 @@ impl AppOptions {
     /// `AST_APP_OPTION_ARG(letter, flag, argno)`: the option's argument goes
     /// to slot `argno` of the argument array.
     pub const fn option_arg(mut self, letter: u8, flag: u64, argno: u32) -> AppOptions {
-        self.0[(letter & 0x7f) as usize] = sys::ast_app_option { flag, arg_index: argno + 1 };
+        self.0[(letter & 0x7f) as usize] = sys::ast_app_option {
+            flag,
+            arg_index: argno + 1,
+        };
         self
     }
 }
@@ -65,7 +75,15 @@ pub fn register(name: &str, execute: ExecFn) -> i32 {
     let n = crate::cstr(name);
     // SAFETY: Asterisk copies the name; the application is unregistered at
     // unload.
-    unsafe { sys::ast_register_application2(n.as_ptr(), Some(execute), ptr::null(), ptr::null(), ptr::null_mut()) }
+    unsafe {
+        sys::ast_register_application2(
+            n.as_ptr(),
+            Some(execute),
+            ptr::null(),
+            ptr::null(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// `ast_unregister_application(name)`.
@@ -84,13 +102,21 @@ fn buffer(s: &[u8]) -> Vec<u8> {
 
 /// Copy out the strings an argument array points at.
 unsafe fn collect(array: &[*mut c_char]) -> Vec<Option<Vec<u8>>> {
-    array.iter().map(|&p| (!p.is_null()).then(|| CStr::from_ptr(p).to_bytes().to_vec())).collect()
+    array
+        .iter()
+        .map(|&p| (!p.is_null()).then(|| CStr::from_ptr(p).to_bytes().to_vec()))
+        .collect()
 }
 
 /// `__ast_app_separate_args` on a copy of `data` (what
 /// `AST_STANDARD_APP_ARGS` does with `remove_chars` set): the argument
 /// count and `n` argument slots, None for the arguments not given.
-pub fn separate_args(data: &[u8], delim: u8, remove_chars: bool, n: usize) -> (u32, Vec<Option<Vec<u8>>>) {
+pub fn separate_args(
+    data: &[u8],
+    delim: u8,
+    remove_chars: bool,
+    n: usize,
+) -> (u32, Vec<Option<Vec<u8>>>) {
     let mut buf = buffer(data);
     let mut array: Vec<*mut c_char> = vec![ptr::null_mut(); n];
     unsafe {
@@ -108,13 +134,21 @@ pub fn separate_args(data: &[u8], delim: u8, remove_chars: bool, n: usize) -> (u
 /// `ast_app_parse_options(options, &flags, args, optstr)` on a copy of
 /// `optstr`: the result, the flags, and `nargs` option argument slots
 /// (None for the ones not set).
-pub fn parse_options(options: &AppOptions, optstr: &[u8], nargs: usize) -> (i32, u32, Vec<Option<Vec<u8>>>) {
+pub fn parse_options(
+    options: &AppOptions,
+    optstr: &[u8],
+    nargs: usize,
+) -> (i32, u32, Vec<Option<Vec<u8>>>) {
     let mut buf = buffer(optstr);
     let mut args: Vec<*mut c_char> = vec![ptr::null_mut(); nargs.max(1)];
     let mut flags = sys::ast_flags { flags: 0 };
     unsafe {
-        let res =
-            sys::ast_app_parse_options(options.0.as_ptr(), &mut flags, args.as_mut_ptr(), buf.as_mut_ptr() as *mut c_char);
+        let res = sys::ast_app_parse_options(
+            options.0.as_ptr(),
+            &mut flags,
+            args.as_mut_ptr(),
+            buf.as_mut_ptr() as *mut c_char,
+        );
         let mut out = collect(&args);
         out.truncate(nargs);
         (res, flags.flags as c_uint, out)

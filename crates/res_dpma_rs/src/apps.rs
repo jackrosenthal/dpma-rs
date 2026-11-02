@@ -36,8 +36,9 @@ const OPT_OFFSET: u32 = 1 << 1;
 const OPT_CALLBACK: u32 = 1 << 2;
 
 /// The option table (DAT_0032a580).
-static CPB_OPTS: AppOptions =
-    AppOptions::new().option_arg(b'o', OPT_OFFSET as u64, 0).option(b'u', OPT_CALLBACK as u64);
+static CPB_OPTS: AppOptions = AppOptions::new()
+    .option_arg(b'o', OPT_OFFSET as u64, 0)
+    .option(b'u', OPT_CALLBACK as u64);
 
 /// Register both applications (FUN_00173090).  The official DPMA ORs the
 /// two results, so both are attempted.
@@ -88,11 +89,20 @@ fn show(arg: &Option<Vec<u8>>) -> &[u8] {
 /// `playback_cb` (FUN_001728e0), the `ast_waitstream_fr_cb` of both
 /// applications: after a rewind or fast forward, tell the phone the new
 /// position in seconds.
-unsafe extern "C" fn playback_cb(chan: *mut AstChannel, ms: c_long, val: dpma_ast::sys::ast_waitstream_fr_cb_values) {
+unsafe extern "C" fn playback_cb(
+    chan: *mut AstChannel,
+    ms: c_long,
+    val: dpma_ast::sys::ast_waitstream_fr_cb_values,
+) {
     dpma_ast::guard((), || {
         if val == WAITSTREAM_CB_REWIND || val == WAITSTREAM_CB_FASTFORWARD {
             let body = format!("{{'location':{}}}", ms / 1000);
-            crate::pjsip::info_send(chan, &[("X-Event-Name", LOCATION_EVENT)], "application/json", body.as_bytes());
+            crate::pjsip::info_send(
+                chan,
+                &[("X-Event-Name", LOCATION_EVENT)],
+                "application/json",
+                body.as_bytes(),
+            );
         }
     })
 }
@@ -116,7 +126,8 @@ unsafe fn controlplayback(chan: *mut AstChannel, data: &[u8]) -> c_int {
     let mut next = || args.next().flatten();
     let filename = next();
     let skip = next();
-    let (mut fwd, mut rev, mut stop, mut pause, mut restart) = (next(), next(), next(), next(), next());
+    let (mut fwd, mut rev, mut stop, mut pause, mut restart) =
+        (next(), next(), next(), next(), next());
     let options = next();
 
     let skipms = match &skip {
@@ -155,7 +166,12 @@ unsafe fn controlplayback(chan: *mut AstChannel, data: &[u8]) -> c_int {
     if !non_empty(&rev) && last != b'*' {
         rev = Some(b"*".to_vec());
     }
-    dpma_debug!(1, "Forward key = {}, Rewind key = {}", show(&fwd), show(&rev));
+    dpma_debug!(
+        1,
+        "Forward key = {}, Rewind key = {}",
+        show(&fwd),
+        show(&rev)
+    );
 
     let mut offsetms: c_long = 0;
     let mut flags = 0;
@@ -166,7 +182,11 @@ unsafe fn controlplayback(chan: *mut AstChannel, data: &[u8]) -> c_int {
             offsetms = strtol(opt_args[0].as_deref().unwrap_or_default());
         }
     }
-    let cb = if flags & OPT_CALLBACK != 0 { Some(playback_cb as app::WaitstreamFrCb) } else { None };
+    let cb = if flags & OPT_CALLBACK != 0 {
+        Some(playback_cb as app::WaitstreamFrCb)
+    } else {
+        None
+    };
     let res = app::control_streamfile(
         chan,
         filename.as_deref().unwrap_or_default(),
@@ -187,11 +207,18 @@ unsafe fn controlplayback(chan: *mut AstChannel, data: &[u8]) -> c_int {
     } else {
         // strchr(stop, res): the key as a char; NUL matches the terminator.
         let key = res as u8;
-        let stopped = res > 0 && stop.as_ref().is_some_and(|s| !s.is_empty() && (key == 0 || s.contains(&key)));
+        let stopped = res > 0
+            && stop
+                .as_ref()
+                .is_some_and(|s| !s.is_empty() && (key == 0 || s.contains(&key)));
         if stopped {
             channel::setvar(chan, "CPLAYBACKSTATUS", b"USERSTOPPED");
             // snprintf(buf, 2, "%c", res)
-            let stopkey: &[u8] = if key == 0 { b"" } else { std::slice::from_ref(&key) };
+            let stopkey: &[u8] = if key == 0 {
+                b""
+            } else {
+                std::slice::from_ref(&key)
+            };
             channel::setvar(chan, "CPLAYBACKSTOPKEY", stopkey);
             ret = 0;
         } else {
@@ -211,7 +238,11 @@ unsafe fn controlplayback(chan: *mut AstChannel, data: &[u8]) -> c_int {
 /// pause key, and the location event.
 unsafe extern "C" fn vm_play_cb(chan: *mut AstChannel, playfile: *const c_char, duration: c_int) {
     dpma_ast::guard((), || {
-        let skipms = if duration / 5 != 0 { (duration / 5) * 1000 } else { 3000 };
+        let skipms = if duration / 5 != 0 {
+            (duration / 5) * 1000
+        } else {
+            3000
+        };
         let mut offsetms: c_long = 0;
         app::control_streamfile(
             chan,

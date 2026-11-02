@@ -6,8 +6,8 @@
 use super::*;
 use crate::util::{scan_i32, scan_u32, truncate};
 use dpma_ast::dpma_bytes::ByteSlice;
-use dpma_ast::{bformat, dpma_log};
 use dpma_ast::util::{ast_false, ast_true};
+use dpma_ast::{bformat, dpma_log};
 
 type Res = Result<(), ()>;
 
@@ -81,7 +81,9 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], value:
         b"accept_local_calls" => phone.accept_local_calls = s,
         b"name_format" => phone.name_format = s,
         b"ntp_resync" => return u32_opt(&mut phone.ntp_resync, value),
-        b"contacts_max_subscriptions" => return i32_opt(&mut phone.contacts_max_subscriptions, value),
+        b"contacts_max_subscriptions" => {
+            return i32_opt(&mut phone.contacts_max_subscriptions, value)
+        }
         b"web_ui_enabled" => phone.web_ui_enabled = ast_true(value),
         b"record_own_calls" => phone.record_own_calls = ast_true(value),
         b"blf_unused_linekeys" => phone.blf_unused_linekeys = ast_true(value),
@@ -151,7 +153,9 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], value:
         b"blf_items" => phone.blf_items = s,
         // These four configure the implicit network named after the phone.
         b"ntp_server" | b"syslog_server" | b"syslog_port" | b"syslog_level" => {
-            let (net, _) = ctx.networks.get_or_insert_with(&phone.name, || Network::new(&phone.name));
+            let (net, _) = ctx
+                .networks
+                .get_or_insert_with(&phone.name, || Network::new(&phone.name));
             net.delme = false;
             if set_network_option(net, name, value).is_err() {
                 dpma_log!("Unknown network option '{}'", name);
@@ -161,14 +165,18 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], value:
         b"transport_tls_allowed" => phone.transport_tls_allowed = i32::from(ast_true(value)),
         b"logout_enabled" => phone.logout_enabled = ast_true(value),
         b"expansion_enabled" => phone.expansion_enabled = ast_true(value),
-        b"expansion_page_indicators_enabled" => phone.expansion_page_indicators_enabled = ast_true(value),
+        b"expansion_page_indicators_enabled" => {
+            phone.expansion_page_indicators_enabled = ast_true(value)
+        }
         b"type" => {}
         _ if n.contains_str("logo_file") => {
             let model = crate::util::first_token(name, b"_");
             if model.is_empty() {
                 return Err(());
             }
-            phone.logos.push((truncate(model, 0x80), truncate(value, 0x200)));
+            phone
+                .logos
+                .push((truncate(model, 0x80), truncate(value, 0x200)));
         }
         _ => return Err(()),
     }
@@ -177,7 +185,9 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], value:
 
 /// `line=` / `external_line=` on a phone.
 fn add_line(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], external: bool) {
-    let (line, _) = ctx.lines.get_or_insert_with(name, || Line::new(name, external));
+    let (line, _) = ctx
+        .lines
+        .get_or_insert_with(name, || Line::new(name, external));
     // The official DPMA leaves the delete mark alone here, so a line that
     // only a phone refers to (no [line] section or pjsip endpoint) survives
     // the first load but disappears on every other reload.  Keep it
@@ -185,7 +195,10 @@ fn add_line(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], external: bool) {
     line.set_defaults();
     line.delme = false;
     if phone.lines.len() < MAX_LINES {
-        phone.lines.push(PhoneLine { name: truncate(name, 0x80), external });
+        phone.lines.push(PhoneLine {
+            name: truncate(name, 0x80),
+            external,
+        });
     }
 }
 
@@ -193,7 +206,10 @@ fn add_line(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], external: bool) {
 pub fn init_custom_presence(line: &[u8]) {
     let (state, _, _) = dpma_ast::presence::query(&bformat!("CustomPresence:{}", line));
     if state == dpma_ast::presence::INVALID || state == dpma_ast::presence::NOT_SET {
-        dpma_ast::pbx::set_global(&bformat!("PRESENCE_STATE(CustomPresence:{})", line), "available,,");
+        dpma_ast::pbx::set_global(
+            &bformat!("PRESENCE_STATE(CustomPresence:{})", line),
+            "available,,",
+        );
     }
 }
 
@@ -204,7 +220,9 @@ pub fn codecs_add(codecs: &mut Vec<Codec>, value: &[u8]) -> Res {
     let mut enabled = true;
     let mut rest = value;
     loop {
-        let Some(&c) = rest.first() else { return Ok(()) };
+        let Some(&c) = rest.first() else {
+            return Ok(());
+        };
         if c < 0x21 {
             rest = &rest[1..];
             continue;
@@ -218,11 +236,18 @@ pub fn codecs_add(codecs: &mut Vec<Codec>, value: &[u8]) -> Res {
             Some(i) => (&rest[..i], Some(&rest[i + 1..])),
             None => (rest, None),
         };
-        let Some(index) = CODECS.iter().position(|(n, _)| n.as_bytes().eq_ignore_ascii_case(tok)) else {
+        let Some(index) = CODECS
+            .iter()
+            .position(|(n, _)| n.as_bytes().eq_ignore_ascii_case(tok))
+        else {
             dpma_log!("Unknown codec specified: '{}'", tok);
             return Err(());
         };
-        codecs.push(Codec { index, priority, enabled });
+        codecs.push(Codec {
+            index,
+            priority,
+            enabled,
+        });
         priority -= 1;
         enabled = true;
         match next {
@@ -257,7 +282,9 @@ pub fn set_line_option(line: &mut Line, name: &[u8], value: &[u8]) -> Res {
         b"transport" => line.transport = Transport::parse(value),
         b"secondary_server_transport" => line.secondary_server_transport = Transport::parse(value),
         b"reregistration_timeout" => return u32_opt(&mut line.reregistration_timeout, value),
-        b"registration_retry_interval" => return u32_opt(&mut line.registration_retry_interval, value),
+        b"registration_retry_interval" => {
+            return u32_opt(&mut line.registration_retry_interval, value)
+        }
         b"registration_max_retries" => return u32_opt(&mut line.registration_max_retries, value),
         b"server_address" => {
             line.server_address = s;
@@ -380,7 +407,10 @@ pub fn set_firmware_opt_option(fw: &mut FirmwareOpt, name: &[u8], value: &[u8]) 
             } else if ast_false(value) {
                 fw.public_firmware = false;
             } else {
-                dpma_log!("{} is not a valid option for public_firmware. Value will be ignored.", value);
+                dpma_log!(
+                    "{} is not a valid option for public_firmware. Value will be ignored.",
+                    value
+                );
             }
         }
         _ => return Err(()),

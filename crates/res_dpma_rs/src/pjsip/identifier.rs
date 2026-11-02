@@ -91,7 +91,10 @@ fn endpoint_ref() -> *mut sys::ast_sip_endpoint {
 fn endpoint_replace(endpoint: *mut sys::ast_sip_endpoint) {
     // SAFETY: the caller's object gets a reference of the holder's own.
     unsafe { ao2::ao2_ref(endpoint.cast(), 1) };
-    let old = std::mem::replace(&mut *ENDPOINT.write().unwrap_or_else(|e| e.into_inner()), Held(endpoint));
+    let old = std::mem::replace(
+        &mut *ENDPOINT.write().unwrap_or_else(|e| e.into_inner()),
+        Held(endpoint),
+    );
     // SAFETY: the holder's reference on the old endpoint.
     unsafe { ao2::cleanup(old.0) };
 }
@@ -105,11 +108,19 @@ fn endpoint_replace(endpoint: *mut sys::ast_sip_endpoint) {
 /// finds rdata->msg_info.msg by scanning rdata for msg_info.info, the word
 /// after it, so that it works with any layout of pjsip_rx_data; this reads
 /// the layout of the headers it is built with.)
-unsafe extern "C" fn identify_endpoint(rdata: *mut sys::pjsip_rx_data) -> *mut sys::ast_sip_endpoint {
+unsafe extern "C" fn identify_endpoint(
+    rdata: *mut sys::pjsip_rx_data,
+) -> *mut sys::ast_sip_endpoint {
     dpma_ast::guard(null_mut(), || {
-        let name = sys::pj_str_t { ptr: c"X-Digium-User-Agent".as_ptr() as *mut c_char, slen: 19 };
+        let name = sys::pj_str_t {
+            ptr: c"X-Digium-User-Agent".as_ptr() as *mut c_char,
+            slen: 19,
+        };
         // SAFETY: PJSIP's received message, valid during the call.
-        if rdata.is_null() || sys::pjsip_msg_find_hdr_by_name((*rdata).msg_info.msg, &name, std::ptr::null()).is_null() {
+        if rdata.is_null()
+            || sys::pjsip_msg_find_hdr_by_name((*rdata).msg_info.msg, &name, std::ptr::null())
+                .is_null()
+        {
             return null_mut();
         }
         endpoint_ref()
@@ -117,25 +128,29 @@ unsafe extern "C" fn identify_endpoint(rdata: *mut sys::pjsip_rx_data) -> *mut s
 }
 
 static IDENTIFIER: CStatic<sys::ast_sip_endpoint_identifier> =
-    CStatic::new(sys::ast_sip_endpoint_identifier { identify_endpoint: Some(identify_endpoint) });
+    CStatic::new(sys::ast_sip_endpoint_identifier {
+        identify_endpoint: Some(identify_endpoint),
+    });
 
 // ---------------------------------------------------------------------
 // Sorcery
 // ---------------------------------------------------------------------
 
-static ENDPOINT_OBSERVER: CStatic<sys::ast_sorcery_observer> = CStatic::new(sys::ast_sorcery_observer {
-    created: Some(pjsip_endpoint_changed),
-    updated: Some(pjsip_endpoint_changed),
-    deleted: Some(pjsip_endpoint_deleted),
-    loaded: Some(pjsip_endpoints_loaded),
-});
+static ENDPOINT_OBSERVER: CStatic<sys::ast_sorcery_observer> =
+    CStatic::new(sys::ast_sorcery_observer {
+        created: Some(pjsip_endpoint_changed),
+        updated: Some(pjsip_endpoint_changed),
+        deleted: Some(pjsip_endpoint_deleted),
+        loaded: Some(pjsip_endpoints_loaded),
+    });
 
-static CONTACT_OBSERVER: CStatic<sys::ast_sorcery_observer> = CStatic::new(sys::ast_sorcery_observer {
-    created: Some(pjsip_contact_update),
-    updated: Some(pjsip_contact_update),
-    deleted: None,
-    loaded: None,
-});
+static CONTACT_OBSERVER: CStatic<sys::ast_sorcery_observer> =
+    CStatic::new(sys::ast_sorcery_observer {
+        created: Some(pjsip_contact_update),
+        updated: Some(pjsip_contact_update),
+        deleted: None,
+        loaded: None,
+    });
 
 static AOR_OBSERVER: CStatic<sys::ast_sorcery_observer> = CStatic::new(sys::ast_sorcery_observer {
     created: None,
@@ -144,15 +159,17 @@ static AOR_OBSERVER: CStatic<sys::ast_sorcery_observer> = CStatic::new(sys::ast_
     loaded: None,
 });
 
-static AUTH_OBSERVER: CStatic<sys::ast_sorcery_observer> = CStatic::new(sys::ast_sorcery_observer {
-    created: None,
-    updated: Some(pjsip_auth_changed),
-    deleted: Some(pjsip_auth_changed),
-    loaded: None,
-});
+static AUTH_OBSERVER: CStatic<sys::ast_sorcery_observer> =
+    CStatic::new(sys::ast_sorcery_observer {
+        created: None,
+        updated: Some(pjsip_auth_changed),
+        deleted: Some(pjsip_auth_changed),
+        loaded: None,
+    });
 
 /// Endpoint options copied to the line (`pjsip_set_line_options`).
-const ENDPOINT_OPTIONS: [(&CStr, &[u8]); 2] = [(c"context", b"context"), (c"callerid", b"callerid")];
+const ENDPOINT_OPTIONS: [(&CStr, &[u8]); 2] =
+    [(c"context", b"context"), (c"callerid", b"callerid")];
 /// Auth options copied to the line.
 const AUTH_OPTIONS: [(&CStr, &[u8]); 2] = [(c"username", b"authname"), (c"password", b"secret")];
 
@@ -247,7 +264,15 @@ fn set_line_option(line: &LineObj, option: &[u8], value: &CStr) {
 unsafe fn process_pjsip_line_info(endpoint: *const c_void, line: &LineObj) {
     objects::process_line(line);
     let _locked = line.lock();
-    for option in [&b"tech"[..], b"context", b"callerid", b"mailbox", b"secret", b"authname", b"pjsip_auth"] {
+    for option in [
+        &b"tech"[..],
+        b"context",
+        b"callerid",
+        b"mailbox",
+        b"secret",
+        b"authname",
+        b"pjsip_auth",
+    ] {
         set_line_option(line, option, c"");
     }
     if endpoint.is_null() {
@@ -283,7 +308,11 @@ unsafe fn process_pjsip_line_info(endpoint: *const c_void, line: &LineObj) {
     if let Some(aors) = get_config_value(endpoint, c"aors") {
         let mut mailboxes = get_config_value(endpoint, c"mailboxes");
         if mailboxes.is_none() {
-            sys::ast_sip_for_each_aor(aors.as_ptr(), Some(aor_mailboxes), &mut mailboxes as *mut _ as *mut c_void);
+            sys::ast_sip_for_each_aor(
+                aors.as_ptr(),
+                Some(aor_mailboxes),
+                &mut mailboxes as *mut _ as *mut c_void,
+            );
         }
         if let Some(m) = mailboxes {
             set_line_option(line, b"mailbox", &first_value(&m));
@@ -349,7 +378,11 @@ unsafe extern "C" fn pjsip_endpoints_loaded(object_type: *const c_char) {
 
 /// Does the comma-separated `list` contain `item` (exactly)?
 fn list_contains(list: Option<&CStr>, item: &CStr) -> bool {
-    list.is_some_and(|l| l.to_bytes().split(|&c| c == b',').any(|s| s == item.to_bytes()))
+    list.is_some_and(|l| {
+        l.to_bytes()
+            .split(|&c| c == b',')
+            .any(|s| s == item.to_bytes())
+    })
 }
 
 /// `pjsip_aor_changed` (AOR updated or deleted): lines whose endpoint uses
@@ -422,7 +455,12 @@ unsafe extern "C" fn pjsip_contact_update(contact: *const c_void) {
         // The contact id is "<aor>;@<hash>".
         let id_bytes = CStr::from_ptr(id).to_bytes();
         let Some(semi) = id_bytes.iter().position(|&c| c == b';') else {
-            log!(LOG_WARNING, FUNC, "Unable to parse username from id '{}'\n", text(id));
+            log!(
+                LOG_WARNING,
+                FUNC,
+                "Unable to parse username from id '{}'\n",
+                text(id)
+            );
             return;
         };
         let username = CString::new(&id_bytes[..semi]).unwrap_or_default();
@@ -433,7 +471,8 @@ unsafe extern "C" fn pjsip_contact_update(contact: *const c_void) {
         // The official DPMA tests the address (never NULL) rather than the
         // transport, so ";transport=" is always there, even when empty.
         let (addr, transport) = dpma_proto::uri::phone_utils_parse_uri(uri.as_bytes());
-        let last_uri = dpma_ast::bformat!("pjsip:{};transport={}", addr, transport.unwrap_or_default());
+        let last_uri =
+            dpma_ast::bformat!("pjsip:{};transport={}", addr, transport.unwrap_or_default());
         debug!(
             2,
             FUNC,
@@ -448,11 +487,19 @@ unsafe extern "C" fn pjsip_contact_update(contact: *const c_void) {
 
 /// `pjsip_contact_is_dphone` (`ast_sip_for_each_contact` callback): stop
 /// at the first contact with a phone user agent.
-unsafe extern "C" fn contact_is_dphone(wrapper: *mut c_void, arg: *mut c_void, _flags: c_int) -> c_int {
+unsafe extern "C" fn contact_is_dphone(
+    wrapper: *mut c_void,
+    arg: *mut c_void,
+    _flags: c_int,
+) -> c_int {
     dpma_ast::guard(-1, || {
         // SAFETY: ast_sip_for_each_contact hands over contact wrappers.
         let wrapper = wrapper as *const sys::ast_sip_contact_wrapper;
-        let contact = if wrapper.is_null() { null_mut() } else { (*wrapper).contact };
+        let contact = if wrapper.is_null() {
+            null_mut()
+        } else {
+            (*wrapper).contact
+        };
         if contact.is_null() {
             return -1;
         }
@@ -492,7 +539,11 @@ pub(super) fn endpoint_is_dphone(name: &[u8]) -> i32 {
             return 0;
         }
         let mut is_dphone: c_int = 0;
-        sys::ast_sip_for_each_aor((*endpoint).aors, Some(aor_is_dphone), &mut is_dphone as *mut c_int as *mut c_void);
+        sys::ast_sip_for_each_aor(
+            (*endpoint).aors,
+            Some(aor_is_dphone),
+            &mut is_dphone as *mut c_int as *mut c_void,
+        );
         ao2::cleanup(endpoint);
         is_dphone
     }
@@ -502,14 +553,17 @@ pub(super) fn endpoint_is_dphone(name: &[u8]) -> i32 {
 // SIP INFO (pjsip_send_info)
 // ---------------------------------------------------------------------
 
-type SessionGetDialogFn = unsafe extern "C" fn(session: *const sys::ast_sip_session) -> *mut sys::pjsip_dialog;
+type SessionGetDialogFn =
+    unsafe extern "C" fn(session: *const sys::ast_sip_session) -> *mut sys::pjsip_dialog;
 
 /// The `ast_sip_session_get_dialog` found at load (0: use the internal
 /// accessor).
 static SESSION_GET_DIALOG: AtomicUsize = AtomicUsize::new(0);
 
 /// For an Asterisk without `ast_sip_session_get_dialog()`.
-unsafe fn internal_session_get_dialog(session: *const sys::ast_sip_session) -> *mut sys::pjsip_dialog {
+unsafe fn internal_session_get_dialog(
+    session: *const sys::ast_sip_session,
+) -> *mut sys::pjsip_dialog {
     if session.is_null() || (*session).inv_session.is_null() {
         return null_mut();
     }
@@ -607,7 +661,12 @@ unsafe extern "C" fn send_info_task(obj: *mut c_void) -> c_int {
 ///
 /// # Safety
 /// `chan` must be a live PJSIP channel the caller holds a reference on.
-pub(super) unsafe fn send_info(chan: *mut AstChannel, headers: &[(&str, &str)], content_type: &[u8], body: &[u8]) -> i32 {
+pub(super) unsafe fn send_info(
+    chan: *mut AstChannel,
+    headers: &[(&str, &str)],
+    content_type: &[u8],
+    body: &[u8],
+) -> i32 {
     let channel = sys::ast_channel_tech_pvt(chan) as *mut sys::ast_sip_channel_pvt;
     if channel.is_null() || (*channel).session.is_null() {
         return -1;
@@ -617,9 +676,15 @@ pub(super) unsafe fn send_info(chan: *mut AstChannel, headers: &[(&str, &str)], 
     if !body.is_empty() && content_type.is_empty() {
         return -1;
     }
-    let headers: Vec<(CString, CString)> = headers.iter().map(|(n, v)| (cstr(n), cstr(v))).collect();
+    let headers: Vec<(CString, CString)> =
+        headers.iter().map(|(n, v)| (cstr(n), cstr(v))).collect();
     let session = (*channel).session;
-    let data = InfoData { session, headers: &headers, content_type, body: &body };
+    let data = InfoData {
+        session,
+        headers: &headers,
+        content_type,
+        body: &body,
+    };
     let (file, line, func) = here!("send_info");
     sys::__ast_sip_push_task_wait_servant(
         (*session).serializer,
@@ -638,8 +703,14 @@ pub(super) unsafe fn send_info(chan: *mut AstChannel, headers: &[(&str, &str)], 
 /// `ast_variable_retrieve(cfg, category, name)`: the last `name` in the
 /// first category called `category`.
 fn variable_retrieve<'a>(cfg: &'a [Category], category: &str, name: &str) -> Option<&'a [u8]> {
-    let cat = cfg.iter().find(|c| c.name.eq_ignore_ascii_case(category.as_bytes()))?;
-    cat.vars.iter().rev().find(|v| v.name.eq_ignore_ascii_case(name.as_bytes())).map(|v| v.value.as_slice())
+    let cat = cfg
+        .iter()
+        .find(|c| c.name.eq_ignore_ascii_case(category.as_bytes()))?;
+    cat.vars
+        .iter()
+        .rev()
+        .find(|v| v.name.eq_ignore_ascii_case(name.as_bytes()))
+        .map(|v| v.value.as_slice())
 }
 
 /// `set_endpoint_context`: the DPMA endpoint's context is
@@ -649,16 +720,35 @@ fn set_endpoint_context(cfg: &[Category]) {
     let endpoint = endpoint_ref();
     let context = variable_retrieve(cfg, "general", "pjsip_message_context");
     if endpoint.is_null() {
-        log!(LOG_ERROR, FUNC, "Endpoint for DPMA endpoint identifier not found when setting endpoint context\n");
+        log!(
+            LOG_ERROR,
+            FUNC,
+            "Endpoint for DPMA endpoint identifier not found when setting endpoint context\n"
+        );
         return;
     }
-    let context = context.filter(|c| !c.is_empty()).unwrap_or(DEFAULT_CONTEXT.as_bytes());
-    match VariableList::new(&[(b"context", context)], "res_pjsip_endpoint_identifier_dpma") {
-        None => log!(LOG_ERROR, FUNC, "Allocation error while applying context for DPMA endpoint identifier\n"),
+    let context = context
+        .filter(|c| !c.is_empty())
+        .unwrap_or(DEFAULT_CONTEXT.as_bytes());
+    match VariableList::new(
+        &[(b"context", context)],
+        "res_pjsip_endpoint_identifier_dpma",
+    ) {
+        None => log!(
+            LOG_ERROR,
+            FUNC,
+            "Allocation error while applying context for DPMA endpoint identifier\n"
+        ),
         Some(var) => {
             // SAFETY: our endpoint reference; the variables are read.
-            if unsafe { sys::ast_sorcery_objectset_apply(sorcery(), endpoint.cast(), var.as_ptr()) } != 0 {
-                log!(LOG_ERROR, FUNC, "Failed to apply endpoint context for DPMA endpoint identifier\n");
+            if unsafe { sys::ast_sorcery_objectset_apply(sorcery(), endpoint.cast(), var.as_ptr()) }
+                != 0
+            {
+                log!(
+                    LOG_ERROR,
+                    FUNC,
+                    "Failed to apply endpoint context for DPMA endpoint identifier\n"
+                );
             }
         }
     }
@@ -677,8 +767,13 @@ fn config_hook(cfg: Option<Vec<Category>>) {
 /// endpoint becomes the DPMA endpoint.
 unsafe fn create_endpoint() -> bool {
     let default = sys::ast_sip_default_outbound_endpoint();
-    let id = if default.is_null() { std::ptr::null() } else { sys::ast_sorcery_object_get_id(default.cast()) };
-    let endpoint = sys::ast_sorcery_alloc(sorcery(), c"endpoint".as_ptr(), id) as *mut sys::ast_sip_endpoint;
+    let id = if default.is_null() {
+        std::ptr::null()
+    } else {
+        sys::ast_sorcery_object_get_id(default.cast())
+    };
+    let endpoint =
+        sys::ast_sorcery_alloc(sorcery(), c"endpoint".as_ptr(), id) as *mut sys::ast_sip_endpoint;
     if endpoint.is_null() {
         log!(
             LOG_ERROR,
@@ -716,21 +811,38 @@ fn cleanup_module() {
 /// the first that fails.
 unsafe fn register() -> Result<(), (i32, &'static str)> {
     if sys::ast_sip_register_endpoint_identifier(IDENTIFIER.get()) != 0 {
-        return Err((LOG_ERROR, "Unable to register endpoint identifier for DPMA\n"));
+        return Err((
+            LOG_ERROR,
+            "Unable to register endpoint identifier for DPMA\n",
+        ));
     }
-    if let dpma_ast::config::LoadResult::Loaded(cfg) =
-        dpma_ast::config::load(crate::CONFIG_FILE, crate::MODULE_NAME, dpma_ast::config::CONFIG_FLAG_NOCACHE)
-    {
+    if let dpma_ast::config::LoadResult::Loaded(cfg) = dpma_ast::config::load(
+        crate::CONFIG_FILE,
+        crate::MODULE_NAME,
+        dpma_ast::config::CONFIG_FLAG_NOCACHE,
+    ) {
         set_endpoint_context(&cfg);
     }
     if !dpma_ast::hooks::register(HOOK, crate::CONFIG_FILE, crate::MODULE_NAME, config_hook) {
         return Err((LOG_ERROR, "Unable to register hook for pjsip DPMA\n"));
     }
     let observers: [(&CStr, &CStatic<sys::ast_sorcery_observer>, &'static str); 4] = [
-        (c"endpoint", &ENDPOINT_OBSERVER, "Unable to add pjsip endpoint observer\n"),
-        (c"contact", &CONTACT_OBSERVER, "Unable to add pjsip contact observer\n"),
+        (
+            c"endpoint",
+            &ENDPOINT_OBSERVER,
+            "Unable to add pjsip endpoint observer\n",
+        ),
+        (
+            c"contact",
+            &CONTACT_OBSERVER,
+            "Unable to add pjsip contact observer\n",
+        ),
         (c"aor", &AOR_OBSERVER, "Unable to add pjsip aor observer\n"),
-        (c"auth", &AUTH_OBSERVER, "Unable to add pjsip auth observer\n"),
+        (
+            c"auth",
+            &AUTH_OBSERVER,
+            "Unable to add pjsip auth observer\n",
+        ),
     ];
     for (object_type, observer, error) in observers {
         if sys::ast_sorcery_observer_add(sorcery(), object_type.as_ptr(), observer.get()) != 0 {
@@ -740,7 +852,10 @@ unsafe fn register() -> Result<(), (i32, &'static str)> {
     set_config_handler(true);
     set_info_handler(true);
     if !register_is_dphone() {
-        return Err((LOG_WARNING, "Unable to register PJSIP endpoint is dphone function\n"));
+        return Err((
+            LOG_WARNING,
+            "Unable to register PJSIP endpoint is dphone function\n",
+        ));
     }
     Ok(())
 }
@@ -753,16 +868,34 @@ pub(super) fn load() -> sys::ast_module_load_result {
         let default = sys::ast_sip_default_outbound_endpoint();
         let version = text(sys::pj_get_version()).to_vec();
         if init_get_dialog() {
-            log!(LOG_NOTICE, FUNC, "Using ast_sip_session_get_dialog() for pjproject version {}\n", version);
+            log!(
+                LOG_NOTICE,
+                FUNC,
+                "Using ast_sip_session_get_dialog() for pjproject version {}\n",
+                version
+            );
         } else {
-            log!(LOG_NOTICE, FUNC, "Using internal session_get_dialog() for pjproject version {}\n", version);
+            log!(
+                LOG_NOTICE,
+                FUNC,
+                "Using internal session_get_dialog() for pjproject version {}\n",
+                version
+            );
         }
 
         let res = if default.is_null() {
-            log!(LOG_ERROR, FUNC, "Unable to find default outbound endpoint required for DPMA\n");
+            log!(
+                LOG_ERROR,
+                FUNC,
+                "Unable to find default outbound endpoint required for DPMA\n"
+            );
             sys::AST_MODULE_LOAD_FAILURE
         } else if !create_endpoint() {
-            log!(LOG_ERROR, FUNC, "Unable to create pjsip endpoint for DPMA\n");
+            log!(
+                LOG_ERROR,
+                FUNC,
+                "Unable to create pjsip endpoint for DPMA\n"
+            );
             sys::AST_MODULE_LOAD_FAILURE
         } else {
             match register() {

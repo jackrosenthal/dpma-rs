@@ -54,7 +54,11 @@ pub struct ParseOpts {
 }
 
 impl ParseOpts {
-    pub const ALL: ParseOpts = ParseOpts { pass: true, hostport: true, params: true };
+    pub const ALL: ParseOpts = ParseOpts {
+        pass: true,
+        hostport: true,
+        params: true,
+    };
 }
 
 impl Default for ParseOpts {
@@ -127,8 +131,16 @@ impl Pos {
         ParsedUri {
             error: self.error,
             user: b.get(self.user),
-            pass: if opts.pass { b.get(self.pass) } else { Vec::new() },
-            hostport: if opts.hostport { b.get(self.hostport) } else { Vec::new() },
+            pass: if opts.pass {
+                b.get(self.pass)
+            } else {
+                Vec::new()
+            },
+            hostport: if opts.hostport {
+                b.get(self.hostport)
+            } else {
+                Vec::new()
+            },
             params: if opts.params {
                 UriParams {
                     transport: b.get(self.transport),
@@ -176,7 +188,11 @@ fn parse_uri_full_buf(b: &mut CBuf, start: usize, scheme: Option<&str>, opts: Pa
             log(
                 0x60,
                 "parse_uri_full",
-                &bformat!("No supported scheme found in '{}' using the scheme[s] {}\n", b.get(uri), scheme),
+                &bformat!(
+                    "No supported scheme found in '{}' using the scheme[s] {}\n",
+                    b.get(uri),
+                    scheme
+                ),
             );
             r.error = true;
         }
@@ -314,8 +330,21 @@ pub fn parse_uri_full(uri: impl AsRef<[u8]>, scheme: Option<&str>, opts: ParseOp
 
 /// `parse_uri` (FUN_001876a0): `parse_uri_full` with parameters parsed;
 /// callers use `params.transport`.
-pub fn parse_uri(uri: impl AsRef<[u8]>, scheme: Option<&str>, pass: bool, hostport: bool) -> ParsedUri {
-    parse_uri_full(uri, scheme, ParseOpts { pass, hostport, params: true })
+pub fn parse_uri(
+    uri: impl AsRef<[u8]>,
+    scheme: Option<&str>,
+    pass: bool,
+    hostport: bool,
+) -> ParsedUri {
+    parse_uri_full(
+        uri,
+        scheme,
+        ParseOpts {
+            pass,
+            hostport,
+            params: true,
+        },
+    )
 }
 
 /// `get_calleridname` on the buffer: returns the display name (at most
@@ -362,7 +391,11 @@ fn get_calleridname_buf(b: &CBuf, input: usize, outputsize: usize) -> (Vec<u8>, 
             i += 1;
         }
         if b.at(i) != b'"' {
-            log(0x146, "get_calleridname", b"No ending quote for display-name was found\n");
+            log(
+                0x146,
+                "get_calleridname",
+                b"No ending quote for display-name was found\n",
+            );
             return (Vec::new(), input);
         }
         (out, i + 1)
@@ -427,14 +460,20 @@ fn get_in_brackets_full_buf(b: &mut CBuf, tmp: usize) -> (i32, usize, usize) {
     }
     let mut parse = tmp;
     let first_bracket = loop {
-        let Some(fb) = b.strchr(parse, b'<') else { break None };
+        let Some(fb) = b.strchr(parse, b'<') else {
+            break None;
+        };
         let fb = fb + 1;
         match b.strchr(parse, b'"') {
             Some(q) if q < fb => {
                 // The bracket is within quotes, so skip the quoted part.
                 let s = find_closing_quote(b, q + 1);
                 if b.at(s) == 0 {
-                    log(0x195, "get_in_brackets_full", &bformat!("No closing quote found in '{}'\n", b.get(tmp)));
+                    log(
+                        0x195,
+                        "get_in_brackets_full",
+                        &bformat!("No closing quote found in '{}'\n", b.get(tmp)),
+                    );
                     return (-1, EMPTY, EMPTY);
                 }
                 parse = s + 1;
@@ -448,7 +487,11 @@ fn get_in_brackets_full_buf(b: &mut CBuf, tmp: usize) -> (i32, usize, usize) {
         return (0, p, sb + 1);
     }
     if first_bracket.is_some() {
-        log(0x1b0, "get_in_brackets_full", &bformat!("No closing bracket found in '{}'\n", b.get(tmp)));
+        log(
+            0x1b0,
+            "get_in_brackets_full",
+            &bformat!("No closing bracket found in '{}'\n", b.get(tmp)),
+        );
         return (-1, EMPTY, EMPTY);
     }
     (1, tmp, EMPTY)
@@ -470,7 +513,11 @@ pub struct InBrackets {
 pub fn get_in_brackets_full(s: impl AsRef<[u8]>) -> InBrackets {
     let mut b = CBuf::new(s.as_ref());
     let (result, out, residue) = get_in_brackets_full_buf(&mut b, 0);
-    InBrackets { result, out: b.get(out), residue: b.get(residue) }
+    InBrackets {
+        result,
+        out: b.get(out),
+        residue: b.get(residue),
+    }
 }
 
 /// `get_in_brackets` (FUN_00187a50): the bracketed part, or the input
@@ -499,7 +546,12 @@ pub struct NameAddr {
 /// `parse_name_andor_addr` (FUN_00187a80): an optional display name, then
 /// a URI in brackets (whose trailing parameters are returned in
 /// `residue`, past the first `;`) or bare (parsed by `parse_uri_full`).
-pub fn parse_name_andor_addr(value: impl AsRef<[u8]>, scheme: Option<&str>, want_name: bool, opts: ParseOpts) -> NameAddr {
+pub fn parse_name_andor_addr(
+    value: impl AsRef<[u8]>,
+    scheme: Option<&str>,
+    want_name: bool,
+    opts: ParseOpts,
+) -> NameAddr {
     let mut b = CBuf::new(value.as_ref());
     let mut uri = 0;
     let mut name = Vec::new();
@@ -526,7 +578,14 @@ pub fn parse_name_andor_addr(value: impl AsRef<[u8]>, scheme: Option<&str>, want
     if bracketed {
         p.residue = residue;
     }
-    NameAddr { name: if want_name { b.get(name_pos) } else { Vec::new() }, uri: p.read(&b, opts) }
+    NameAddr {
+        name: if want_name {
+            b.get(name_pos)
+        } else {
+            Vec::new()
+        },
+        uri: p.read(&b, opts),
+    }
 }
 
 /// The `To` header handling of `incoming_check_finalize`:
@@ -534,7 +593,16 @@ pub fn parse_name_andor_addr(value: impl AsRef<[u8]>, scheme: Option<&str>, want
 /// then `ast_sockaddr_split_hostport`.  `None` when the parse fails (the
 /// transaction then keeps empty values).
 pub fn to_host_port(to: impl AsRef<[u8]>) -> Option<(Vec<u8>, Option<Vec<u8>>)> {
-    let r = parse_name_andor_addr(to, Some("sip,sips"), false, ParseOpts { pass: false, hostport: true, params: false });
+    let r = parse_name_andor_addr(
+        to,
+        Some("sip,sips"),
+        false,
+        ParseOpts {
+            pass: false,
+            hostport: true,
+            params: false,
+        },
+    );
     if r.uri.error {
         return None;
     }
@@ -563,7 +631,12 @@ fn split_hostport_bytes(s: &[u8]) -> (&[u8], Option<&[u8]>) {
             None => (rest, None),
         }
     } else {
-        let colons: Vec<usize> = s.iter().enumerate().filter(|(_, &c)| c == b':').map(|(i, _)| i).collect();
+        let colons: Vec<usize> = s
+            .iter()
+            .enumerate()
+            .filter(|(_, &c)| c == b':')
+            .map(|(i, _)| i)
+            .collect();
         if colons.len() == 1 {
             (&s[..colons[0]], Some(&s[colons[0] + 1..]))
         } else {
@@ -610,7 +683,9 @@ fn scan_2x(s: &[u8]) -> Option<u8> {
     let mut v: u32 = 0;
     let mut digits = 0;
     while width > 0 && i < s.len() {
-        let Some(d) = (s[i] as char).to_digit(16) else { break };
+        let Some(d) = (s[i] as char).to_digit(16) else {
+            break;
+        };
         v = v * 16 + d;
         digits += 1;
         width -= 1;
@@ -644,7 +719,11 @@ fn strtoul(s: &[u8], base: u32) -> (u64, usize, bool) {
         i += 1;
     }
     let mut base = base;
-    if (base == 0 || base == 16) && s.get(i) == Some(&b'0') && matches!(s.get(i + 1), Some(b'x') | Some(b'X')) && s.get(i + 2).is_some_and(|c| c.is_ascii_hexdigit()) {
+    if (base == 0 || base == 16)
+        && s.get(i) == Some(&b'0')
+        && matches!(s.get(i + 1), Some(b'x') | Some(b'X'))
+        && s.get(i + 2).is_some_and(|c| c.is_ascii_hexdigit())
+    {
         i += 2;
         base = 16;
     } else if base == 0 {
@@ -654,7 +733,10 @@ fn strtoul(s: &[u8], base: u32) -> (u64, usize, bool) {
     let mut v: u64 = 0;
     let mut overflow = false;
     while let Some(d) = s.get(i).and_then(|&c| (c as char).to_digit(base)) {
-        match v.checked_mul(u64::from(base)).and_then(|x| x.checked_add(u64::from(d))) {
+        match v
+            .checked_mul(u64::from(base))
+            .and_then(|x| x.checked_add(u64::from(d)))
+        {
             Some(x) => v = x,
             None => overflow = true,
         }
@@ -748,14 +830,18 @@ fn sockaddr_parse(s: &[u8]) -> Option<SockAddr> {
 fn sockaddr_eq(a: SockAddr, b: SockAddr) -> bool {
     fn mapped(a: SockAddr) -> SockAddr {
         match a {
-            SockAddr::V6(o, port, _) if o[..10].iter().all(|&x| x == 0) && o[10] == 0xff && o[11] == 0xff => {
+            SockAddr::V6(o, port, _)
+                if o[..10].iter().all(|&x| x == 0) && o[10] == 0xff && o[11] == 0xff =>
+            {
                 SockAddr::V4([o[12], o[13], o[14], o[15]], port)
             }
             other => other,
         }
     }
     match (a, b) {
-        (SockAddr::V4(..), SockAddr::V6(..)) | (SockAddr::V6(..), SockAddr::V4(..)) => mapped(a) == mapped(b),
+        (SockAddr::V4(..), SockAddr::V6(..)) | (SockAddr::V6(..), SockAddr::V4(..)) => {
+            mapped(a) == mapped(b)
+        }
         _ => a == b,
     }
 }
@@ -796,13 +882,19 @@ fn params_differ(p1: Option<&[u8]>, p2: Option<&[u8]>) -> bool {
         return false;
     }
     let mut matched_must = [false; 4];
-    for pos1 in p1.map(|p| p.split(|&c| c == b';').collect::<Vec<_>>()).unwrap_or_default() {
+    for pos1 in p1
+        .map(|p| p.split(|&c| c == b';').collect::<Vec<_>>())
+        .unwrap_or_default()
+    {
         let (name1, value1) = match pos1.iter().position(|&c| c == b'=') {
             Some(i) => (&pos1[..i], &pos1[i + 1..]),
             None => (pos1, &b""[..]),
         };
         let mut matched = false;
-        for pos2 in p2.map(|p| p.split(|&c| c == b';').collect::<Vec<_>>()).unwrap_or_default() {
+        for pos2 in p2
+            .map(|p| p.split(|&c| c == b';').collect::<Vec<_>>())
+            .unwrap_or_default()
+        {
             let (name2, value2) = match pos2.iter().position(|&c| c == b'=') {
                 Some(i) => (&pos2[..i], &pos2[i + 1..]),
                 None => (pos2, &b""[..]),
@@ -822,7 +914,10 @@ fn params_differ(p1: Option<&[u8]>, p2: Option<&[u8]>) -> bool {
             matched_must[k] = true;
         }
     }
-    for pos2 in p2.map(|p| p.split(|&c| c == b';').collect::<Vec<_>>()).unwrap_or_default() {
+    for pos2 in p2
+        .map(|p| p.split(|&c| c == b';').collect::<Vec<_>>())
+        .unwrap_or_default()
+    {
         let name2 = pos2.split(|&c| c == b'=').next().unwrap_or(b"");
         if let Some(k) = MUST.iter().position(|m| eq_ignore_case(name2, m)) {
             if !matched_must[k] {
@@ -855,7 +950,9 @@ pub fn sip_uri_cmp(input1: impl AsRef<[u8]>, input2: impl AsRef<[u8]>) -> i32 {
     if scheme1 != b"sip" && scheme1 != b"sips" {
         return 1;
     }
-    let (Some(uri1), Some(uri2)) = (uri1, uri2) else { return 1 };
+    let (Some(uri1), Some(uri2)) = (uri1, uri2) else {
+        return 1;
+    };
     if uri1.is_empty() || uri2.is_empty() {
         return 1;
     }
@@ -886,7 +983,10 @@ pub fn sip_uri_cmp(input1: impl AsRef<[u8]>, input2: impl AsRef<[u8]>) -> i32 {
 
 /// The `?headers` split of `sip_uri_cmp`: searched in the parameters when
 /// there are any, else in the host.
-fn split_headers<'a>(host: &'a [u8], params: Option<&'a [u8]>) -> (&'a [u8], Option<&'a [u8]>, Option<&'a [u8]>) {
+fn split_headers<'a>(
+    host: &'a [u8],
+    params: Option<&'a [u8]>,
+) -> (&'a [u8], Option<&'a [u8]>, Option<&'a [u8]>) {
     match params {
         Some(p) if !p.is_empty() => {
             let (p, h) = cut(p, b'?');
@@ -907,18 +1007,31 @@ fn split_headers<'a>(host: &'a [u8], params: Option<&'a [u8]>) -> (&'a [u8], Opt
 /// The address is what follows the first `:` and, if present, the first
 /// `@` after it; every `;` after that is cut.  With `want_transport`, the
 /// value of the last `;transport=` parameter is returned.
-pub fn phone_utils_parse_uri_in_place(buf: &mut [u8], want_transport: bool) -> (Option<usize>, Option<usize>) {
+pub fn phone_utils_parse_uri_in_place(
+    buf: &mut [u8],
+    want_transport: bool,
+) -> (Option<usize>, Option<usize>) {
     let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
     let s = &mut buf[..len];
-    let Some(colon) = s.iter().position(|&c| c == b':') else { return (None, None) };
+    let Some(colon) = s.iter().position(|&c| c == b':') else {
+        return (None, None);
+    };
     s[colon] = 0;
     let mut addr = colon + 1;
-    if let Some(at) = s[addr..].iter().position(|&c| c == 0 || c == b'@').filter(|&i| s[addr + i] == b'@') {
+    if let Some(at) = s[addr..]
+        .iter()
+        .position(|&c| c == 0 || c == b'@')
+        .filter(|&i| s[addr + i] == b'@')
+    {
         addr += at + 1;
     }
     let mut transport = None;
     let mut p = addr;
-    while let Some(semi) = s[p..].iter().position(|&c| c == 0 || c == b';').filter(|&i| s[p + i] == b';') {
+    while let Some(semi) = s[p..]
+        .iter()
+        .position(|&c| c == 0 || c == b';')
+        .filter(|&i| s[p + i] == b';')
+    {
         let semi = p + semi;
         s[semi] = 0;
         p = semi + 1;
@@ -946,8 +1059,12 @@ pub fn phone_utils_parse_uri(uri: impl AsRef<[u8]>) -> (Vec<u8>, Option<Vec<u8>>
 pub fn same_uri(a: impl AsRef<[u8]>, b: impl AsRef<[u8]>) -> bool {
     let (addr1, t1) = phone_utils_parse_uri(a);
     let (addr2, t2) = phone_utils_parse_uri(b);
-    let t1 = t1.filter(|t| !t.is_empty()).unwrap_or_else(|| b"udp".to_vec());
-    let t2 = t2.filter(|t| !t.is_empty()).unwrap_or_else(|| b"udp".to_vec());
+    let t1 = t1
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| b"udp".to_vec());
+    let t2 = t2
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| b"udp".to_vec());
     eq_ignore_case(&addr1, &addr2) && eq_ignore_case(&t1, &t2)
 }
 

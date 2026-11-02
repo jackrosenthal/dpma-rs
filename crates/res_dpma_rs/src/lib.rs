@@ -73,7 +73,9 @@ fn action_reconfigure(r: &Request) -> i32 {
         r.send_error("PhoneName argument is empty.");
         return 0;
     }
-    let exists = users::read().as_ref().is_some_and(|reg| reg.phones.contains(&name));
+    let exists = users::read()
+        .as_ref()
+        .is_some_and(|reg| reg.phones.contains(&name));
     if !exists {
         r.send_error("Could not find user to reconfigure.");
     } else if users::reconfigure(&name, false).is_ok() {
@@ -94,7 +96,9 @@ fn action_reconfigure_all(r: &Request) -> i32 {
     for n in names {
         let _ = users::reconfigure(&n, false);
     }
-    r.send_ack(Some(b"Reconfigure message successfully sent to all known device locations."));
+    r.send_ack(Some(
+        b"Reconfigure message successfully sent to all known device locations.",
+    ));
     0
 }
 
@@ -176,8 +180,20 @@ fn load_full() -> Result<Full, ()> {
     cmds.extend(users::status::commands());
     cmds.extend(translation::commands());
     let cli = CliGroup::register(&cmds);
-    manager::register(ACTION_RECONFIGURE, manager::AUTH_MESSAGE, "", "", action_reconfigure);
-    manager::register(ACTION_RECONFIGURE_ALL, manager::AUTH_MESSAGE, "", "", action_reconfigure_all);
+    manager::register(
+        ACTION_RECONFIGURE,
+        manager::AUTH_MESSAGE,
+        "",
+        "",
+        action_reconfigure,
+    );
+    manager::register(
+        ACTION_RECONFIGURE_ALL,
+        manager::AUTH_MESSAGE,
+        "",
+        "",
+        action_reconfigure_all,
+    );
 
     if ami::sched_create().is_err() {
         return fail("Failed to create ami schedule context");
@@ -207,7 +223,9 @@ fn load_full() -> Result<Full, ()> {
 /// line, and function names.
 fn proto_log(level: dpma_proto::LogLevel, file: &str, line: u32, func: &str, msg: &[u8]) {
     match level {
-        dpma_proto::LogLevel::Dpma => dpma_ast::log::log(dpma_ast::log::custom_level(), file, line, func, msg),
+        dpma_proto::LogLevel::Dpma => {
+            dpma_ast::log::log(dpma_ast::log::custom_level(), file, line, func, msg)
+        }
         dpma_proto::LogLevel::Debug(n) => {
             if dpma_ast::log::debug_atleast(n) {
                 dpma_ast::log::log(dpma_ast::log::LOG_DEBUG, file, line, func, msg);
@@ -235,7 +253,10 @@ fn load_main() -> i32 {
             return 1;
         }
     };
-    *MODULE.lock().unwrap() = Some(Module { _settings_cli: settings_cli, full: Some(full) });
+    *MODULE.lock().unwrap() = Some(Module {
+        _settings_cli: settings_cli,
+        full: Some(full),
+    });
     0
 }
 

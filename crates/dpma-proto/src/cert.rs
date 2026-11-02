@@ -159,7 +159,14 @@ impl Certificate {
         let basic_constraints = t.get::<BasicConstraints>().ok()?.map(|(_, e)| e);
         let key_usage = t.get::<KeyUsage>().ok()?.map(|(_, e)| e);
         let key = decode_key(&t.subject_public_key_info);
-        Some(Certificate { der: der.to_vec(), tbs, cert, basic_constraints, key_usage, key })
+        Some(Certificate {
+            der: der.to_vec(),
+            tbs,
+            cert,
+            basic_constraints,
+            key_usage,
+            key,
+        })
     }
 
     /// The certificate's DER encoding.
@@ -190,14 +197,21 @@ impl Certificate {
 
     /// Does the subject match the issuer name?
     fn self_issued(&self) -> bool {
-        names_match(&self.cert.tbs_certificate.subject, &self.cert.tbs_certificate.issuer)
+        names_match(
+            &self.cert.tbs_certificate.subject,
+            &self.cert.tbs_certificate.issuer,
+        )
     }
 }
 
 /// Do two names match (see the module documentation)?
 fn names_match(a: &Name, b: &Name) -> bool {
     fn text(v: &x509_cert::der::Any) -> Option<&[u8]> {
-        matches!(v.tag(), Tag::PrintableString | Tag::Utf8String | Tag::Ia5String).then(|| v.value())
+        matches!(
+            v.tag(),
+            Tag::PrintableString | Tag::Utf8String | Tag::Ia5String
+        )
+        .then(|| v.value())
     }
     a.0.len() == b.0.len()
         && a.0.iter().zip(&b.0).all(|(x, y)| {
@@ -218,7 +232,10 @@ fn decode_key(spki: &x509_cert::spki::SubjectPublicKeyInfoOwned) -> Option<Publi
         return Some(PublicKey::Other);
     }
     let k = rsa::pkcs1::RsaPublicKey::from_der(spki.subject_public_key.as_bytes()?).ok()?;
-    Some(PublicKey::Rsa(RsaKey::from_be_bytes(k.modulus.as_bytes(), k.public_exponent.as_bytes())))
+    Some(PublicKey::Rsa(RsaKey::from_be_bytes(
+        k.modulus.as_bytes(),
+        k.public_exponent.as_bytes(),
+    )))
 }
 
 /// The certificates in the `CERTIFICATE` PEM blocks of `text`, in order;
@@ -235,7 +252,11 @@ fn pem_certificates(text: &[u8]) -> impl Iterator<Item = Option<Certificate>> + 
             return Some(None);
         };
         rest = &body[len + END.len()..];
-        let b64: Vec<u8> = body[..len].iter().copied().filter(|c| !c.is_ascii_whitespace()).collect();
+        let b64: Vec<u8> = body[..len]
+            .iter()
+            .copied()
+            .filter(|c| !c.is_ascii_whitespace())
+            .collect();
         let der = base64::engine::general_purpose::STANDARD.decode(b64).ok();
         Some(der.and_then(|d| Certificate::from_der(&d)))
     })
@@ -254,7 +275,9 @@ impl CaStore {
     pub fn from_pem(pem: &[u8]) -> Result<CaStore> {
         let certs = pem_certificates(pem)
             .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| ProtoError::Invalid(format!("Error parsing CA certificates: {}", PARSE_ERROR)))?;
+            .ok_or_else(|| {
+                ProtoError::Invalid(format!("Error parsing CA certificates: {}", PARSE_ERROR))
+            })?;
         if certs.is_empty() {
             return Err(ProtoError::Invalid("No CA certificates found".into()));
         }
@@ -319,14 +342,28 @@ impl CertError {
     /// except for the chain length message, which has none).
     pub fn log_message(&self, contact: &[u8]) -> Vec<u8> {
         match self {
-            CertError::Unreadable => bformat!("<{}>: Unable to read client cert: {}\n", contact, PARSE_ERROR),
+            CertError::Unreadable => bformat!(
+                "<{}>: Unable to read client cert: {}\n",
+                contact,
+                PARSE_ERROR
+            ),
             CertError::WrongChainLength(n) => {
-                bformat!("<{}>: Expected two certificates in the chain, found {}", contact, n)
+                bformat!(
+                    "<{}>: Expected two certificates in the chain, found {}",
+                    contact,
+                    n
+                )
             }
             CertError::NoSerial => {
-                bformat!("<{}>: Unable to get serial number of intermediate cert: {}\n", contact, NEGATIVE_SERIAL)
+                bformat!(
+                    "<{}>: Unable to get serial number of intermediate cert: {}\n",
+                    contact,
+                    NEGATIVE_SERIAL
+                )
             }
-            CertError::Verify(e) => bformat!("<{}>: Client cert failed to verify: {}\n", contact, e),
+            CertError::Verify(e) => {
+                bformat!("<{}>: Client cert failed to verify: {}\n", contact, e)
+            }
         }
     }
 }
@@ -334,7 +371,11 @@ impl CertError {
 impl std::fmt::Display for CertError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let msg = self.log_message(b"");
-        f.write_str(String::from_utf8_lossy(&msg).trim_start_matches("<>: ").trim_end())
+        f.write_str(
+            String::from_utf8_lossy(&msg)
+                .trim_start_matches("<>: ")
+                .trim_end(),
+        )
     }
 }
 
@@ -362,15 +403,24 @@ pub fn restore_pem_newlines(pem: impl AsRef<[u8]>) -> Vec<u8> {
     let mut out = Vec::with_capacity(pem.len() + 8);
     let mut rest = pem;
     loop {
-        let start = [rest.find("-----BEGIN "), rest.find("-----END ")].into_iter().flatten().min();
+        let start = [rest.find("-----BEGIN "), rest.find("-----END ")]
+            .into_iter()
+            .flatten()
+            .min();
         let Some(start) = start else {
             out.extend_from_slice(rest);
             return out;
         };
         out.extend_from_slice(&rest[..start]);
         let at = &rest[start..];
-        let label_start = if at.starts_with(b"-----BEGIN ") { 11 } else { 9 };
-        let label_len = at[label_start..].find_byteset(b"-\r\n").unwrap_or(at.len() - label_start);
+        let label_start = if at.starts_with(b"-----BEGIN ") {
+            11
+        } else {
+            9
+        };
+        let label_len = at[label_start..]
+            .find_byteset(b"-\r\n")
+            .unwrap_or(at.len() - label_start);
         let end = label_start + label_len + DASHES.len();
         if !at[label_start + label_len..].starts_with(DASHES) {
             // Not a marker line: keep the dashes and look further on.
@@ -408,7 +458,12 @@ pub fn verify_client_chain(
 ) -> std::result::Result<VerifiedClient, CertError> {
     let who = || {
         let mac: &[u8] = client.mac.unwrap_or(b"(null)");
-        bformat!("Contact: {} MAC: {} UA: {}", client.contact, mac, client.user_agent)
+        bformat!(
+            "Contact: {} MAC: {} UA: {}",
+            client.contact,
+            mac,
+            client.user_agent
+        )
     };
     let fail = |line: u32, e: CertError| {
         log(LogLevel::Dpma, line, &e.log_message(client.contact));
@@ -425,14 +480,24 @@ pub fn verify_client_chain(
         let s = x.serial();
         chain.get_or_insert_with(Vec::new).push(x);
         if serial == 0 {
-            let Some(s) = s else { return fail(0x22b, CertError::NoSerial) };
+            let Some(s) = s else {
+                return fail(0x22b, CertError::NoSerial);
+            };
             serial = s;
-            log(LogLevel::Debug(1), 0x22f, &bformat!("{} Intermediate cert serial number: {}\n", who(), s));
+            log(
+                LogLevel::Debug(1),
+                0x22f,
+                &bformat!("{} Intermediate cert serial number: {}\n", who(), s),
+            );
         }
     }
     let (cert, untrusted, legacy) = match &chain {
         None => {
-            log(LogLevel::Debug(1), 0x235, &bformat!("{} Using legacy certificate\n", who()));
+            log(
+                LogLevel::Debug(1),
+                0x235,
+                &bformat!("{} Using legacy certificate\n", who()),
+            );
             match &first {
                 Some(c) => (c, &[][..], true),
                 None => return fail(0x23a, CertError::Unreadable),

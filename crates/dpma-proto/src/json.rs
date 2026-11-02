@@ -14,7 +14,11 @@ use std::io;
 struct JanssonFormatter;
 
 impl Formatter for JanssonFormatter {
-    fn write_char_escape<W: ?Sized + io::Write>(&mut self, writer: &mut W, escape: CharEscape) -> io::Result<()> {
+    fn write_char_escape<W: ?Sized + io::Write>(
+        &mut self,
+        writer: &mut W,
+        escape: CharEscape,
+    ) -> io::Result<()> {
         match escape {
             CharEscape::AsciiControl(b) => write!(writer, "\\u{:04X}", b),
             other => CompactFormatter.write_char_escape(writer, other),

@@ -13,9 +13,16 @@ fn show_status(a: &CliArgs) -> CliResult {
     }
     let name = {
         let g = read();
-        g.as_ref().and_then(|r| r.phones.values().find(|p| p.name == a.argv[3]).map(|p| p.name.clone()))
+        g.as_ref().and_then(|r| {
+            r.phones
+                .values()
+                .find(|p| p.name == a.argv[3])
+                .map(|p| p.name.clone())
+        })
     };
-    let Some(name) = name else { return CliResult::Success };
+    let Some(name) = name else {
+        return CliResult::Success;
+    };
     for line in super::presence::status_lines(&name).unwrap_or_default() {
         a.out(&line);
     }

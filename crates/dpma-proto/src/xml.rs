@@ -66,7 +66,10 @@ mod tests {
     #[test]
     fn escapes() {
         assert_eq!(escape(b"a&b<c>d\"e'f"), b"a&amp;b&lt;c&gt;d&quot;e&apos;f");
-        assert_eq!(escape("plain ünïcödé".as_bytes()), "plain ünïcödé".as_bytes());
+        assert_eq!(
+            escape("plain ünïcödé".as_bytes()),
+            "plain ünïcödé".as_bytes()
+        );
         assert_eq!(escape(b"Jos\xe9 <\xff>"), b"Jos\xe9 &lt;\xff&gt;");
         assert_eq!(escape(b""), b"");
     }

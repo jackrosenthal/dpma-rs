@@ -90,7 +90,13 @@ pub fn strtol(s: &[u8]) -> (i64, usize) {
     let mut overflow = false;
     while let Some(d) = s.get(i).filter(|c| c.is_ascii_digit()) {
         let d = i64::from(d - b'0');
-        match v.checked_mul(10).and_then(|x| if neg { x.checked_sub(d) } else { x.checked_add(d) }) {
+        match v.checked_mul(10).and_then(|x| {
+            if neg {
+                x.checked_sub(d)
+            } else {
+                x.checked_add(d)
+            }
+        }) {
             Some(n) => v = n,
             None => overflow = true,
         }

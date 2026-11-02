@@ -6,7 +6,7 @@
 use crate::util::NamedMap;
 use dpma_ast::cli::CliArgs;
 use dpma_ast::config::{self, LoadResult};
-use dpma_ast::{bformat, dpma_log, dpma_bytes::ByteSlice};
+use dpma_ast::{bformat, dpma_bytes::ByteSlice, dpma_log};
 use std::sync::RwLock;
 
 pub const PACKAGE_CONFIG_FILE: &str = "digium_phones_firmware.conf";
@@ -66,7 +66,9 @@ pub fn load() -> Result<(), ()> {
 /// official DPMA never dropped packages removed from the file); a failed
 /// read keeps the previous ones.
 pub fn reload() -> Result<(), ()> {
-    let Some(pkgs) = read_config() else { return Ok(()) };
+    let Some(pkgs) = read_config() else {
+        return Ok(());
+    };
     let mut g = PACKAGES.write().unwrap();
     let map = g.get_or_insert_with(|| NamedMap::new(13));
     let keep: Vec<Vec<u8>> = pkgs.iter().map(|p| p.model.to_ascii_lowercase()).collect();
@@ -89,7 +91,12 @@ pub fn find(model: &[u8]) -> Option<Package> {
 
 /// All packages, in container order.
 pub fn all() -> Vec<Package> {
-    PACKAGES.read().unwrap().as_ref().map(|m| m.values().cloned().collect()).unwrap_or_default()
+    PACKAGES
+        .read()
+        .unwrap()
+        .as_ref()
+        .map(|m| m.values().cloned().collect())
+        .unwrap_or_default()
 }
 
 /// `firmwares_no_option_settings` (FUN_0017a9f0): the `<firmwares>`
@@ -106,10 +113,18 @@ pub fn no_option_settings(append: &mut dyn FnMut(&[u8]), url_prefix: &[u8], netw
         if p.version.is_empty() || p.file.is_empty() {
             continue;
         }
-        let prefix = if p.file.starts_with(b"/") || p.file.contains_str("//") { b"" } else { url_prefix };
+        let prefix = if p.file.starts_with(b"/") || p.file.contains_str("//") {
+            b""
+        } else {
+            url_prefix
+        };
         append(&bformat!(
             "<firmware model=\"{}\" version=\"{}\" url=\"{}{}\" network_id=\"{}\" />\n",
-            p.model, p.version, prefix, p.file, network
+            p.model,
+            p.version,
+            prefix,
+            p.file,
+            network
         ));
     }
     append(b"</firmwares>\n");

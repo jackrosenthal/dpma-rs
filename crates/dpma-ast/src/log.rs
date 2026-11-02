@@ -45,7 +45,16 @@ pub fn log(level: i32, file: &str, line: u32, func: &str, msg: &[u8]) {
     let func = cstr(func);
     let msg = cstr(msg);
     // SAFETY: valid C strings; the message is passed as a "%s" argument.
-    unsafe { sys::ast_log(level, file.as_ptr(), line as i32, func.as_ptr(), c"%s".as_ptr(), msg.as_ptr()) };
+    unsafe {
+        sys::ast_log(
+            level,
+            file.as_ptr(),
+            line as i32,
+            func.as_ptr(),
+            c"%s".as_ptr(),
+            msg.as_ptr(),
+        )
+    };
 }
 
 /// `DEBUG_ATLEAST(level)`: core debug at least `level`, or module debug

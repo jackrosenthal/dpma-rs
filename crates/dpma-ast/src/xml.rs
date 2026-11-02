@@ -42,11 +42,22 @@ extern "C" {
     fn xmlXPathFreeContext(ctx: *mut c_void);
     fn xmlXPathEvalExpression(expr: *const c_char, ctx: *mut c_void) -> *mut XmlXPathObject;
     fn xmlXPathFreeObject(obj: *mut XmlXPathObject);
-    fn xmlDocDumpFormatMemory(doc: *mut c_void, mem: *mut *mut c_char, size: *mut c_int, format: c_int);
+    fn xmlDocDumpFormatMemory(
+        doc: *mut c_void,
+        mem: *mut *mut c_char,
+        size: *mut c_int,
+        format: c_int,
+    );
     pub fn xmlBufferCreate() -> *mut c_void;
     pub fn xmlBufferFree(buf: *mut c_void);
     pub fn xmlBufferContent(buf: *const c_void) -> *const c_char;
-    pub fn xmlNodeDump(buf: *mut c_void, doc: *mut c_void, cur: *mut c_void, level: c_int, format: c_int) -> c_int;
+    pub fn xmlNodeDump(
+        buf: *mut c_void,
+        doc: *mut c_void,
+        cur: *mut c_void,
+        level: c_int,
+        format: c_int,
+    ) -> c_int;
 }
 
 /// Asterisk's wrapper around libxml2's `xmlFree`.
@@ -69,7 +80,10 @@ impl<'a> Node<'a> {
         if ptr.is_null() {
             None
         } else {
-            Some(Node { ptr, _doc: PhantomData })
+            Some(Node {
+                ptr,
+                _doc: PhantomData,
+            })
         }
     }
 

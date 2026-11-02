@@ -47,7 +47,11 @@ impl Errs {
 
     /// `ERR_put_error`.
     pub fn put(&mut self, lib: u32, func: u32, reason: u32, file: &'static str, line: u32) {
-        self.0.push(Err { code: pack(lib, func, reason), file, line });
+        self.0.push(Err {
+            code: pack(lib, func, reason),
+            file,
+            line,
+        });
     }
 
     /// `ERR_peek_error`: the oldest error's code (0 when there is none).
@@ -63,7 +67,13 @@ impl Errs {
         let tid = thread_id();
         let mut out = String::new();
         for e in self.0.drain(..) {
-            out.push_str(&format!("{}:{}:{}:{}:\n", tid, error_string(e.code), e.file, e.line));
+            out.push_str(&format!(
+                "{}:{}:{}:{}:\n",
+                tid,
+                error_string(e.code),
+                e.file,
+                e.line
+            ));
         }
         out
     }
@@ -83,9 +93,15 @@ fn thread_id() -> u64 {
 /// text (so no error at all is `error:00000000:lib(0):func(0):reason(0)`).
 pub fn error_string(code: u32) -> String {
     let (l, f, r) = ((code >> 24) & 0xff, (code >> 12) & 0xfff, code & 0xfff);
-    let ls = lib_string(l).map(str::to_string).unwrap_or_else(|| format!("lib({})", l));
-    let fs = func_string(l, f).map(str::to_string).unwrap_or_else(|| format!("func({})", f));
-    let rs = reason_string(l, r).map(str::to_string).unwrap_or_else(|| format!("reason({})", r));
+    let ls = lib_string(l)
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("lib({})", l));
+    let fs = func_string(l, f)
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("func({})", f));
+    let rs = reason_string(l, r)
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("reason({})", r));
     format!("error:{:08X}:{}:{}:{}", code, ls, fs, rs)
 }
 
@@ -167,26 +183,53 @@ mod tests {
         // Texts as 1.1.1t's ERR_error_string_n writes them.
         assert_eq!(error_string(0), "error:00000000:lib(0):func(0):reason(0)");
         assert_eq!(
-            error_string(pack(LIB_RAND, rand::F_RAND_DRBG_GENERATE, rand::R_IN_ERROR_STATE)),
+            error_string(pack(
+                LIB_RAND,
+                rand::F_RAND_DRBG_GENERATE,
+                rand::R_IN_ERROR_STATE
+            )),
             "error:2406B072:random number generator:RAND_DRBG_generate:in error state"
         );
         assert_eq!(
-            error_string(pack(LIB_EVP, evp::F_EVP_DECRYPTFINAL_EX, evp::R_BAD_DECRYPT)),
+            error_string(pack(
+                LIB_EVP,
+                evp::F_EVP_DECRYPTFINAL_EX,
+                evp::R_BAD_DECRYPT
+            )),
             "error:06065064:digital envelope routines:EVP_DecryptFinal_ex:bad decrypt"
         );
         assert_eq!(
-            error_string(pack(LIB_EVP, evp::F_EVP_DECRYPTFINAL_EX, evp::R_WRONG_FINAL_BLOCK_LENGTH)),
+            error_string(pack(
+                LIB_EVP,
+                evp::F_EVP_DECRYPTFINAL_EX,
+                evp::R_WRONG_FINAL_BLOCK_LENGTH
+            )),
             "error:0606506D:digital envelope routines:EVP_DecryptFinal_ex:wrong final block length"
         );
-        assert_eq!(error_string(pack(77, 5, 6)), "error:4D005006:lib(77):func(5):reason(6)");
+        assert_eq!(
+            error_string(pack(77, 5, 6)),
+            "error:4D005006:lib(77):func(5):reason(6)"
+        );
     }
 
     #[test]
     fn queue_order_and_print() {
         let mut e = Errs::new();
         assert_eq!(e.peek(), 0);
-        e.put(LIB_RAND, rand::F_RAND_DRBG_GENERATE, rand::R_IN_ERROR_STATE, "crypto/rand/drbg_lib.c", 578);
-        e.put(LIB_EVP, evp::F_EVP_DECRYPTFINAL_EX, evp::R_BAD_DECRYPT, "crypto/evp/evp_enc.c", 612);
+        e.put(
+            LIB_RAND,
+            rand::F_RAND_DRBG_GENERATE,
+            rand::R_IN_ERROR_STATE,
+            "crypto/rand/drbg_lib.c",
+            578,
+        );
+        e.put(
+            LIB_EVP,
+            evp::F_EVP_DECRYPTFINAL_EX,
+            evp::R_BAD_DECRYPT,
+            "crypto/evp/evp_enc.c",
+            612,
+        );
         assert_eq!(e.peek(), 0x2406B072);
         let printed = e.print();
         let tid = thread_id();

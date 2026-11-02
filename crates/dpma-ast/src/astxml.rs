@@ -31,7 +31,10 @@ pub struct Node<'a> {
 }
 
 fn node<'a>(ptr: *mut AstXmlNode) -> Option<Node<'a>> {
-    (!ptr.is_null()).then_some(Node { ptr, _doc: PhantomData })
+    (!ptr.is_null()).then_some(Node {
+        ptr,
+        _doc: PhantomData,
+    })
 }
 
 fn opt_cstr(s: Option<&[u8]>) -> Option<std::ffi::CString> {
@@ -124,7 +127,8 @@ impl<'a> Node<'a> {
         let n = cstr(name);
         let an = opt_cstr(attr.map(|a| a.0.as_bytes()));
         let av = opt_cstr(attr.map(|a| a.1));
-        let ptr = |c: &Option<std::ffi::CString>| c.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
+        let ptr =
+            |c: &Option<std::ffi::CString>| c.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
         node(unsafe { sys::ast_xml_find_element(self.ptr, n.as_ptr(), ptr(&an), ptr(&av)) })
     }
 

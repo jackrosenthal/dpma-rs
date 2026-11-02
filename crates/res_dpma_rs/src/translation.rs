@@ -22,7 +22,10 @@ fn load_tables(filename: &str) -> Option<NamedMap<Arc<Table>>> {
         _ => return None,
     };
     let mut tables = NamedMap::new(31);
-    for cat in cats.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
+    for cat in cats
+        .iter()
+        .filter(|c| !c.name.eq_ignore_ascii_case(b"general"))
+    {
         match cat.get("type") {
             None => dpma_log!("No type set for translation table {}", cat.name),
             Some(t) if t.eq_ignore_ascii_case(b"translation") => {
@@ -32,7 +35,13 @@ fn load_tables(filename: &str) -> Option<NamedMap<Arc<Table>>> {
                     .filter(|v| !v.name.eq_ignore_ascii_case(b"type"))
                     .map(|v| (v.name.clone(), v.value.clone()))
                     .collect();
-                tables.insert(&cat.name, Arc::new(Table { name: cat.name.clone(), entries }));
+                tables.insert(
+                    &cat.name,
+                    Arc::new(Table {
+                        name: cat.name.clone(),
+                        entries,
+                    }),
+                );
             }
             Some(_) => {}
         }

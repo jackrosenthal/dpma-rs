@@ -82,7 +82,11 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
         (false, (st.intermediate_serial != 0).then_some("1"), None)
     } else {
         // FUN_00151840 logs its own failure; the salt is used regardless.
-        (true, None, Some(crypto::new_salt().unwrap_or([0; SALT_LEN])))
+        (
+            true,
+            None,
+            Some(crypto::new_salt().unwrap_or([0; SALT_LEN])),
+        )
     };
     let salt_hex = salt.as_ref().map(crypto::salt_to_hex).unwrap_or_default();
 
@@ -104,18 +108,36 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
         Some(salt) => (
             (!out.encrypted_password.is_empty())
                 .then(|| encrypt_header(&out.encrypted_password, &st.common_password, salt)),
-            (!out.config_token.is_empty()).then(|| encrypt_header(&out.config_token, &st.common_password, salt)),
+            (!out.config_token.is_empty())
+                .then(|| encrypt_header(&out.config_token, &st.common_password, salt)),
         ),
         None => (None, None),
     };
 
     if error_id.is_empty() {
-        dpma_debug!(3, "Sending to {} '{}' body length {}", out.response_uri, type_name, body.len());
+        dpma_debug!(
+            3,
+            "Sending to {} '{}' body length {}",
+            out.response_uri,
+            type_name,
+            body.len()
+        );
     } else {
-        dpma_debug!(3, "Sending to {} '{}' ERROR={} body length {}", out.response_uri, type_name, out.error, body.len());
+        dpma_debug!(
+            3,
+            "Sending to {} '{}' ERROR={} body length {}",
+            out.response_uri,
+            type_name,
+            out.error,
+            body.len()
+        );
     }
 
-    let prefix = if !out.event_name.is_empty() || !error_id.is_empty() { framing::COMMAND_PREFIX } else { "" };
+    let prefix = if !out.event_name.is_empty() || !error_id.is_empty() {
+        framing::COMMAND_PREFIX
+    } else {
+        ""
+    };
     let chunks = framing::split(&body, prefix, limit, handshake);
     let mut encryptor = match salt.as_ref() {
         Some(salt) => match Encryptor::new(&st.common_password, salt) {
@@ -151,7 +173,10 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
             (h::RESPONSE_URI, &out.response_uri),
             (h::RESPONSE_FULLCONTACT, &out.full_contact),
             (h::TOKEN_AUTH_REQUIREMENTS, &out.token_auth_requirements),
-            (h::USERLIST_AUTH_REQUIREMENTS, &out.userlist_auth_requirements),
+            (
+                h::USERLIST_AUTH_REQUIREMENTS,
+                &out.userlist_auth_requirements,
+            ),
             (h::PASSWORD, &out.password),
             (h::EVENT_NAME, &out.event_name),
             (h::SESSION, &session.id),
@@ -216,7 +241,11 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
             return Err(());
         }
         if transport::write_msg(m).is_err() {
-            dpma_log!("Sending to {} '{}' had failure writing message", out.response_uri, type_name);
+            dpma_log!(
+                "Sending to {} '{}' had failure writing message",
+                out.response_uri,
+                type_name
+            );
         }
         if !last {
             std::thread::sleep(std::time::Duration::from_millis(u64::from(delay)));
@@ -327,7 +356,9 @@ pub fn send_handshake_required(
     body: &[u8],
     origination_network: &[u8],
 ) {
-    let Some(mut m) = transport::new_outgoing(response_uri) else { return };
+    let Some(mut m) = transport::new_outgoing(response_uri) else {
+        return;
+    };
     m.set_exten(transport::SEND_EXTEN);
     m.set_var(h::RESPONSE_TYPE, "HandshakeResponse");
     m.set_var(h::ERROR_ID, "-398");
@@ -357,8 +388,19 @@ pub fn send_handshake_required(
         m.set_var(h::APPSERVER_ID, id);
     }
     if transport::write_msg(m).is_ok() {
-        dpma_debug!(3, "Sending to {} '{}' ERROR={}", response_uri, "HandshakeResponse", "-398");
+        dpma_debug!(
+            3,
+            "Sending to {} '{}' ERROR={}",
+            response_uri,
+            "HandshakeResponse",
+            "-398"
+        );
     } else {
-        dpma_log!("Sending to {} '{}' ERROR={} had failure writing message", response_uri, "HandshakeResponse", "-398");
+        dpma_log!(
+            "Sending to {} '{}' ERROR={} had failure writing message",
+            response_uri,
+            "HandshakeResponse",
+            "-398"
+        );
     }
 }

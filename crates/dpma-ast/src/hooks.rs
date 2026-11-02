@@ -34,7 +34,9 @@ unsafe fn run(slot: usize, cfg: *mut AstConfig) {
         } else {
             None
         };
-        let f = HOOKS.lock().unwrap_or_else(|e| e.into_inner())[slot].as_ref().map(|s| s.f);
+        let f = HOOKS.lock().unwrap_or_else(|e| e.into_inner())[slot]
+            .as_ref()
+            .map(|s| s.f);
         if let Some(f) = f {
             f(cats);
         }
@@ -62,14 +64,23 @@ pub fn register(name: &str, filename: &str, module: &str, f: HookFn) -> bool {
         let Some(i) = slots.iter().position(Option::is_none) else {
             return false;
         };
-        slots[i] = Some(Slot { name: name.into(), f });
+        slots[i] = Some(Slot {
+            name: name.into(),
+            f,
+        });
         i
     };
     let (n, fname, m) = (cstr(name), cstr(filename), cstr(module));
     // SAFETY: Asterisk copies the strings; the slot function stays valid
     // until `unregister`.
     unsafe {
-        sys::ast_config_hook_register(n.as_ptr(), fname.as_ptr(), m.as_ptr(), 0, Some(SLOT_FNS[slot])) == 0
+        sys::ast_config_hook_register(
+            n.as_ptr(),
+            fname.as_ptr(),
+            m.as_ptr(),
+            0,
+            Some(SLOT_FNS[slot]),
+        ) == 0
     }
 }
 

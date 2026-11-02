@@ -41,7 +41,12 @@ static DB_CRYPTO: Mutex<()> = Mutex::new(());
 
 /// `send_encrypt_hdr_helper` into a buffer of `size` bytes, with the
 /// official DPMA's messages; "" on failure.
-pub(crate) fn encrypt_helper(plain: &[u8], password: &[u8], salt: &[u8; crypto::SALT_LEN], size: usize) -> Vec<u8> {
+pub(crate) fn encrypt_helper(
+    plain: &[u8],
+    password: &[u8],
+    salt: &[u8; crypto::SALT_LEN],
+    size: usize,
+) -> Vec<u8> {
     let fail = |msg: &str| {
         dpma_log!("{}", msg);
         Vec::new()
@@ -110,7 +115,9 @@ fn b64_text(s: &[u8]) -> Vec<u8> {
 
 /// `phone_session_db_restore_entry`: restore one AstDB entry.
 fn restore_entry(key: &[u8], value: &[u8]) {
-    let Some(slash) = key.rfind_byte(b'/') else { return };
+    let Some(slash) = key.rfind_byte(b'/') else {
+        return;
+    };
     let id = &key[slash + 1..];
     let get = |n: &str| field(value, n);
     let (Some(contact), Some(data), Some(ran), Some(data_len)) =
@@ -122,8 +129,14 @@ fn restore_entry(key: &[u8], value: &[u8]) {
         return;
     }
     let data_len = strtol(data_len);
-    let cfgd = get("cfgd=").filter(|v| !v.is_empty()).map(strtol).unwrap_or(0);
-    let auth_flags = get("auth_flags=").filter(|v| !v.is_empty()).map(strtol).unwrap_or(0);
+    let cfgd = get("cfgd=")
+        .filter(|v| !v.is_empty())
+        .map(strtol)
+        .unwrap_or(0);
+    let auth_flags = get("auth_flags=")
+        .filter(|v| !v.is_empty())
+        .map(strtol)
+        .unwrap_or(0);
     let mac = get("mac=");
     let uri = b64_text(get("uri=").unwrap_or(b""));
     let ua = b64_text(get("ua=").unwrap_or(b""));

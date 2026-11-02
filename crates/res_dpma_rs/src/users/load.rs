@@ -22,8 +22,8 @@
 use super::options::{self, UserCtx};
 use super::*;
 use dpma_ast::config::{self, Category, LoadResult};
-use dpma_ast::util::{ast_false, ast_true};
 use dpma_ast::dpma_bytes::ByteSlice;
+use dpma_ast::util::{ast_false, ast_true};
 use dpma_ast::{ast_debug, bformat, dpma_log};
 use std::sync::{Arc, Mutex};
 
@@ -50,7 +50,11 @@ static PROCESS: Mutex<()> = Mutex::new(());
 
 const HOOKS: &[(&str, &str, &str)] = &[
     ("digium_phones_voicemail", "voicemail.conf", "app_voicemail"),
-    ("digium_phones_users_voicemail", "users.conf", "app_voicemail"),
+    (
+        "digium_phones_users_voicemail",
+        "users.conf",
+        "app_voicemail",
+    ),
 ];
 
 fn load_file(file: &[u8]) -> Option<Vec<Category>> {
@@ -144,7 +148,9 @@ fn restore_from_db() {
     let mut g = write();
     let Some(reg) = g.as_mut() else { return };
     for (key, value) in entries {
-        let Some((_, name)) = key.rsplit_once_str("/") else { continue };
+        let Some((_, name)) = key.rsplit_once_str("/") else {
+            continue;
+        };
         if value.is_empty() || name.is_empty() {
             continue;
         }
@@ -182,9 +188,17 @@ struct Effects {
 enum PhoneFx {
     /// A phone that is no longer configured: reconfigure it, forget its
     /// AstDB entry, and mark its session inactive.
-    Delete { name: Vec<u8>, uri: Vec<u8>, session: Vec<u8> },
+    Delete {
+        name: Vec<u8>,
+        uri: Vec<u8>,
+        session: Vec<u8>,
+    },
     /// A phone whose lines changed (or whose voicemail pin did).
-    Reconfigure { name: Vec<u8>, uri: Vec<u8>, session: Vec<u8> },
+    Reconfigure {
+        name: Vec<u8>,
+        uri: Vec<u8>,
+        session: Vec<u8>,
+    },
 }
 
 /// A res_digium_phone.conf `[line]` or `[external_line]` section for
@@ -224,7 +238,9 @@ fn users_context(voicemail: &Cfg) -> Vec<u8> {
 /// (app_voicemail) section named after `line` with voicemail sets that
 /// line's mailbox.
 pub fn line_mailboxes(line: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
-    let Some(src) = sources() else { return Vec::new() };
+    let Some(src) = sources() else {
+        return Vec::new();
+    };
     let named = |c: &&Category| c.name.eq_ignore_ascii_case(line);
     let mut out = Vec::new();
     if let Some(vm) = &src.voicemail {
@@ -249,12 +265,16 @@ pub fn line_mailboxes(line: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
 /// `[line]` and `[external_line]` sections named after `line` again.
 /// Unlike a full pass, nothing is reset first.
 pub fn apply_line_sections(line: &mut Line) {
-    let Some(phones) = sources().and_then(|s| s.phones) else { return };
+    let Some(phones) = sources().and_then(|s| s.phones) else {
+        return;
+    };
     let name = line.name.clone();
     for cat in phones.iter().filter(|c| c.name.eq_ignore_ascii_case(&name)) {
         match cat.get("type") {
             None => dpma_log!("No type set for {}", cat.name),
-            Some(t) if t.eq_ignore_ascii_case(b"line") || t.eq_ignore_ascii_case(b"external_line") => {
+            Some(t)
+                if t.eq_ignore_ascii_case(b"line") || t.eq_ignore_ascii_case(b"external_line") =>
+            {
                 apply_section(cat, line);
             }
             Some(_) => {}
@@ -263,12 +283,21 @@ pub fn apply_line_sections(line: &mut Line) {
 }
 
 fn is_type(cat: &Category, ty: &str) -> bool {
-    cat.get("type").is_some_and(|t| t.eq_ignore_ascii_case(ty.as_bytes()))
+    cat.get("type")
+        .is_some_and(|t| t.eq_ignore_ascii_case(ty.as_bytes()))
 }
 
 const KNOWN_TYPES: &[&str] = &[
-    "phone", "line", "external_line", "application", "network", "ringtone", "firmware", "alert",
-    "multicastpage", "translation",
+    "phone",
+    "line",
+    "external_line",
+    "application",
+    "network",
+    "ringtone",
+    "firmware",
+    "alert",
+    "multicastpage",
+    "translation",
 ];
 
 /// Reprocess everything (`phone_users_process_phone_config`).
@@ -277,8 +306,12 @@ pub fn process(trigger: &[u8]) -> Result<(), ()> {
 
     let (phones_cfg, voicemail, users_voicemail) = {
         let g = SOURCES.lock().unwrap();
-        let Some(src) = g.as_ref() else { return Err(()) };
-        let Some(p) = src.phones.clone() else { return Err(()) };
+        let Some(src) = g.as_ref() else {
+            return Err(());
+        };
+        let Some(p) = src.phones.clone() else {
+            return Err(());
+        };
         (p, src.voicemail.clone(), src.users_voicemail.clone())
     };
 
@@ -294,7 +327,9 @@ pub fn process(trigger: &[u8]) -> Result<(), ()> {
         // phone_line_mark_delme_cb and set_user_option).
         let _lines = crate::users::objects::lock_all_lines();
         let mut g = write();
-        let Some(reg) = g.as_mut() else { return Err(()) };
+        let Some(reg) = g.as_mut() else {
+            return Err(());
+        };
 
         // ---- mark ----
         for p in reg.phones.values_mut() {
@@ -325,13 +360,19 @@ pub fn process(trigger: &[u8]) -> Result<(), ()> {
         }
 
         // ---- phones ----
-        for cat in phones_cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
+        for cat in phones_cfg
+            .iter()
+            .filter(|c| !c.name.eq_ignore_ascii_case(b"general"))
+        {
             match cat.get("type") {
                 None => dpma_log!("No type set for {}", cat.name),
                 Some(t) if t.eq_ignore_ascii_case(b"phone") => {
                     build_phone(reg, cat, &general, &mut fx);
                 }
-                Some(t) if KNOWN_TYPES.iter().any(|k| k.as_bytes().eq_ignore_ascii_case(t)) => {}
+                Some(t)
+                    if KNOWN_TYPES
+                        .iter()
+                        .any(|k| k.as_bytes().eq_ignore_ascii_case(t)) => {}
                 Some(t) => dpma_log!("Unknown type \"{}\" for entry \"{}\"", t, cat.name),
             }
         }
@@ -352,10 +393,15 @@ pub fn process(trigger: &[u8]) -> Result<(), ()> {
         // lock each line in the official DPMA.
         let _lines = crate::users::objects::lock_all_lines();
         let mut g = write();
-        let Some(reg) = g.as_mut() else { return Err(()) };
+        let Some(reg) = g.as_mut() else {
+            return Err(());
+        };
 
         // ---- [line] / [external_line] sections (`process_lines_dp`) ----
-        for cat in phones_cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
+        for cat in phones_cfg
+            .iter()
+            .filter(|c| !c.name.eq_ignore_ascii_case(b"general"))
+        {
             if cat.get("type").is_none() {
                 dpma_log!("No type set for {}", cat.name);
                 continue;
@@ -371,7 +417,9 @@ pub fn process(trigger: &[u8]) -> Result<(), ()> {
         // ---- voicemail.conf: pins for phones with pin=voicemail ----
         if let Some(vm) = &voicemail {
             for cat in vm.iter() {
-                if cat.name.eq_ignore_ascii_case(b"general") || cat.name.eq_ignore_ascii_case(b"zonemessages") {
+                if cat.name.eq_ignore_ascii_case(b"general")
+                    || cat.name.eq_ignore_ascii_case(b"zonemessages")
+                {
                     continue;
                 }
                 for v in &cat.vars {
@@ -382,10 +430,16 @@ pub fn process(trigger: &[u8]) -> Result<(), ()> {
 
         // ---- users.conf (app_voicemail): mailboxes ----
         if let Some(users) = &users_voicemail {
-            for cat in users.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
+            for cat in users
+                .iter()
+                .filter(|c| !c.name.eq_ignore_ascii_case(b"general"))
+            {
                 if users_voicemail_enabled(&users_voicemail, cat) {
                     if let Some(line) = reg.lines.get_mut(&cat.name) {
-                        options::set_line_mailbox(line, &bformat!("{}@{}", cat.name, users_context));
+                        options::set_line_mailbox(
+                            line,
+                            &bformat!("{}@{}", cat.name, users_context),
+                        );
                     }
                 }
             }
@@ -405,7 +459,8 @@ pub fn process(trigger: &[u8]) -> Result<(), ()> {
         reg.lines.retain(|l| {
             if l.delme {
                 if !l.hint_context.is_empty() {
-                    fx.remove_hints.push((l.hint_context.clone(), bformat!("auto_hint_{}", l.name)));
+                    fx.remove_hints
+                        .push((l.hint_context.clone(), bformat!("auto_hint_{}", l.name)));
                 }
                 fx.swept_lines.push(l.clone());
                 false
@@ -414,7 +469,11 @@ pub fn process(trigger: &[u8]) -> Result<(), ()> {
             }
         });
         for p in reg.phones.values() {
-            let (name, uri, session) = (p.name.clone(), p.last_uri.clone(), p.last_session_id.clone());
+            let (name, uri, session) = (
+                p.name.clone(),
+                p.last_uri.clone(),
+                p.last_session_id.clone(),
+            );
             if p.delme {
                 fx.phones.push(PhoneFx::Delete { name, uri, session });
             } else if p.needs_reconfigure {
@@ -459,7 +518,12 @@ pub fn process(trigger: &[u8]) -> Result<(), ()> {
 }
 
 /// `build_user`.
-fn build_phone(reg: &mut Registry, cat: &Category, general: &crate::config::General, fx: &mut Effects) {
+fn build_phone(
+    reg: &mut Registry,
+    cat: &Category,
+    general: &crate::config::General,
+    fx: &mut Effects,
+) {
     let name = cat.name.as_slice();
     let mut phone = match reg.phones.get_mut(name) {
         Some(p) => std::mem::replace(p, Phone::new(name)),
@@ -475,7 +539,10 @@ fn build_phone(reg: &mut Registry, cat: &Category, general: &crate::config::Gene
 
     let lines_before: Vec<Vec<u8>> = reg.lines.values().map(|l| l.name.clone()).collect();
     {
-        let mut ctx = UserCtx { lines: &mut reg.lines, networks: &mut reg.networks };
+        let mut ctx = UserCtx {
+            lines: &mut reg.lines,
+            networks: &mut reg.networks,
+        };
         for v in &cat.vars {
             if options::set_user_option(&mut ctx, &mut phone, &v.name, &v.value).is_err() {
                 dpma_log!(
@@ -497,7 +564,11 @@ fn build_phone(reg: &mut Registry, cat: &Category, general: &crate::config::Gene
     if !general.registration_address.is_empty() || !general.firmware_url_prefix.is_empty() {
         let (net, _) = reg.networks.get_or_insert_with(name, || Network::new(name));
         net.delme = false;
-        let _ = options::set_network_option(net, b"registration_address", &general.registration_address);
+        let _ = options::set_network_option(
+            net,
+            b"registration_address",
+            &general.registration_address,
+        );
         let _ = options::set_network_option(net, b"registration_port", general.registration_port());
         let _ = options::set_network_option(net, b"file_url_prefix", &general.firmware_url_prefix);
     }
@@ -509,7 +580,10 @@ fn build_phone(reg: &mut Registry, cat: &Category, general: &crate::config::Gene
 
     if !old_lines.is_empty() && old_lines != phone.lines {
         phone.needs_reconfigure = true;
-        dpma_log!("Phone user '{}' setting reconfigure due to change in lines", phone.name);
+        dpma_log!(
+            "Phone user '{}' setting reconfigure due to change in lines",
+            phone.name
+        );
     }
     reg.phones.insert(name, phone);
 }
@@ -523,8 +597,12 @@ fn set_voicemail_pin(reg: &mut Registry, mailbox: &[u8], context: &[u8], value: 
     let target = bformat!("{}@{}", mailbox, context);
     let mut found = None;
     for p in reg.phones.values() {
-        let Some(primary) = p.primary_line() else { continue };
-        let Some(line) = reg.lines.get(&primary.name) else { continue };
+        let Some(primary) = p.primary_line() else {
+            continue;
+        };
+        let Some(line) = reg.lines.get(&primary.name) else {
+            continue;
+        };
         if line.mailbox == target {
             found = Some(p.name.clone());
             break;
@@ -542,7 +620,13 @@ fn set_voicemail_pin(reg: &mut Registry, mailbox: &[u8], context: &[u8], value: 
     };
     let pin = crate::util::first_token(v, b",").to_vec();
     if pin != phone.applied_pin {
-        ast_debug!(3, "{} pin changed from {} to {} - reconfiguring", phone.name, phone.applied_pin, pin);
+        ast_debug!(
+            3,
+            "{} pin changed from {} to {} - reconfiguring",
+            phone.name,
+            phone.applied_pin,
+            pin
+        );
         phone.needs_reconfigure = true;
     }
     phone.pin = pin.clone();
@@ -551,7 +635,10 @@ fn set_voicemail_pin(reg: &mut Registry, mailbox: &[u8], context: &[u8], value: 
 
 /// `process_applications`.
 fn process_applications(reg: &mut Registry, cfg: &[Category]) {
-    for cat in cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
+    for cat in cfg
+        .iter()
+        .filter(|c| !c.name.eq_ignore_ascii_case(b"general"))
+    {
         if !is_type(cat, "application") {
             continue;
         }
@@ -582,7 +669,11 @@ fn process_applications(reg: &mut Registry, cfg: &[Category]) {
             }
             None if ok => reg.applications.insert(
                 &cat.name,
-                Application { name: cat.name.clone(), kind: Some(data), delme: false },
+                Application {
+                    name: cat.name.clone(),
+                    kind: Some(data),
+                    delme: false,
+                },
             ),
             None => {}
         }
@@ -591,11 +682,16 @@ fn process_applications(reg: &mut Registry, cfg: &[Category]) {
 
 /// `process_networks`.
 fn process_networks(reg: &mut Registry, cfg: &[Category]) {
-    for cat in cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general")) {
+    for cat in cfg
+        .iter()
+        .filter(|c| !c.name.eq_ignore_ascii_case(b"general"))
+    {
         if !is_type(cat, "network") {
             continue;
         }
-        let (net, _) = reg.networks.get_or_insert_with(&cat.name, || Network::new(&cat.name));
+        let (net, _) = reg
+            .networks
+            .get_or_insert_with(&cat.name, || Network::new(&cat.name));
         net.reset_for_section();
         for v in &cat.vars {
             if v.name.eq_ignore_ascii_case(b"type") {
@@ -610,11 +706,23 @@ fn process_networks(reg: &mut Registry, cfg: &[Category]) {
 
 /// Ringtones, firmware profiles, alerts, and multicast pages.
 fn process_simple(reg: &mut Registry, cfg: &[Category]) {
-    let sections = || cfg.iter().filter(|c| !c.name.eq_ignore_ascii_case(b"general"));
-    let opts = |cat: &Category| cat.vars.iter().filter(|v| !v.name.eq_ignore_ascii_case(b"type")).cloned().collect::<Vec<_>>();
+    let sections = || {
+        cfg.iter()
+            .filter(|c| !c.name.eq_ignore_ascii_case(b"general"))
+    };
+    let opts = |cat: &Category| {
+        cat.vars
+            .iter()
+            .filter(|v| !v.name.eq_ignore_ascii_case(b"type"))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
 
     for cat in sections().filter(|c| is_type(c, "ringtone")) {
-        let r = Ringtone { name: cat.name.clone(), ..Default::default() };
+        let r = Ringtone {
+            name: cat.name.clone(),
+            ..Default::default()
+        };
         reg.ringtones.insert(&cat.name, r);
         let r = reg.ringtones.get_mut(&cat.name).unwrap();
         for v in opts(cat) {
@@ -627,7 +735,13 @@ fn process_simple(reg: &mut Registry, cfg: &[Category]) {
     }
 
     for cat in sections().filter(|c| is_type(c, "firmware")) {
-        reg.firmware.insert(&cat.name, FirmwareOpt { name: cat.name.clone(), ..Default::default() });
+        reg.firmware.insert(
+            &cat.name,
+            FirmwareOpt {
+                name: cat.name.clone(),
+                ..Default::default()
+            },
+        );
         let f = reg.firmware.get_mut(&cat.name).unwrap();
         for v in opts(cat) {
             if options::set_firmware_opt_option(f, &v.name, &v.value).is_err() {
@@ -637,7 +751,13 @@ fn process_simple(reg: &mut Registry, cfg: &[Category]) {
     }
 
     for cat in sections().filter(|c| is_type(c, "alert")) {
-        reg.alerts.insert(&cat.name, Alert { name: cat.name.clone(), ..Default::default() });
+        reg.alerts.insert(
+            &cat.name,
+            Alert {
+                name: cat.name.clone(),
+                ..Default::default()
+            },
+        );
         let a = reg.alerts.get_mut(&cat.name).unwrap();
         for v in opts(cat) {
             match v.name.to_ascii_lowercase().as_slice() {
@@ -650,7 +770,14 @@ fn process_simple(reg: &mut Registry, cfg: &[Category]) {
     }
 
     for cat in sections().filter(|c| is_type(c, "multicastpage")) {
-        reg.pages.insert(&cat.name, Page { name: cat.name.clone(), interrupt: "0".into(), ..Default::default() });
+        reg.pages.insert(
+            &cat.name,
+            Page {
+                name: cat.name.clone(),
+                interrupt: "0".into(),
+                ..Default::default()
+            },
+        );
         let p = reg.pages.get_mut(&cat.name).unwrap();
         for v in opts(cat) {
             match v.name.to_ascii_lowercase().as_slice() {
@@ -687,9 +814,16 @@ fn plan_hints(reg: &mut Registry, fx: &mut Effects) -> Vec<HintPlan> {
             l.subscribecontext = l.context.clone();
         }
         if !l.hint_context.is_empty() && l.hint_context != l.subscribecontext {
-            fx.remove_hints.push((std::mem::take(&mut l.hint_context), bformat!("auto_hint_{}", l.name)));
+            fx.remove_hints.push((
+                std::mem::take(&mut l.hint_context),
+                bformat!("auto_hint_{}", l.name),
+            ));
         }
-        plans.push(HintPlan { line: l.name.clone(), tech: l.tech.clone(), context: l.subscribecontext.clone() });
+        plans.push(HintPlan {
+            line: l.name.clone(),
+            tech: l.tech.clone(),
+            context: l.subscribecontext.clone(),
+        });
     }
     plans
 }

@@ -58,7 +58,8 @@ fn strcasestr(hay: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() {
         return Some(0);
     }
-    hay.windows(needle.len()).position(|w| w.eq_ignore_ascii_case(needle))
+    hay.windows(needle.len())
+        .position(|w| w.eq_ignore_ascii_case(needle))
 }
 
 /// `strtol(s, NULL, 10)`.
@@ -161,11 +162,20 @@ fn header_value(block: &[u8], key: &str, size: usize) -> Vec<u8> {
 /// negative length makes the official DPMA copy the rest of the block.  Err
 /// when the header is missing, or when the value is not UTF-8 (jansson's
 /// `ast_json_string_create` refuses it).
-fn append_header_value(obj: &mut Map<String, Value>, name: &str, block: &[u8], key: &str) -> Result<(), ()> {
+fn append_header_value(
+    obj: &mut Map<String, Value>,
+    name: &str,
+    block: &[u8],
+    key: &str,
+) -> Result<(), ()> {
     let (p, len) = header_span(block, key).ok_or(())?;
     let n = (len as i64) + 1;
     let rest = &block[p..];
-    let take = if n < 0 { rest.len() } else { (n as usize).min(rest.len()) };
+    let take = if n < 0 {
+        rest.len()
+    } else {
+        (n as usize).min(rest.len())
+    };
     let v = utf8(dpma_ast::dpma_bytes::c_view(trim_end(&rest[..take]))).ok_or(())?;
     obj.insert(name.to_string(), Value::String(v.to_string()));
     Ok(())
@@ -316,7 +326,11 @@ fn user_can_read_parkinglot(phone: &[u8], lot: &[u8]) -> bool {
             continue;
         };
         if pk.parkinglots.iter().any(|l| l == lot) {
-            dpma_debug!(3, "This parkinglot is registered to the user via {}", app.name);
+            dpma_debug!(
+                3,
+                "This parkinglot is registered to the user via {}",
+                app.name
+            );
             return true;
         }
         denied = true;
@@ -334,7 +348,9 @@ fn param_str<'a>(params: &'a Value, key: &str) -> Option<&'a str> {
 /// then nothing is written.)
 fn append_result(out: &mut Vec<u8>, method: &[u8], result: Value) {
     if let Some(method) = utf8(method) {
-        out.extend_from_slice(dump(&json!({"response": {"method": method, "result": result}})).as_bytes());
+        out.extend_from_slice(
+            dump(&json!({"response": {"method": method, "result": result}})).as_bytes(),
+        );
     }
 }
 
@@ -447,7 +463,11 @@ pub fn parking_lots_get_list(c: &MethodCall, _p: &Value, out: &mut Vec<u8>) -> i
         let mut lot = Map::new();
         lot.insert("account_id".into(), Value::String(account_id.to_string()));
         lot.insert("parked_calls".into(), json!({"parked_call": []}));
-        for (field, key) in [("parking_lot_stop", "StopSpace:"), ("timeout", "Timeout:"), ("parking_lot_start", "StartSpace:")] {
+        for (field, key) in [
+            ("parking_lot_stop", "StopSpace:"),
+            ("timeout", "Timeout:"),
+            ("parking_lot_start", "StartSpace:"),
+        ] {
             if append_header_value(&mut lot, field, block, key).is_err() {
                 error_response_json(out, &c.method, rq::PARSE, field);
                 return -1;
@@ -479,7 +499,11 @@ pub fn parking_lots_get_list(c: &MethodCall, _p: &Value, out: &mut Vec<u8>) -> i
         lot.insert("parked_calls".into(), json!({"parked_call": calls}));
         lot_list.push(Value::Object(lot));
     }
-    append_result(out, &c.method, json!({"parking_lots": {"parking_lot": lot_list}}));
+    append_result(
+        out,
+        &c.method,
+        json!({"parking_lots": {"parking_lot": lot_list}}),
+    );
     0
 }
 
@@ -501,7 +525,9 @@ fn start_mixmonitor(chan: &Channel, mailbox: &[u8]) -> Option<Vec<u8>> {
     let (name, uniqueid) = chan.name_and_uniqueid();
     let action = bformat!(
         "Action: MixMonitor\nFile: {}.wav\nOptions: m({}/Cust5)\nChannel: {}\n",
-        uniqueid, mailbox, name
+        uniqueid,
+        mailbox,
+        name
     );
     action_response(&action, 0x80)
 }
@@ -510,7 +536,10 @@ fn start_mixmonitor(chan: &Channel, mailbox: &[u8]) -> Option<Vec<u8>> {
 /// buffer); None when the action produced no response.
 fn stop_mixmonitor(chan: &Channel) -> Option<Vec<u8>> {
     let (name, _) = chan.name_and_uniqueid();
-    let action = truncate(bformat!("Action: StopMixMonitor\nChannel: {}\n", name), 0x80);
+    let action = truncate(
+        bformat!("Action: StopMixMonitor\nChannel: {}\n", name),
+        0x80,
+    );
     action_response(&action, 0x80)
 }
 
@@ -714,7 +743,10 @@ fn handle_request_json_queue_getlist(c: &MethodCall, p: &Value, out: &mut Vec<u8
         e.insert("name".into(), Value::String(queue.to_string()));
         e.insert("account_id".into(), Value::String(queue.to_string()));
         let mut found = false;
-        for q in queues.iter().filter(|q| q.name.eq_ignore_ascii_case(&qa.queue)) {
+        for q in queues
+            .iter()
+            .filter(|q| q.name.eq_ignore_ascii_case(&qa.queue))
+        {
             let (mut total, mut logged_in) = (0i32, 0i32);
             found = false;
             for m in &q.members {
@@ -724,7 +756,11 @@ fn handle_request_json_queue_getlist(c: &MethodCall, p: &Value, out: &mut Vec<u8
                     if m.paused {
                         e.insert("paused_time".into(), json!("1"));
                     }
-                    let status = if m.is_static { "permanent" } else { "logged_in" };
+                    let status = if m.is_static {
+                        "permanent"
+                    } else {
+                        "logged_in"
+                    };
                     e.insert("loggedin_status".into(), json!(status));
                     found = true;
                 }
@@ -764,7 +800,12 @@ fn handle_request_json_queue_gettodaysstatus(c: &MethodCall, p: &Value, out: &mu
         return -1;
     }
     let Some(cq) = param_str(p, "call_queue_account_id") else {
-        error_response_json(out, &c.method, rq::PARAMS_NOT_FOUND, "call_queue_account_id");
+        error_response_json(
+            out,
+            &c.method,
+            rq::PARAMS_NOT_FOUND,
+            "call_queue_account_id",
+        );
         return -1;
     };
     let queues = queues_get_status();
@@ -802,7 +843,11 @@ fn handle_request_json_queue_gettodaysstatus(c: &MethodCall, p: &Value, out: &mu
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs() as i64);
-        let status = if m.is_static { "permanent" } else { "logged_in" };
+        let status = if m.is_static {
+            "permanent"
+        } else {
+            "logged_in"
+        };
         let Some(fullname) = utf8(&m.name) else {
             error_response_json(out, &c.method, rq::PARSE, "alloc_failure");
             return -1;
@@ -819,7 +864,8 @@ fn handle_request_json_queue_gettodaysstatus(c: &MethodCall, p: &Value, out: &mu
     let mut waiting = Vec::new();
     if details {
         for e in &q.entries {
-            let (Some(number), Some(name)) = (utf8(&e.caller_id_num), utf8(&e.caller_id_name)) else {
+            let (Some(number), Some(name)) = (utf8(&e.caller_id_num), utf8(&e.caller_id_name))
+            else {
                 error_response_json(out, &c.method, rq::PARSE, "alloc_failure");
                 return -1;
             };
@@ -876,7 +922,9 @@ fn queue_pause_member(phone: &[u8], queue: &[u8], paused: i32, reason: Option<&[
         }
         let mut action = bformat!(
             "Action: QueuePause\r\nQueue: {}\r\nInterface: {}\r\nPaused: {}\r\n",
-            qa.queue, qa.location, paused
+            qa.queue,
+            qa.location,
+            paused
         );
         if let Some(r) = reason.filter(|r| !r.is_empty()) {
             bwrite!(action, "Reason: {}\r\n", r);
@@ -885,7 +933,11 @@ fn queue_pause_member(phone: &[u8], queue: &[u8], paused: i32, reason: Option<&[
             continue;
         };
         if !is_success(&response) {
-            dpma_log!("Failed to pause queue member {} on queue {}", qa.location, qa.queue);
+            dpma_log!(
+                "Failed to pause queue member {} on queue {}",
+                qa.location,
+                qa.queue
+            );
         }
     }
     0
@@ -922,7 +974,12 @@ fn handle_request_json_queue_login(c: &MethodCall, p: &Value, out: &mut Vec<u8>)
         return -1;
     }
     let Some(cq) = param_str(p, "call_queue_account_id") else {
-        error_response_json(out, &c.method, rq::PARAMS_NOT_FOUND, "call_queue_account_id");
+        error_response_json(
+            out,
+            &c.method,
+            rq::PARAMS_NOT_FOUND,
+            "call_queue_account_id",
+        );
         return -1;
     };
     let queues = queues_get_status();
@@ -944,7 +1001,9 @@ fn handle_request_json_queue_login(c: &MethodCall, p: &Value, out: &mut Vec<u8>)
         let response = if qa.login_exten.is_empty() {
             let action = bformat!(
                 "Action: QueueAdd\r\nQueue: {}\r\nMemberName: {}\r\nInterface: {}\r\n",
-                qa.queue, qa.membername, qa.location
+                qa.queue,
+                qa.membername,
+                qa.location
             );
             action_response(&action, BUF)
         } else {
@@ -954,7 +1013,11 @@ fn handle_request_json_queue_login(c: &MethodCall, p: &Value, out: &mut Vec<u8>)
             continue;
         };
         if !is_success(&response) {
-            dpma_log!("Failed to add queue member {} to queue {}", qa.location, qa.queue);
+            dpma_log!(
+                "Failed to add queue member {} to queue {}",
+                qa.location,
+                qa.queue
+            );
         }
     }
     append_success(out, &c.method);
@@ -973,7 +1036,12 @@ fn handle_request_json_queue_logout(c: &MethodCall, p: &Value, out: &mut Vec<u8>
         return -1;
     }
     let Some(cq) = param_str(p, "call_queue_account_id") else {
-        error_response_json(out, &c.method, rq::PARAMS_NOT_FOUND, "call_queue_account_id");
+        error_response_json(
+            out,
+            &c.method,
+            rq::PARAMS_NOT_FOUND,
+            "call_queue_account_id",
+        );
         return -1;
     };
     let queues = queues_get_status();
@@ -994,7 +1062,11 @@ fn handle_request_json_queue_logout(c: &MethodCall, p: &Value, out: &mut Vec<u8>
             continue;
         }
         let response = if qa.logout_exten.is_empty() {
-            let action = bformat!("Action: QueueRemove\r\nQueue: {}\r\nInterface: {}\r\n", qa.queue, qa.location);
+            let action = bformat!(
+                "Action: QueueRemove\r\nQueue: {}\r\nInterface: {}\r\n",
+                qa.queue,
+                qa.location
+            );
             action_response(&action, BUF)
         } else {
             originate_exten(&c.phone, &qa.logout_exten)
@@ -1003,7 +1075,11 @@ fn handle_request_json_queue_logout(c: &MethodCall, p: &Value, out: &mut Vec<u8>
             continue;
         };
         if !is_success(&response) {
-            dpma_log!("Failed to remove queue member {} from queue {}", qa.location, qa.queue);
+            dpma_log!(
+                "Failed to remove queue member {} from queue {}",
+                qa.location,
+                qa.queue
+            );
         }
     }
     append_success(out, &c.method);
@@ -1042,7 +1118,12 @@ pub fn queue_pause(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
         return -1;
     };
     let Some(cq) = param_str(p, "call_queue_account_id") else {
-        error_response_json(out, &c.method, rq::PARAMS_NOT_FOUND, "call_queue_account_id");
+        error_response_json(
+            out,
+            &c.method,
+            rq::PARAMS_NOT_FOUND,
+            "call_queue_account_id",
+        );
         return -1;
     };
     if queue_pause_member(&c.phone, cq.as_bytes(), 1, Some(reason.as_bytes())) != 0 {
@@ -1060,7 +1141,12 @@ pub fn queue_resume(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
         return -1;
     }
     let Some(cq) = param_str(p, "call_queue_account_id") else {
-        error_response_json(out, &c.method, rq::PARAMS_NOT_FOUND, "call_queue_account_id");
+        error_response_json(
+            out,
+            &c.method,
+            rq::PARAMS_NOT_FOUND,
+            "call_queue_account_id",
+        );
         return -1;
     };
     if queue_pause_member(&c.phone, cq.as_bytes(), 0, None) != 0 {
@@ -1115,7 +1201,8 @@ pub fn phonebook_entries_add(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i3
         };
         let attr = Some(("id", phonebook_id.as_bytes()));
         let list = if root.name() == b"phonebooks" {
-            root.children().and_then(|n| n.find_element("contacts", attr))
+            root.children()
+                .and_then(|n| n.find_element("contacts", attr))
         } else {
             root.find_element("contacts", attr)
         };
@@ -1131,7 +1218,12 @@ pub fn phonebook_entries_add(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i3
                     .and_then(|n| n.children())
                     .and_then(|n| n.find_element("number", Some(("dial", extension.as_bytes()))));
                 if number.is_some() {
-                    error_response_json(out, &c.method, rq::PHONEBOOK_ENTRY_EXISTS, "contact_list_entry_exists");
+                    error_response_json(
+                        out,
+                        &c.method,
+                        rq::PHONEBOOK_ENTRY_EXISTS,
+                        "contact_list_entry_exists",
+                    );
                     return -1;
                 }
             }
@@ -1142,7 +1234,12 @@ pub fn phonebook_entries_add(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i3
             Some((entry, number))
         });
         let Some((entry, number)) = added else {
-            error_response_json(out, &c.method, rq::PHONEBOOK_ENTRY_EXISTS, "contact_list_entry_add");
+            error_response_json(
+                out,
+                &c.method,
+                rq::PHONEBOOK_ENTRY_EXISTS,
+                "contact_list_entry_add",
+            );
             return -1;
         };
         entry.set_attribute("first_name", name);
@@ -1153,7 +1250,12 @@ pub fn phonebook_entries_add(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i3
         number.set_attribute("label", "Extension");
         number.set_attribute("primary", "1");
         if !doc.dump_file(&path) {
-            error_response_json(out, &c.method, rq::PHONEBOOK_ENTRY_EXISTS, "contact_list_entry_add");
+            error_response_json(
+                out,
+                &c.method,
+                rq::PHONEBOOK_ENTRY_EXISTS,
+                "contact_list_entry_add",
+            );
             return -1;
         }
         append_success(out, &c.method);
@@ -1161,7 +1263,12 @@ pub fn phonebook_entries_add(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i3
         let _ = users::reconfigure(&c.phone, false);
         return 0;
     }
-    error_response_json(out, &c.method, rq::INVALID_PHONEBOOK_ID, "contact not found");
+    error_response_json(
+        out,
+        &c.method,
+        rq::INVALID_PHONEBOOK_ID,
+        "contact not found",
+    );
     -1
 }
 
@@ -1200,7 +1307,11 @@ mod devtest {
             a.out(bformat!("No XML method '{}'\n", method));
             return CliResult::Success;
         };
-        let call = MethodCall { phone: a.argv[3].clone(), method, tx: None };
+        let call = MethodCall {
+            phone: a.argv[3].clone(),
+            method,
+            tx: None,
+        };
         let mut out = Vec::new();
         let code = f(&call, &params, &mut out);
         a.out(bformat!("Return code: {}\n{}\n", code, show(&out)));
@@ -1212,8 +1323,11 @@ mod devtest {
             return CliResult::ShowUsage;
         }
         // "Key: Value" pairs separated by "|" become action lines.
-        let action: Vec<u8> =
-            a.argv[3..].join(&b" "[..]).split(|&c| c == b'|').flat_map(|l| bformat!("{}\n", l.trim_ascii())).collect();
+        let action: Vec<u8> = a.argv[3..]
+            .join(&b" "[..])
+            .split(|&c| c == b'|')
+            .flat_map(|l| bformat!("{}\n", l.trim_ascii()))
+            .collect();
         let blocks = amihook_action(&action);
         a.out(bformat!("{} block(s)\n", blocks.len()));
         for (i, b) in blocks.iter().enumerate() {
@@ -1227,17 +1341,29 @@ mod devtest {
             return CliResult::ShowUsage;
         }
         for q in queues_get_status() {
-            a.out(bformat!("queue '{}' completed={} abandoned={}\n", q.name, q.completed, q.abandoned));
+            a.out(bformat!(
+                "queue '{}' completed={} abandoned={}\n",
+                q.name,
+                q.completed,
+                q.abandoned
+            ));
             for m in &q.members {
                 a.out(bformat!(
                     "  member '{}' location='{}' paused={} static={} status={}\n",
-                    m.name, m.location, m.paused, m.is_static, m.status
+                    m.name,
+                    m.location,
+                    m.paused,
+                    m.is_static,
+                    m.status
                 ));
             }
             for e in &q.entries {
                 a.out(bformat!(
                     "  entry num='{}' name='{}' position={} wait={}\n",
-                    e.caller_id_num, e.caller_id_name, e.position, e.wait
+                    e.caller_id_num,
+                    e.caller_id_name,
+                    e.position,
+                    e.wait
                 ));
             }
         }
@@ -1249,7 +1375,11 @@ mod devtest {
             return CliResult::ShowUsage;
         }
         let space = crate::util::parse::<u32>(&a.argv[4]).unwrap_or(0);
-        let event = a.argv.get(5).and_then(|e| crate::util::parse::<i32>(e).ok()).unwrap_or(0);
+        let event = a
+            .argv
+            .get(5)
+            .and_then(|e| crate::util::parse::<i32>(e).ok())
+            .unwrap_or(0);
         handle_parked_call_message(&a.argv[3], event, space);
         a.out("done\n");
         CliResult::Success
@@ -1261,14 +1391,20 @@ mod devtest {
         }
         let size = crate::util::parse::<usize>(&a.argv[3]).unwrap_or(BUF);
         let key = String::from_utf8_lossy(&a.argv[4]).into_owned();
-        let block = a.argv[5..].join(&b" "[..]).replace("\\r", "\r").replace("\\n", "\n");
+        let block = a.argv[5..]
+            .join(&b" "[..])
+            .replace("\\r", "\r")
+            .replace("\\n", "\n");
         let mut obj = Map::new();
         let appended = append_header_value(&mut obj, "v", &block, &key);
         a.out(bformat!(
             "header_value: '{}'\nappend_header_value: {}\n",
             show(&header_value(&block, &key, size)),
             match appended {
-                Ok(()) => bformat!("'{}'", show(obj["v"].as_str().unwrap_or_default().as_bytes())),
+                Ok(()) => bformat!(
+                    "'{}'",
+                    show(obj["v"].as_str().unwrap_or_default().as_bytes())
+                ),
                 Err(()) => b"missing".to_vec(),
             }
         ));

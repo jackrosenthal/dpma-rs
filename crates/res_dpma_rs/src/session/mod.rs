@@ -25,7 +25,9 @@ pub mod persist;
 pub mod store;
 
 pub use incoming::next_transaction;
-pub use outgoing::{send, send_and_destroy, send_event, send_handshake_required, send_maybe, send_timeout};
+pub use outgoing::{
+    send, send_and_destroy, send_event, send_handshake_required, send_maybe, send_timeout,
+};
 pub use store::{
     all, find, find_by_mac, global_auth_flags, invalidate, load, mark_authenticated, mark_inactive,
     mark_unconfigured_by_mac, reload, set_global_auth_flags, unload,
@@ -94,7 +96,10 @@ pub struct Session {
 
 impl Session {
     pub fn new(id: &[u8]) -> Session {
-        Session { id: id.to_vec(), state: Mutex::new(SessionState::default()) }
+        Session {
+            id: id.to_vec(),
+            state: Mutex::new(SessionState::default()),
+        }
     }
 
     /// Lock the state (a poisoned lock is still usable).

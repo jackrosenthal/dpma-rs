@@ -43,7 +43,10 @@ pub fn tree(family: &str) -> Vec<(Vec<u8>, Vec<u8>)> {
         let head = sys::ast_db_gettree(f.as_ptr(), std::ptr::null());
         let mut e = head;
         while !e.is_null() {
-            out.push((from_ptr((*e).key).unwrap_or_default(), from_ptr((*e).data.as_ptr()).unwrap_or_default()));
+            out.push((
+                from_ptr((*e).key).unwrap_or_default(),
+                from_ptr((*e).data.as_ptr()).unwrap_or_default(),
+            ));
             e = (*e).next;
         }
         if !head.is_null() {

@@ -373,7 +373,9 @@ fn gpl_key(asterisk: &std::path::Path) -> String {
     println!("cargo:rerun-if-changed={}", path.display());
     let text = std::fs::read_to_string(&path).unwrap_or_default();
     let mut define = String::new();
-    let lines = text.lines().skip_while(|l| !l.starts_with("#define ASTERISK_GPL_KEY"));
+    let lines = text
+        .lines()
+        .skip_while(|l| !l.starts_with("#define ASTERISK_GPL_KEY"));
     for line in lines {
         match line.strip_suffix('\\') {
             Some(start) => define.push_str(start),
@@ -384,10 +386,16 @@ fn gpl_key(asterisk: &std::path::Path) -> String {
         }
     }
     if define.is_empty() {
-        println!("cargo:warning=ASTERISK_GPL_KEY not found in {}", path.display());
+        println!(
+            "cargo:warning=ASTERISK_GPL_KEY not found in {}",
+            path.display()
+        );
         return String::new();
     }
-    format!("{}\n", define.replacen("ASTERISK_GPL_KEY", "DPMA_SYS_GPL_KEY", 1))
+    format!(
+        "{}\n",
+        define.replacen("ASTERISK_GPL_KEY", "DPMA_SYS_GPL_KEY", 1)
+    )
 }
 
 fn main() {
@@ -402,7 +410,11 @@ fn main() {
         ),
     };
     let asterisk = source.join("include");
-    for header in ["asterisk.h", "asterisk/autoconfig.h", "asterisk/buildopts.h"] {
+    for header in [
+        "asterisk.h",
+        "asterisk/autoconfig.h",
+        "asterisk/buildopts.h",
+    ] {
         if !asterisk.join(header).exists() {
             panic!(
                 "{} not found: ASTERISK_SOURCE_DIR={} must be a configured Asterisk source tree \
@@ -425,7 +437,10 @@ fn main() {
         includes.push(pjproject.join(s).join("include"));
     }
 
-    let mut header: String = HEADERS.iter().map(|h| format!("#include \"{}\"\n", h)).collect();
+    let mut header: String = HEADERS
+        .iter()
+        .map(|h| format!("#include \"{}\"\n", h))
+        .collect();
     header.push_str(&gpl_key(&includes[0]));
     let mut builder = bindgen::Builder::default()
         .header_contents("dpma_sys.h", &header)
@@ -462,7 +477,11 @@ fn main() {
     for t in TYPES {
         builder = builder.allowlist_type(format!("^{}$", t));
     }
-    let bindings = builder.generate().expect("unable to generate the Asterisk bindings");
+    let bindings = builder
+        .generate()
+        .expect("unable to generate the Asterisk bindings");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("bindings.rs");
-    bindings.write_to_file(out).expect("unable to write the Asterisk bindings");
+    bindings
+        .write_to_file(out)
+        .expect("unable to write the Asterisk bindings");
 }

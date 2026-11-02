@@ -21,16 +21,31 @@ pub fn reset_cache() {
 /// container order.  Values are not XML-escaped, as in the official DPMA.
 fn build(reg: Option<&Registry>, s: &mut Vec<u8>) {
     s.push_str("<contacts group_name=\"Internal Extensions\" editable=\"0\" >\n");
-    let phones = reg.into_iter().flat_map(|r| r.phones.values().map(move |p| (r, p)));
+    let phones = reg
+        .into_iter()
+        .flat_map(|r| r.phones.values().map(move |p| (r, p)));
     for (reg, p) in phones {
-        let Some(line) = build_config::primary_line(reg, p) else { continue };
+        let Some(line) = build_config::primary_line(reg, p) else {
+            continue;
+        };
         let first_name = if line.first_name.is_empty() {
-            truncate(if p.full_name.is_empty() { &p.name } else { &p.full_name }, 0x100)
+            truncate(
+                if p.full_name.is_empty() {
+                    &p.name
+                } else {
+                    &p.full_name
+                },
+                0x100,
+            )
         } else {
             line.first_name.clone()
         };
         bwrite!(*s, "<contact first_name=\"{}\" ", first_name);
-        let last_name = if line.last_name.is_empty() { &b" "[..] } else { &line.last_name };
+        let last_name = if line.last_name.is_empty() {
+            &b" "[..]
+        } else {
+            &line.last_name
+        };
         bwrite!(*s, "last_name=\"{}\" ", last_name);
         s.push_str("contact_type=\"sip\" ");
         bwrite!(*s, "account_id=\"{}\" ", line.name);
@@ -40,7 +55,11 @@ fn build(reg: Option<&Registry>, s: &mut Vec<u8>) {
         bwrite!(*s, "subscribe_to=\"auto_hint_{}\"", line.name);
         s.push_str(">\n");
         s.push_str("<numbers>\n");
-        bwriteln!(*s, "<number dial=\"{}\" label=\"Extension\" primary=\"1\" />", line.dialable_exten());
+        bwriteln!(
+            *s,
+            "<number dial=\"{}\" label=\"Extension\" primary=\"1\" />",
+            line.dialable_exten()
+        );
         s.push_str("</numbers>\n");
         s.push_str("</contact>\n");
     }

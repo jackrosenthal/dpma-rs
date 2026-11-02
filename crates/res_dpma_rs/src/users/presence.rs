@@ -59,7 +59,12 @@ pub fn ordered(options: &[PresenceOption]) -> Vec<PresenceOption> {
 
 /// `phone_presence_option_add` (0x1609b0): add an option with the lowest
 /// unused id; returns the id.
-pub fn option_add(options: &mut Vec<PresenceOption>, state: i32, owner: i32, subtype: Option<&[u8]>) -> i32 {
+pub fn option_add(
+    options: &mut Vec<PresenceOption>,
+    state: i32,
+    owner: i32,
+    subtype: Option<&[u8]>,
+) -> i32 {
     let count = options.len() as i32;
     let mut id = 1;
     loop {
@@ -72,7 +77,12 @@ pub fn option_add(options: &mut Vec<PresenceOption>, state: i32, owner: i32, sub
             break;
         }
     }
-    options.push(PresenceOption { state, owner, subtype: subtype.map(<[u8]>::to_vec), id });
+    options.push(PresenceOption {
+        state,
+        owner,
+        subtype: subtype.map(<[u8]>::to_vec),
+        id,
+    });
     id
 }
 
@@ -116,7 +126,9 @@ pub fn sync_applications(apps: &NamedMap<Application>, phone: &mut Phone, list: 
             dpma_ast::dpma_log!("Failed to find application '{}'", name);
             continue;
         };
-        let Some(AppKind::Status(st)) = app.kind.as_ref() else { continue };
+        let Some(AppKind::Status(st)) = app.kind.as_ref() else {
+            continue;
+        };
         if app.delme {
             continue;
         }
@@ -133,7 +145,12 @@ pub fn sync_applications(apps: &NamedMap<Application>, phone: &mut Phone, list: 
         // FUN_00160bb0: the state, then one option per sub-state.
         option_add(&mut phone.presence_options, st.status, OWNER_SYSTEM, None);
         for sub in &st.substatuses {
-            option_add(&mut phone.presence_options, st.status, OWNER_SYSTEM, Some(sub));
+            option_add(
+                &mut phone.presence_options,
+                st.status,
+                OWNER_SYSTEM,
+                Some(sub),
+            );
         }
     }
 }
@@ -144,8 +161,14 @@ pub fn sync_applications(apps: &NamedMap<Application>, phone: &mut Phone, list: 
 pub fn user_application_sync(phone: &[u8]) {
     let mut g = write();
     let Some(reg) = g.as_mut() else { return };
-    let Registry { phones, applications, .. } = reg;
-    let Some(p) = phones.get_mut(phone) else { return };
+    let Registry {
+        phones,
+        applications,
+        ..
+    } = reg;
+    let Some(p) = phones.get_mut(phone) else {
+        return;
+    };
     let list = p.applications.clone();
     sync_applications(applications, p, &list);
 }
@@ -153,14 +176,23 @@ pub fn user_application_sync(phone: &[u8]) {
 /// The presence provider of a phone: `CustomPresence:<first line slot>`
 /// (empty when the phone has no lines, as in the official DPMA).
 fn provider(p: &Phone) -> Vec<u8> {
-    bformat!("CustomPresence:{}", p.lines.first().map_or(&b""[..], |l| l.name.as_slice()))
+    bformat!(
+        "CustomPresence:{}",
+        p.lines.first().map_or(&b""[..], |l| l.name.as_slice())
+    )
 }
 
 /// The option matching `state` and `subtype` (absent and empty are the
 /// same), in container order.
-fn matching(options: &[PresenceOption], state: i32, subtype: Option<&[u8]>) -> Option<PresenceOption> {
+fn matching(
+    options: &[PresenceOption],
+    state: i32,
+    subtype: Option<&[u8]>,
+) -> Option<PresenceOption> {
     let cur = subtype.unwrap_or(b"");
-    ordered(options).into_iter().find(|o| o.state == state && o.subtype.as_deref().unwrap_or(b"") == cur)
+    ordered(options)
+        .into_iter()
+        .find(|o| o.state == state && o.subtype.as_deref().unwrap_or(b"") == cur)
 }
 
 /// The current presence of a phone (`phone_presence_get_current`
@@ -222,7 +254,11 @@ pub fn status_lines(phone: &[u8]) -> Option<Vec<Vec<u8>>> {
             .map(|o| {
                 bformat!(
                     "{}{}: {} {} {}\n",
-                    if current.as_ref().is_some_and(|c| c.id == o.id) { "(*) " } else { "    " },
+                    if current.as_ref().is_some_and(|c| c.id == o.id) {
+                        "(*) "
+                    } else {
+                        "    "
+                    },
                     o.id,
                     ast_presence::state2str(o.state),
                     if o.subtype.is_some() { "-" } else { "" },

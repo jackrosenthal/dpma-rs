@@ -7,8 +7,8 @@
 
 use super::*;
 use dpma_ast::json::{
-    ast_json, ast_json_array_append, ast_json_array_create, ast_json_object_create, ast_json_object_set,
-    ast_json_string_create, ast_json_unref, dump_string,
+    ast_json, ast_json_array_append, ast_json_array_create, ast_json_object_create,
+    ast_json_object_set, ast_json_string_create, ast_json_unref, dump_string,
 };
 use dpma_ast::util::cstr;
 
@@ -29,12 +29,24 @@ fn user_entry(reg: &Registry, p: &Phone) -> (Vec<u8>, Vec<u8>, &'static str) {
         Some(line) => line.dialable_exten().to_vec(),
         None => {
             let slot0 = p.lines.first().map_or(&b""[..], |l| l.name.as_slice());
-            if slot0.is_empty() { p.name.clone() } else { slot0.to_vec() }
+            if slot0.is_empty() {
+                p.name.clone()
+            } else {
+                slot0.to_vec()
+            }
         }
     };
-    let name = if p.full_name.is_empty() { p.name.clone() } else { p.full_name.clone() };
+    let name = if p.full_name.is_empty() {
+        p.name.clone()
+    } else {
+        p.full_name.clone()
+    };
     // "1" when the phone has a session (it is in use), "0" otherwise.
-    let assigned = if p.last_session_id.is_empty() { "0" } else { "1" };
+    let assigned = if p.last_session_id.is_empty() {
+        "0"
+    } else {
+        "1"
+    };
     (extension, name, assigned)
 }
 
@@ -54,15 +66,23 @@ fn user_entry(reg: &Registry, p: &Phone) -> (Vec<u8>, Vec<u8>, &'static str) {
 /// the caller treats zero as an authentication failure.  (The official
 /// DPMA's fourth parameter selects a variant keyed on a phone field that
 /// nothing sets; its only caller passes 0, so that variant is not ported.)
-pub fn build_userlist_json(out: &mut Vec<u8>, filter_group_pin: bool, config_password: &[u8]) -> Result<usize, ()> {
+pub fn build_userlist_json(
+    out: &mut Vec<u8>,
+    filter_group_pin: bool,
+    config_password: &[u8],
+) -> Result<usize, ()> {
     let entries: Vec<(Vec<u8>, Vec<u8>, &'static str)> = {
         // The official DPMA locks each primary line while it reads it.
         let _lines = crate::users::objects::lock_all_lines();
         let g = read();
-        let Some(reg) = g.as_ref() else { return Err(()) };
+        let Some(reg) = g.as_ref() else {
+            return Err(());
+        };
         reg.phones
             .values()
-            .filter(|p| !filter_group_pin || (!p.group_pin.is_empty() && p.group_pin == config_password))
+            .filter(|p| {
+                !filter_group_pin || (!p.group_pin.is_empty() && p.group_pin == config_password)
+            })
             .map(|p| user_entry(reg, p))
             .collect()
     };

@@ -50,14 +50,24 @@ enum Fx {
     /// A DPMA log line, with the official DPMA's function name.
     Log(&'static str, Vec<u8>),
     /// `phone_user_send_reconfigure(session, uri, 0)`.
-    Reconfigure { session: Vec<u8>, uri: Vec<u8> },
+    Reconfigure {
+        session: Vec<u8>,
+        uri: Vec<u8>,
+    },
     /// `phone_msg_session_mark_inactive(phone_msg_session_find(id))`.
     MarkInactive(Vec<u8>),
     /// `phone_msg_session_mark_authenticated(phone_msg_session_find(id), uri)`.
-    MarkAuthenticated { session: Vec<u8>, uri: Vec<u8> },
+    MarkAuthenticated {
+        session: Vec<u8>,
+        uri: Vec<u8>,
+    },
     /// If the session's response URI differs from `uri`, log it and make
     /// `uri` the session's response URI.
-    SessionUri { phone: Vec<u8>, session: Vec<u8>, uri: Vec<u8> },
+    SessionUri {
+        phone: Vec<u8>,
+        session: Vec<u8>,
+        uri: Vec<u8>,
+    },
     /// `vm_phone_user_tracker_remove(phone)`.
     VmTrackerRemove(Vec<u8>),
     DbPut(Vec<u8>, Vec<u8>),
@@ -67,21 +77,38 @@ enum Fx {
 fn run(effects: Vec<Fx>) {
     for f in effects {
         match f {
-            Fx::Log(func, msg) => {
-                dpma_ast::log::log(dpma_ast::log::custom_level(), file!(), line!(), func, &bformat!("{}\n", msg))
-            }
+            Fx::Log(func, msg) => dpma_ast::log::log(
+                dpma_ast::log::custom_level(),
+                file!(),
+                line!(),
+                func,
+                &bformat!("{}\n", msg),
+            ),
             Fx::Reconfigure { session, uri } => {
                 let _ = send_reconfigure(&session, &uri, false);
             }
             Fx::MarkInactive(id) => mark_session_inactive(&id),
             Fx::MarkAuthenticated { session, uri } => {
                 if let Some(s) = find_session(&session) {
-                    session::mark_authenticated(&s, Some(&uri).filter(|u| !u.is_empty()).map(|u| u.as_slice()));
+                    session::mark_authenticated(
+                        &s,
+                        Some(&uri).filter(|u| !u.is_empty()).map(|u| u.as_slice()),
+                    );
                 }
             }
-            Fx::SessionUri { phone, session, uri } => {
-                let Some(s) = find_session(&session) else { continue };
-                let current = s.state.lock().map(|st| st.response_uri.clone()).unwrap_or_default();
+            Fx::SessionUri {
+                phone,
+                session,
+                uri,
+            } => {
+                let Some(s) = find_session(&session) else {
+                    continue;
+                };
+                let current = s
+                    .state
+                    .lock()
+                    .map(|st| st.response_uri.clone())
+                    .unwrap_or_default();
                 if !current.is_empty() && !same_uri(&uri, &current) {
                     dpma_ast::log::log(
                         dpma_ast::log::custom_level(),
@@ -93,7 +120,10 @@ fn run(effects: Vec<Fx>) {
                             phone, current, uri
                         ),
                     );
-                    session::mark_authenticated(&s, Some(&uri).filter(|u| !u.is_empty()).map(|u| u.as_slice()));
+                    session::mark_authenticated(
+                        &s,
+                        Some(&uri).filter(|u| !u.is_empty()).map(|u| u.as_slice()),
+                    );
                 }
             }
             Fx::VmTrackerRemove(phone) => crate::method_api::voicemail::remove_user_tracker(&phone),
@@ -130,7 +160,12 @@ pub fn mark_session_inactive(id: &[u8]) {
 /// The AstDB value of a phone (`phone_user_update_db_info` 0x152660).
 fn db_value(p: &Phone) -> Vec<u8> {
     crate::util::truncate(
-        &bformat!("last_mac={};last_uri={};last_session_id={}", p.last_mac, p.last_uri, p.last_session_id),
+        &bformat!(
+            "last_mac={};last_uri={};last_session_id={}",
+            p.last_mac,
+            p.last_uri,
+            p.last_session_id
+        ),
         BUF,
     )
 }
@@ -140,7 +175,9 @@ fn db_value(p: &Phone) -> Vec<u8> {
 pub fn update_db_info(phone: &[u8]) {
     let v = {
         let g = read();
-        let Some(p) = g.as_ref().and_then(|r| r.phones.get(phone)) else { return };
+        let Some(p) = g.as_ref().and_then(|r| r.phones.get(phone)) else {
+            return;
+        };
         (p.name.clone(), db_value(p))
     };
     dpma_ast::db::put(DB_FAMILY, &v.0, &v.1);
@@ -151,7 +188,9 @@ pub fn update_db_info(phone: &[u8]) {
 /// `;` that does not start a `;trans...` URI parameter.
 pub fn parse_db_value(value: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let field = |tag: &str| -> Vec<u8> {
-        let Some(i) = value.find(tag) else { return Vec::new() };
+        let Some(i) = value.find(tag) else {
+            return Vec::new();
+        };
         let rest = &value[i + tag.len()..];
         let b = rest;
         let mut end = 0;
@@ -163,7 +202,11 @@ pub fn parse_db_value(value: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         }
         rest[..end].to_vec()
     };
-    (field("last_mac="), field("last_uri="), field("last_session_id="))
+    (
+        field("last_mac="),
+        field("last_uri="),
+        field("last_session_id="),
+    )
 }
 
 /// Restore `last_session_id`s from AstDB once sessions are loaded
@@ -172,7 +215,9 @@ pub fn parse_db_value(value: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
 /// authenticated.
 pub fn restore_sessions() {
     for (key, value) in dpma_ast::db::tree(DB_FAMILY) {
-        let Some((_, name)) = key.rsplit_once_str("/") else { continue };
+        let Some((_, name)) = key.rsplit_once_str("/") else {
+            continue;
+        };
         if value.is_empty() || name.is_empty() {
             continue;
         }
@@ -181,7 +226,11 @@ pub fn restore_sessions() {
             continue;
         }
         let Some(s) = session::find(&sid) else {
-            dpma_log!("Unable to locate session '{}' while restoring user '{}'", sid, name);
+            dpma_log!(
+                "Unable to locate session '{}' while restoring user '{}'",
+                sid,
+                name
+            );
             continue;
         };
         session::mark_authenticated(&s, None);
@@ -232,9 +281,18 @@ fn set_last_info_locked(
     }
     // The phone last seen with this MAC loses it.
     if let Some(m) = mac.filter(|m| !m.is_empty()) {
-        if let Some(other) = for_last_token_mac_in(reg, m).filter(|o| !o.eq_ignore_ascii_case(phone)) {
+        if let Some(other) =
+            for_last_token_mac_in(reg, m).filter(|o| !o.eq_ignore_ascii_case(phone))
+        {
             let o = reg.phones.get_mut(&other).unwrap();
-            fx.push(Fx::Log(FUNC, bformat!("Phone user '{}' configuration orphaned by mac '{}'", o.name, m)));
+            fx.push(Fx::Log(
+                FUNC,
+                bformat!(
+                    "Phone user '{}' configuration orphaned by mac '{}'",
+                    o.name,
+                    m
+                ),
+            ));
             o.last_mac.clear();
             o.last_uri.clear();
             fx.push(Fx::MarkInactive(std::mem::take(&mut o.last_session_id)));
@@ -248,9 +306,17 @@ fn set_last_info_locked(
         if !p.last_uri.is_empty() && !m.is_empty() && !p.last_mac.is_empty() && m != p.last_mac {
             fx.push(Fx::Log(
                 FUNC,
-                bformat!("Phone user '{}' reconfigure due to mac mismatch - was '{}' now '{}'", p.name, p.last_mac, m),
+                bformat!(
+                    "Phone user '{}' reconfigure due to mac mismatch - was '{}' now '{}'",
+                    p.name,
+                    p.last_mac,
+                    m
+                ),
             ));
-            fx.push(Fx::Reconfigure { session: p.last_session_id.clone(), uri: p.last_uri.clone() });
+            fx.push(Fx::Reconfigure {
+                session: p.last_session_id.clone(),
+                uri: p.last_uri.clone(),
+            });
             p.last_uri.clear();
             changed = true;
         }
@@ -271,10 +337,22 @@ fn set_last_info_locked(
             return;
         }
     } else {
-        fx.push(Fx::Log(FUNC, bformat!("Phone user '{}' now connected from '{}' mac '{}'", p.name, uri, mac)));
+        fx.push(Fx::Log(
+            FUNC,
+            bformat!(
+                "Phone user '{}' now connected from '{}' mac '{}'",
+                p.name,
+                uri,
+                mac
+            ),
+        ));
         p.last_uri = uri.to_vec();
         p.last_mac = mac;
-        fx.push(Fx::SessionUri { phone: p.name.clone(), session: p.last_session_id.clone(), uri: uri.to_vec() });
+        fx.push(Fx::SessionUri {
+            phone: p.name.clone(),
+            session: p.last_session_id.clone(),
+            uri: uri.to_vec(),
+        });
     }
     if let Some(sid) = session_id {
         if p.last_session_id != sid {
@@ -282,7 +360,10 @@ fn set_last_info_locked(
             fx.push(Fx::MarkInactive(p.last_session_id.clone()));
             p.last_session_id = sid.to_vec();
         }
-        fx.push(Fx::MarkAuthenticated { session: sid.to_vec(), uri: uri.to_vec() });
+        fx.push(Fx::MarkAuthenticated {
+            session: sid.to_vec(),
+            uri: uri.to_vec(),
+        });
     }
     fx.push(Fx::DbPut(p.name.clone(), db_value(p)));
 }
@@ -290,7 +371,12 @@ fn set_last_info_locked(
 /// `phone_user_del_stale_response_uri` (0x152410) over every phone: a
 /// phone last seen at `uri` with another session than `session_id` is
 /// no longer there.
-fn del_stale_response_uri_locked(reg: &mut Registry, uri: &[u8], session_id: &[u8], fx: &mut Vec<Fx>) {
+fn del_stale_response_uri_locked(
+    reg: &mut Registry,
+    uri: &[u8],
+    session_id: &[u8],
+    fx: &mut Vec<Fx>,
+) {
     for p in reg.phones.values_mut() {
         if p.last_uri == uri && p.last_session_id != session_id {
             fx.push(Fx::Log(
@@ -322,7 +408,9 @@ fn token_hash(s: &[u8]) -> i32 {
 
 /// The sum of a token's characters as signed chars.
 fn token_sum(token: &[u8]) -> i32 {
-    token.iter().fold(0i32, |a, &b| a.wrapping_add(i32::from(b as i8)))
+    token
+        .iter()
+        .fold(0i32, |a, &b| a.wrapping_add(i32::from(b as i8)))
 }
 
 /// `phone_user_config_token_build`: issue a configuration token for
@@ -332,14 +420,26 @@ fn token_sum(token: &[u8]) -> i32 {
 /// characters).  Records the phone's location (`set_last_info`), then
 /// drops any other phone last seen at `uri` with another session.  None
 /// when the phone does not exist.
-pub fn config_token_build(phone: &[u8], mac: &[u8], session_id: &[u8], uri: &[u8], secret: &[u8]) -> Option<Vec<u8>> {
+pub fn config_token_build(
+    phone: &[u8],
+    mac: &[u8],
+    session_id: &[u8],
+    uri: &[u8],
+    secret: &[u8],
+) -> Option<Vec<u8>> {
     let mut fx = Vec::new();
     let token = {
         let mut g = write();
         let reg = g.as_mut()?;
         let p = reg.phones.get_mut(phone)?;
         let token = crate::util::truncate(
-            &bformat!("{}/{}/{}/{}", p.name, mac, token_hash(b""), token_hash(secret)),
+            &bformat!(
+                "{}/{}/{}/{}",
+                p.name,
+                mac,
+                token_hash(b""),
+                token_hash(secret)
+            ),
             BUF,
         );
         if p.token_state == 0 {
@@ -378,7 +478,13 @@ pub struct TokenLookup {
 /// separator, which is the same for all four.  So a token matches when it
 /// starts with the phone's name (case sensitive), the separator, and the
 /// MAC the phone was last seen with.
-pub fn find_by_token(token: &[u8], mac: &[u8], session_id: &[u8], uri: &[u8], secret: &[u8]) -> TokenLookup {
+pub fn find_by_token(
+    token: &[u8],
+    mac: &[u8],
+    session_id: &[u8],
+    uri: &[u8],
+    secret: &[u8],
+) -> TokenLookup {
     let mut res = TokenLookup::default();
     let (name, sep) = match token.find_byte(b'/') {
         Some(0) => return res,
@@ -390,12 +496,17 @@ pub fn find_by_token(token: &[u8], mac: &[u8], session_id: &[u8], uri: &[u8], se
     };
     let found = {
         let g = read();
-        let Some(p) = g.as_ref().and_then(|r| r.phones.get(name)) else { return res };
+        let Some(p) = g.as_ref().and_then(|r| r.phones.get(name)) else {
+            return res;
+        };
         // The first candidate; the hashes (and so `secret`) are never
         // compared.
         let _ = secret;
         let h = token_hash(b"");
-        let candidate = crate::util::truncate(&bformat!("{}{sep}{}{sep}{h}{sep}{h}", p.name, p.last_mac), BUF);
+        let candidate = crate::util::truncate(
+            &bformat!("{}{sep}{}{sep}{h}{sep}{h}", p.name, p.last_mac),
+            BUF,
+        );
         if prefix_matches(&candidate, sep, token) {
             Some(p.name.clone())
         } else {
@@ -414,8 +525,12 @@ pub fn find_by_token(token: &[u8], mac: &[u8], session_id: &[u8], uri: &[u8], se
 
 /// `strncmp(candidate, token, <offset of candidate's second separator>)`.
 fn prefix_matches(candidate: &[u8], sep: char, token: &[u8]) -> bool {
-    let Some(first) = candidate.find_char(sep) else { return false };
-    let Some(second) = candidate[first + 1..].find_char(sep).map(|i| first + 1 + i) else { return false };
+    let Some(first) = candidate.find_char(sep) else {
+        return false;
+    };
+    let Some(second) = candidate[first + 1..].find_char(sep).map(|i| first + 1 + i) else {
+        return false;
+    };
     token.get(..second) == Some(&candidate[..second])
 }
 
@@ -465,14 +580,19 @@ pub fn find_w_grouppin(name: &[u8], group_pin: &[u8]) -> Option<Vec<u8>> {
     }
     let g = read();
     let p = g.as_ref()?.phones.get(name)?;
-    p.group_pin.eq_ignore_ascii_case(group_pin).then(|| p.name.clone())
+    p.group_pin
+        .eq_ignore_ascii_case(group_pin)
+        .then(|| p.name.clone())
 }
 
 fn for_last_token_mac_in(reg: &Registry, mac: &[u8]) -> Option<Vec<u8>> {
     if mac.is_empty() {
         return None;
     }
-    reg.phones.values().find(|p| p.last_mac.eq_ignore_ascii_case(mac)).map(|p| p.name.clone())
+    reg.phones
+        .values()
+        .find(|p| p.last_mac.eq_ignore_ascii_case(mac))
+        .map(|p| p.name.clone())
 }
 
 /// `phone_user_for_last_token_mac`: the first phone (container order)
@@ -495,7 +615,12 @@ pub fn username_for_token(username: &[u8], mac: &[u8]) -> Option<Vec<u8>> {
     } else {
         read()
             .as_ref()
-            .map(|reg| reg.phones.values().filter_map(|p| p.lines.first().map(|l| l.name.clone())).collect())
+            .map(|reg| {
+                reg.phones
+                    .values()
+                    .filter_map(|p| p.lines.first().map(|l| l.name.clone()))
+                    .collect()
+            })
             .unwrap_or_default()
     };
     let _lines = crate::users::objects::lock_lines(primaries.iter().map(Vec::as_slice));
@@ -504,7 +629,9 @@ pub fn username_for_token(username: &[u8], mac: &[u8]) -> Option<Vec<u8>> {
     for p in reg.phones.values() {
         if !username.is_empty() {
             if let Some(line) = build_config::primary_line(reg, p) {
-                if line.name.eq_ignore_ascii_case(username) || line.exten.eq_ignore_ascii_case(username) {
+                if line.name.eq_ignore_ascii_case(username)
+                    || line.exten.eq_ignore_ascii_case(username)
+                {
                     return Some(p.name.clone());
                 }
             }
@@ -567,12 +694,17 @@ pub fn mailbox_by_line(line: &[u8]) -> Option<Vec<u8>> {
 /// the applications' container order.
 pub fn applications_of_type(phone: &[u8], type_name: &str) -> Vec<Vec<u8>> {
     let g = read();
-    let Some(reg) = g.as_ref() else { return Vec::new() };
-    let Some(p) = reg.phones.get(phone) else { return Vec::new() };
+    let Some(reg) = g.as_ref() else {
+        return Vec::new();
+    };
+    let Some(p) = reg.phones.get(phone) else {
+        return Vec::new();
+    };
     reg.applications
         .values()
         .filter(|a| {
-            a.kind.as_ref().is_some_and(|k| k.type_name() == type_name) && p.applications.contains(&a.name)
+            a.kind.as_ref().is_some_and(|k| k.type_name() == type_name)
+                && p.applications.contains(&a.name)
         })
         .map(|a| a.name.clone())
         .collect()
@@ -613,7 +745,11 @@ pub fn send_event(phone: &[u8], event: &[u8], body: &[u8]) -> Result<(), &'stati
     let (name, uri, sid) = {
         let g = read();
         match g.as_ref().and_then(|r| r.phones.get(phone)) {
-            Some(p) => (p.name.clone(), p.last_uri.clone(), p.last_session_id.clone()),
+            Some(p) => (
+                p.name.clone(),
+                p.last_uri.clone(),
+                p.last_session_id.clone(),
+            ),
             None => {
                 dpma_log!("Unable to send without user");
                 return Err("Memory allocation error");
@@ -676,8 +812,17 @@ mod devtest {
         if a.argc() != 7 && a.argc() != 8 {
             return CliResult::ShowUsage;
         }
-        let secret = a.argv.get(7).map_or_else(|| crate::config::get().globalpin.clone(), |s| arg(s).to_vec());
-        let r = config_token_build(&a.argv[3], arg(&a.argv[4]), arg(&a.argv[5]), arg(&a.argv[6]), &secret);
+        let secret = a.argv.get(7).map_or_else(
+            || crate::config::get().globalpin.clone(),
+            |s| arg(s).to_vec(),
+        );
+        let r = config_token_build(
+            &a.argv[3],
+            arg(&a.argv[4]),
+            arg(&a.argv[5]),
+            arg(&a.argv[6]),
+            &secret,
+        );
         a.out(bformat!("token: {}\n", show(r)));
         CliResult::Success
     }
@@ -687,9 +832,22 @@ mod devtest {
         if a.argc() != 7 && a.argc() != 8 {
             return CliResult::ShowUsage;
         }
-        let secret = a.argv.get(7).map_or_else(|| crate::config::get().globalpin.clone(), |s| arg(s).to_vec());
-        let r = find_by_token(&a.argv[3], arg(&a.argv[4]), arg(&a.argv[5]), arg(&a.argv[6]), &secret);
-        a.out(bformat!("phone: {}  previous_token: {}\n", show(r.phone), r.previous_token));
+        let secret = a.argv.get(7).map_or_else(
+            || crate::config::get().globalpin.clone(),
+            |s| arg(s).to_vec(),
+        );
+        let r = find_by_token(
+            &a.argv[3],
+            arg(&a.argv[4]),
+            arg(&a.argv[5]),
+            arg(&a.argv[6]),
+            &secret,
+        );
+        a.out(bformat!(
+            "phone: {}  previous_token: {}\n",
+            show(r.phone),
+            r.previous_token
+        ));
         CliResult::Success
     }
 
@@ -698,7 +856,12 @@ mod devtest {
         if a.argc() != 7 {
             return CliResult::ShowUsage;
         }
-        set_last_info(&a.argv[3], arg(&a.argv[4]), opt(&a.argv[5]), opt(&a.argv[6]));
+        set_last_info(
+            &a.argv[3],
+            arg(&a.argv[4]),
+            opt(&a.argv[5]),
+            opt(&a.argv[6]),
+        );
         info(a, &a.argv[3]);
         CliResult::Success
     }
@@ -715,7 +878,10 @@ mod devtest {
             }
         };
         a.out(&line);
-        a.out(bformat!("AstDB: {}\n", show(dpma_ast::db::get(DB_FAMILY, phone))));
+        a.out(bformat!(
+            "AstDB: {}\n",
+            show(dpma_ast::db::get(DB_FAMILY, phone))
+        ));
     }
 
     /// dpmadev token info <phone>

@@ -27,7 +27,6 @@ pub struct Msg {
 unsafe impl Send for Msg {}
 unsafe impl Sync for Msg {}
 
-
 impl Msg {
     /// Allocate a new, empty message.
     pub fn alloc() -> Option<Msg> {
@@ -117,7 +116,9 @@ impl Msg {
                     let more = if outbound {
                         sys::ast_msg_var_iterator_next(self.ptr, iter, &mut name, &mut value)
                     } else {
-                        sys::ast_msg_var_iterator_next_received(self.ptr, iter, &mut name, &mut value)
+                        sys::ast_msg_var_iterator_next_received(
+                            self.ptr, iter, &mut name, &mut value,
+                        )
                     };
                     if more == 0 {
                         break;
@@ -181,7 +182,13 @@ impl Msg {
         std::mem::forget(self);
         let t = cstr(to);
         let f = from.map(cstr);
-        unsafe { sys::ast_msg_send(p, t.as_ptr(), f.as_ref().map_or(std::ptr::null(), |f| f.as_ptr())) }
+        unsafe {
+            sys::ast_msg_send(
+                p,
+                t.as_ptr(),
+                f.as_ref().map_or(std::ptr::null(), |f| f.as_ptr()),
+            )
+        }
     }
 }
 
@@ -200,8 +207,10 @@ pub type ReceiveFn = fn(msg: Msg, to: &[u8], from: &[u8]) -> i32;
 static RECEIVER: RwLock<Option<ReceiveFn>> = RwLock::new(None);
 
 /// The `digium_phone` message technology (Asterisk keeps the pointer).
-static TECH: CStatic<sys::ast_msg_tech> =
-    CStatic::new(sys::ast_msg_tech { name: c"digium_phone".as_ptr(), msg_send: Some(msg_send) });
+static TECH: CStatic<sys::ast_msg_tech> = CStatic::new(sys::ast_msg_tech {
+    name: c"digium_phone".as_ptr(),
+    msg_send: Some(msg_send),
+});
 
 /// Register the `digium_phone` message technology; its messages go to
 /// `receiver`.

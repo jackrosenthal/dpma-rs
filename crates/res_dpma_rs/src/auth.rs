@@ -11,8 +11,8 @@
 
 use crate::ami::AmiAction;
 use crate::session::Transaction;
-use dpma_ast::{bformat, bwrite, dpma_log};
 use dpma_ast::manager::{self, Request};
+use dpma_ast::{bformat, bwrite, dpma_log};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -35,8 +35,13 @@ struct TimeVal {
 
 impl TimeVal {
     fn now() -> TimeVal {
-        let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-        TimeVal { sec: d.as_secs() as i64, usec: i64::from(d.subsec_micros()) }
+        let d = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        TimeVal {
+            sec: d.as_secs() as i64,
+            usec: i64::from(d.subsec_micros()),
+        }
     }
 
     /// `ast_tvdiff_sec(self, start)`.
@@ -125,7 +130,10 @@ fn record(tx: &Transaction, reason: &str) -> Result<(), ()> {
     // The user agent as `phone_msg_get_user_agent` (FUN_00149fc0) reads
     // it: X-Digium-User-Agent if not empty, else User-Agent (possibly
     // absent).
-    let user_agent = msg.and_then(|m| m.var("X-Digium-User-Agent").or_else(|| m.get_var("User-Agent")));
+    let user_agent = msg.and_then(|m| {
+        m.var("X-Digium-User-Agent")
+            .or_else(|| m.get_var("User-Agent"))
+    });
     let (addr, _) = dpma_proto::uri::phone_utils_parse_uri(&uri);
     if addr.is_empty() {
         dpma_log!("Failed to parse uri from authorization problem");
@@ -189,7 +197,11 @@ pub fn expire_problems() {
             let age = now.sec - p.last.sec;
             let expired = age > 0 && now.diff_sec(p.last) > EXPIRE_SECONDS;
             if expired {
-                dpma_log!("Expiring auth incident for ip '{}' at count={}", p.ip, p.count);
+                dpma_log!(
+                    "Expiring auth incident for ip '{}' at count={}",
+                    p.ip,
+                    p.count
+                );
             }
             !expired
         });
@@ -239,7 +251,11 @@ fn action_show_incidents(r: &Request) -> i32 {
     if !id.is_empty() {
         bwrite!(done, "ActionID: {}\r\n", id);
     }
-    bwrite!(done, "EventList: Complete\r\nListItems: {}\r\n\r\n", problems.len());
+    bwrite!(
+        done,
+        "EventList: Complete\r\nListItems: {}\r\n\r\n",
+        problems.len()
+    );
     r.append(&done);
     0
 }
@@ -276,8 +292,16 @@ fn action_remove_incident(r: &Request) -> i32 {
 /// AMI actions DPMAShowIncidents and DPMARemoveIncident (authority call).
 pub fn ami_actions() -> Vec<AmiAction> {
     vec![
-        AmiAction { name: "DPMAShowIncidents", authority: manager::AUTH_CALL, handler: action_show_incidents },
-        AmiAction { name: "DPMARemoveIncident", authority: manager::AUTH_CALL, handler: action_remove_incident },
+        AmiAction {
+            name: "DPMAShowIncidents",
+            authority: manager::AUTH_CALL,
+            handler: action_show_incidents,
+        },
+        AmiAction {
+            name: "DPMARemoveIncident",
+            authority: manager::AUTH_CALL,
+            handler: action_remove_incident,
+        },
     ]
 }
 
@@ -299,19 +323,31 @@ mod devtest {
             return CliResult::Failure;
         };
         let target = &a.argv[3];
-        let uri = if target.contains_str("sip:") { target.clone() } else { bformat!("pjsip:{}", target) };
+        let uri = if target.contains_str("sip:") {
+            target.clone()
+        } else {
+            bformat!("pjsip:{}", target)
+        };
         msg.set_var("X-Digium-AppServer-Response-URI", &uri);
         if a.argv[5] != b"-" {
             msg.set_var("User-Agent", &a.argv[5]);
         }
-        let mac = if a.argv[4] == b"-" { Vec::new() } else { a.argv[4].clone() };
+        let mac = if a.argv[4] == b"-" {
+            Vec::new()
+        } else {
+            a.argv[4].clone()
+        };
         let mut tx = crate::request::devtest_synthetic(b"TokenRequest", b"", Some(b"dpmadev"));
         tx.mac = mac;
         tx.first_msg = Some(msg);
         let tx = Arc::new(tx);
         let reason = String::from_utf8_lossy(&a.argv[6..].join(&b" "[..])).into_owned();
         let res = record(&tx, &reason);
-        a.out(bformat!("issue_alert(uri '{}'): {}\n", uri, if res.is_ok() { "recorded" } else { "failed" }));
+        a.out(bformat!(
+            "issue_alert(uri '{}'): {}\n",
+            uri,
+            if res.is_ok() { "recorded" } else { "failed" }
+        ));
         CliResult::Success
     }
 
@@ -337,7 +373,11 @@ mod devtest {
             p.first.sec -= secs;
             p.last.sec -= secs;
         });
-        a.out(if found.is_some() { "Aged\n" } else { "Not found\n" });
+        a.out(if found.is_some() {
+            "Aged\n"
+        } else {
+            "Not found\n"
+        });
         CliResult::Success
     }
 

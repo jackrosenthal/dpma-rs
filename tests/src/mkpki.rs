@@ -541,7 +541,10 @@ fn chain_verifies(
         if check_time && !within_validity(&cur) {
             return Err("certificate has expired or is not yet valid".into());
         }
-        if let Some(a) = anchors.iter().find(|a| verify_directly_issued_by(&cur, a).is_ok()) {
+        if let Some(a) = anchors
+            .iter()
+            .find(|a| verify_directly_issued_by(&cur, a).is_ok())
+        {
             if !is_ca(a) || verify_directly_issued_by(a, a).is_err() {
                 return Err("the trust anchor is not a self-signed CA".into());
             }
@@ -550,7 +553,10 @@ fn chain_verifies(
             }
             return Ok(());
         }
-        let Some(next) = untrusted.iter().find(|u| is_ca(u) && verify_directly_issued_by(&cur, u).is_ok()) else {
+        let Some(next) = untrusted
+            .iter()
+            .find(|u| is_ca(u) && verify_directly_issued_by(&cur, u).is_ok())
+        else {
             return Err("unable to get local issuer certificate".into());
         };
         cur = next.clone();
@@ -569,24 +575,91 @@ pub fn check(dir: &Path) -> Result<usize> {
         let pem = std::fs::read(&path).with_context(|| path.display().to_string())?;
         parse_certificate(&pem)
     };
-    let (root, inter, appserver_ca) = (cert("root-ca.pem")?, cert("intermediate-ca.pem")?, cert("appserver-ca.pem")?);
+    let (root, inter, appserver_ca) = (
+        cert("root-ca.pem")?,
+        cert("intermediate-ca.pem")?,
+        cert("appserver-ca.pem")?,
+    );
     // (label, certificate, untrusted chain, trust anchor, check time,
     // expected to verify)
-    type Case<'a> = (&'a str, Certificate, Vec<Certificate>, &'a Certificate, bool, bool);
+    type Case<'a> = (
+        &'a str,
+        Certificate,
+        Vec<Certificate>,
+        &'a Certificate,
+        bool,
+        bool,
+    );
     let mut cases: Vec<Case> = vec![
         ("legacy", cert("legacy.pem")?, vec![], &root, true, true),
-        ("chain", cert("phone.pem")?, vec![inter.clone()], &root, true, true),
+        (
+            "chain",
+            cert("phone.pem")?,
+            vec![inter.clone()],
+            &root,
+            true,
+            true,
+        ),
         ("intermediate", inter.clone(), vec![], &root, true, true),
-        ("chain-expired", cert("phone-expired.pem")?, vec![inter.clone()], &root, false, true),
-        ("chain-expired (time checked)", cert("phone-expired.pem")?, vec![inter.clone()], &root, true, false),
-        ("legacy-expired", cert("legacy-expired.pem")?, vec![], &root, false, true),
+        (
+            "chain-expired",
+            cert("phone-expired.pem")?,
+            vec![inter.clone()],
+            &root,
+            false,
+            true,
+        ),
+        (
+            "chain-expired (time checked)",
+            cert("phone-expired.pem")?,
+            vec![inter.clone()],
+            &root,
+            true,
+            false,
+        ),
+        (
+            "legacy-expired",
+            cert("legacy-expired.pem")?,
+            vec![],
+            &root,
+            false,
+            true,
+        ),
         ("rogue", cert("rogue.pem")?, vec![], &root, true, false),
-        ("phone without intermediate", cert("phone.pem")?, vec![], &root, true, false),
-        ("appserver", cert("appserver.pem")?, vec![], &appserver_ca, true, true),
-        ("appserver against phone CA", cert("appserver.pem")?, vec![], &root, true, false),
+        (
+            "phone without intermediate",
+            cert("phone.pem")?,
+            vec![],
+            &root,
+            true,
+            false,
+        ),
+        (
+            "appserver",
+            cert("appserver.pem")?,
+            vec![],
+            &appserver_ca,
+            true,
+            true,
+        ),
+        (
+            "appserver against phone CA",
+            cert("appserver.pem")?,
+            vec![],
+            &root,
+            true,
+            false,
+        ),
     ];
     if dir.join("weak.pem").exists() {
-        cases.push(("weak (512-bit, SHA-1)", cert("weak.pem")?, vec![], &root, true, true));
+        cases.push((
+            "weak (512-bit, SHA-1)",
+            cert("weak.pem")?,
+            vec![],
+            &root,
+            true,
+            true,
+        ));
     }
     let mut failures = 0;
     for (label, leaf, untrusted, anchor, check_time, want) in cases {

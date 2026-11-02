@@ -76,7 +76,11 @@ pub unsafe fn get_user_data(dial: *mut AstDial) -> *mut c_void {
 ///
 /// # Safety
 /// `dial` must be a live dial.
-pub unsafe fn option_global_enable(dial: *mut AstDial, option: sys::ast_dial_option, data: &[u8]) -> c_int {
+pub unsafe fn option_global_enable(
+    dial: *mut AstDial,
+    option: sys::ast_dial_option,
+    data: &[u8],
+) -> c_int {
     let data = c_bytes(data);
     sys::ast_dial_option_global_enable(dial, option, data.as_ptr() as *mut c_void)
 }
@@ -96,8 +100,19 @@ pub unsafe fn destroy(dial: *mut AstDial) -> c_int {
 ///
 /// # Safety
 /// `start` must be safe to run with `data` on another thread.
-pub unsafe fn spawn_detached(start: StartFn, data: *mut c_void, file: &str, caller: &str, line: i32, start_fn: &str) -> c_int {
-    let (file, caller, start_fn) = (crate::cstr(file), crate::cstr(caller), crate::cstr(start_fn));
+pub unsafe fn spawn_detached(
+    start: StartFn,
+    data: *mut c_void,
+    file: &str,
+    caller: &str,
+    line: i32,
+    start_fn: &str,
+) -> c_int {
+    let (file, caller, start_fn) = (
+        crate::cstr(file),
+        crate::cstr(caller),
+        crate::cstr(start_fn),
+    );
     let mut thread: sys::pthread_t = 0;
     sys::ast_pthread_create_detached_stack(
         &mut thread,

@@ -27,7 +27,11 @@ fn prune_session_by_mac(mac: &[u8]) {
             }
             st.contact.clone()
         };
-        dpma_log!("Pruning old session for '{}' on new handshake from mac '{}'.", contact, mac);
+        dpma_log!(
+            "Pruning old session for '{}' on new handshake from mac '{}'.",
+            contact,
+            mac
+        );
         store::invalidate(&s);
     }
 }
@@ -52,7 +56,9 @@ pub(crate) fn set_common_password(out: &mut Outgoing, session: &Arc<Session>) ->
     let password = dpma_proto::crypto::new_common_password().map_err(|_| ())?;
     st.common_password = password.clone();
     // RSA_public_encrypt's -1 on failure becomes an empty base64 string.
-    out.password = dpma_proto::crypto::encrypt_common_password(&key, &password).unwrap_or_default().into_bytes();
+    out.password = dpma_proto::crypto::encrypt_common_password(&key, &password)
+        .unwrap_or_default()
+        .into_bytes();
     Ok(())
 }
 
@@ -80,13 +86,19 @@ pub(crate) fn set_auth_requirements(out: &mut Outgoing, flags: u32) {
     if flags & auth::GLOBALPIN != 0 {
         list.push("configpass");
     }
-    out.token_auth_requirements = if list.is_empty() { "user".into() } else { list.join(",").into_bytes() };
+    out.token_auth_requirements = if list.is_empty() {
+        "user".into()
+    } else {
+        list.join(",").into_bytes()
+    };
 }
 
 /// Request handler for "Handshake" (`handle_request_handshake`,
 /// FUN_0014dbe0; registered by `request::handlers::load`).
 pub fn handle_handshake(tx: Arc<Transaction>) -> i32 {
-    let Some(msg) = tx.first_msg.as_ref() else { return 0 };
+    let Some(msg) = tx.first_msg.as_ref() else {
+        return 0;
+    };
     let mac = msg.get_var(h::MAC_ADDRESS);
     let user_agent = user_agent_of(msg);
     let origination_network = msg.get_var(h::ORIGINATION_NETWORK);
@@ -149,4 +161,3 @@ pub fn handle_handshake(tx: Arc<Transaction>) -> i32 {
     *guard = None;
     0
 }
-

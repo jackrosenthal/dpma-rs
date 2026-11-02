@@ -113,7 +113,11 @@ pub struct Chunk {
 /// A `limit` that leaves no room after the prefix is raised to fit one
 /// byte (the official DPMA would loop forever; its limits never do).
 pub fn split(body: &[u8], prefix: &str, limit: usize, handshake_response: bool) -> Vec<Chunk> {
-    let body = if body.is_empty() { EMPTY_BODY.as_bytes() } else { body };
+    let body = if body.is_empty() {
+        EMPTY_BODY.as_bytes()
+    } else {
+        body
+    };
     let prefix = prefix.as_bytes();
     let limit = limit.max(prefix.len() + 1);
     let mut chunks = Vec::new();
@@ -124,7 +128,11 @@ pub fn split(body: &[u8], prefix: &str, limit: usize, handshake_response: bool) 
         plain.extend_from_slice(prefix);
         plain.extend_from_slice(&body[offset..offset + take]);
         offset += take;
-        chunks.push(Chunk { sequence: Some(chunks.len() as u32), finished: offset == body.len(), plain });
+        chunks.push(Chunk {
+            sequence: Some(chunks.len() as u32),
+            finished: offset == body.len(),
+            plain,
+        });
     }
     if handshake_response && chunks.len() == 1 {
         chunks[0].sequence = None;
@@ -137,7 +145,11 @@ pub fn split(body: &[u8], prefix: &str, limit: usize, handshake_response: bool) 
 /// of them (fresh from `password`/`salt`), each chunk's ciphertext base64
 /// encoded separately (0x515-byte buffer).  The last chunk includes the
 /// padding.
-pub fn encrypt_chunks(chunks: &[Chunk], password: &[u8], salt: &[u8; SALT_LEN]) -> Result<Vec<String>> {
+pub fn encrypt_chunks(
+    chunks: &[Chunk],
+    password: &[u8],
+    salt: &[u8; SALT_LEN],
+) -> Result<Vec<String>> {
     let mut enc = Some(Encryptor::new(password, salt)?);
     let mut out = Vec::with_capacity(chunks.len());
     for (i, c) in chunks.iter().enumerate() {
@@ -148,14 +160,21 @@ pub fn encrypt_chunks(chunks: &[Chunk], password: &[u8], salt: &[u8; SALT_LEN]) 
                 cipher.extend(e.finish()?);
             }
         }
-        out.push(crypto::base64_encode_max(&cipher, crypto::CIPHERTEXT_B64_BUF));
+        out.push(crypto::base64_encode_max(
+            &cipher,
+            crypto::CIPHERTEXT_B64_BUF,
+        ));
     }
     Ok(out)
 }
 
 /// The phone's side of [`encrypt_chunks`]: base64 decode each chunk body,
 /// concatenate, and decrypt with the hex salt.
-pub fn decrypt_chunks(bodies: &[&[u8]], password: &[u8], salt_hex: impl AsRef<[u8]>) -> Result<Vec<u8>> {
+pub fn decrypt_chunks(
+    bodies: &[&[u8]],
+    password: &[u8],
+    salt_hex: impl AsRef<[u8]>,
+) -> Result<Vec<u8>> {
     let salt = crypto::salt_from_hex(salt_hex)?;
     let cipher: Vec<u8> = bodies.iter().flat_map(crypto::base64_decode).collect();
     crypto::decrypt(password, &salt, &cipher)
@@ -164,9 +183,18 @@ pub fn decrypt_chunks(bodies: &[&[u8]], password: &[u8], salt_hex: impl AsRef<[u
 /// The phone's way of sending an encrypted body that the server's
 /// reassembly accepts: encrypt it whole, base64 encode the ciphertext, and
 /// split the text into `chunk_len`-character pieces.
-pub fn encrypt_for_server(body: &[u8], password: &[u8], salt: &[u8; SALT_LEN], chunk_len: usize) -> Result<Vec<String>> {
+pub fn encrypt_for_server(
+    body: &[u8],
+    password: &[u8],
+    salt: &[u8; SALT_LEN],
+    chunk_len: usize,
+) -> Result<Vec<String>> {
     let b64 = crypto::base64_encode(&crypto::encrypt(password, salt, body)?);
-    Ok(b64.as_bytes().chunks(chunk_len.max(1)).map(|c| String::from_utf8_lossy(c).into_owned()).collect())
+    Ok(b64
+        .as_bytes()
+        .chunks(chunk_len.max(1))
+        .map(|c| String::from_utf8_lossy(c).into_owned())
+        .collect())
 }
 
 /// `snprintf(buf, size, ...)`: `s` cut to `size - 1` bytes.
@@ -223,7 +251,10 @@ pub fn parse_sequence(s: &[u8]) -> i32 {
         if !c.is_ascii_digit() {
             break;
         }
-        match v.checked_mul(10).and_then(|x| x.checked_add(i64::from(c - b'0'))) {
+        match v
+            .checked_mul(10)
+            .and_then(|x| x.checked_add(i64::from(c - b'0')))
+        {
             Some(x) => v = x,
             None => overflow = true,
         }
@@ -269,7 +300,12 @@ pub struct Reassembly<M = ()> {
 
 impl<M> Default for Reassembly<M> {
     fn default() -> Self {
-        Reassembly { parts: Vec::new(), finished: false, count: 0, last_sequence: 0 }
+        Reassembly {
+            parts: Vec::new(),
+            finished: false,
+            count: 0,
+            last_sequence: 0,
+        }
     }
 }
 
@@ -306,9 +342,21 @@ impl<M> Reassembly<M> {
         let pos = if self.parts.first().is_some_and(|p| seq < p.sequence) {
             0
         } else {
-            self.parts.iter().skip(1).position(|p| p.sequence > seq).map(|i| i + 1).unwrap_or(self.parts.len())
+            self.parts
+                .iter()
+                .skip(1)
+                .position(|p| p.sequence > seq)
+                .map(|i| i + 1)
+                .unwrap_or(self.parts.len())
         };
-        self.parts.insert(pos, Part { sequence: seq, body, meta });
+        self.parts.insert(
+            pos,
+            Part {
+                sequence: seq,
+                body,
+                meta,
+            },
+        );
         self.count += 1;
     }
 
@@ -320,7 +368,10 @@ impl<M> Reassembly<M> {
 
     /// The bodies concatenated in sequence order.
     pub fn body(&self) -> Vec<u8> {
-        self.parts.iter().flat_map(|p| p.body.iter().copied()).collect()
+        self.parts
+            .iter()
+            .flat_map(|p| p.body.iter().copied())
+            .collect()
     }
 
     /// The parts in sequence order.
@@ -341,7 +392,10 @@ mod tests {
     const PASS: &[u8] = b"0123456789012345678901234567890123456789";
 
     fn joined(chunks: &[Chunk], prefix: &str) -> Vec<u8> {
-        chunks.iter().flat_map(|c| c.plain[prefix.len()..].to_vec()).collect()
+        chunks
+            .iter()
+            .flat_map(|c| c.plain[prefix.len()..].to_vec())
+            .collect()
     }
 
     #[test]
@@ -361,10 +415,25 @@ mod tests {
             let limit = chunk_limit(encrypted, tcp);
             for prefix in ["", COMMAND_PREFIX] {
                 let room = limit - prefix.len();
-                for n in [1, room - 1, room, room + 1, 2 * room, 2 * room + 1, 5 * room + 7] {
+                for n in [
+                    1,
+                    room - 1,
+                    room,
+                    room + 1,
+                    2 * room,
+                    2 * room + 1,
+                    5 * room + 7,
+                ] {
                     let body: Vec<u8> = (0..n).map(|i| b'a' + (i % 26) as u8).collect();
                     let chunks = split(&body, prefix, limit, false);
-                    assert_eq!(chunks.len(), n.div_ceil(room), "limit {} prefix {:?} n {}", limit, prefix, n);
+                    assert_eq!(
+                        chunks.len(),
+                        n.div_ceil(room),
+                        "limit {} prefix {:?} n {}",
+                        limit,
+                        prefix,
+                        n
+                    );
                     for (i, c) in chunks.iter().enumerate() {
                         assert!(c.plain.len() <= limit);
                         assert!(c.plain.starts_with(prefix.as_bytes()));
@@ -383,14 +452,28 @@ mod tests {
     #[test]
     fn split_handshake_and_empty() {
         let one = split(b"cert", "", UDP_PLAIN_LIMIT, true);
-        assert_eq!(one, vec![Chunk { sequence: None, finished: false, plain: b"cert".to_vec() }]);
+        assert_eq!(
+            one,
+            vec![Chunk {
+                sequence: None,
+                finished: false,
+                plain: b"cert".to_vec()
+            }]
+        );
         let two = split(&[b'x'; 700], "", UDP_PLAIN_LIMIT, true);
         assert_eq!(two.len(), 2);
         assert_eq!((two[0].sequence, two[0].finished), (Some(0), false));
         assert_eq!((two[1].sequence, two[1].finished), (Some(1), true));
         assert_eq!(two[1].plain.len(), 700 - 615);
         let empty = split(b"", "", UDP_ENCRYPTED_LIMIT, false);
-        assert_eq!(empty, vec![Chunk { sequence: Some(0), finished: true, plain: b"empty body".to_vec() }]);
+        assert_eq!(
+            empty,
+            vec![Chunk {
+                sequence: Some(0),
+                finished: true,
+                plain: b"empty body".to_vec()
+            }]
+        );
         let empty = split(b"", COMMAND_PREFIX, UDP_ENCRYPTED_LIMIT, false);
         assert_eq!(empty[0].plain, b"Command: empty body");
     }
@@ -398,7 +481,10 @@ mod tests {
     #[test]
     fn error_bodies() {
         assert_eq!(error_body(-398), "<error msg=\"Session Timeout\" />");
-        assert_eq!(error_body(-195), "<error msg=\"Specfied user not found\" />");
+        assert_eq!(
+            error_body(-195),
+            "<error msg=\"Specfied user not found\" />"
+        );
         assert_eq!(error_body(-5), "<error msg=\"Unknown error\" />");
     }
 
@@ -417,7 +503,10 @@ mod tests {
             let cat: Vec<u8> = b64.iter().flat_map(crypto::base64_decode).collect();
             assert_eq!(cat, one_shot);
             let refs: Vec<&[u8]> = b64.iter().map(|s| s.as_bytes()).collect();
-            assert_eq!(decrypt_chunks(&refs, PASS, crypto::salt_to_hex(&salt)).unwrap(), all_plain);
+            assert_eq!(
+                decrypt_chunks(&refs, PASS, crypto::salt_to_hex(&salt)).unwrap(),
+                all_plain
+            );
             // Concatenating the chunk texts (what the server does with
             // incoming parts) only works when no chunk is padded.
             let concat: String = b64.concat();
@@ -436,10 +525,17 @@ mod tests {
         let mut r = Reassembly::new();
         let n = parts.len();
         for (i, p) in parts.iter().enumerate().rev() {
-            r.add(Some(i.to_string().as_bytes()), i + 1 == n, p.clone().into_bytes());
+            r.add(
+                Some(i.to_string().as_bytes()),
+                i + 1 == n,
+                p.clone().into_bytes(),
+            );
         }
         assert!(r.is_complete());
-        assert_eq!(crypto::decrypt_body(PASS, "0101010101010101", r.body()).unwrap(), body.as_bytes());
+        assert_eq!(
+            crypto::decrypt_body(PASS, "0101010101010101", r.body()).unwrap(),
+            body.as_bytes()
+        );
     }
 
     #[test]
@@ -503,18 +599,36 @@ mod tests {
 
     #[test]
     fn keys_and_uris() {
-        assert_eq!(transaction_key(b"12", Some(b"000fd3000001")), b"12-000fd3000001");
+        assert_eq!(
+            transaction_key(b"12", Some(b"000fd3000001")),
+            b"12-000fd3000001"
+        );
         assert_eq!(transaction_key(b"12", Some(b"")), b"12-unknown");
         assert_eq!(transaction_key(b"12", None), b"12-unknown");
         assert_eq!(transaction_key(b"\xe9", Some(b"\xff")), b"\xe9-\xff");
         assert_eq!(transaction_key("9".repeat(200).as_bytes(), None).len(), 127);
         let uri = b"pjsip:1.2.3.4:5060";
-        assert_eq!(response_uri(uri, Some(b"transport-udp"), RESPONSE_URI_BUF), b"pjsip:1.2.3.4:5060;transport=transport-udp");
-        assert_eq!(response_uri(uri, Some(b""), RESPONSE_URI_BUF), b"pjsip:1.2.3.4:5060;transport=");
+        assert_eq!(
+            response_uri(uri, Some(b"transport-udp"), RESPONSE_URI_BUF),
+            b"pjsip:1.2.3.4:5060;transport=transport-udp"
+        );
+        assert_eq!(
+            response_uri(uri, Some(b""), RESPONSE_URI_BUF),
+            b"pjsip:1.2.3.4:5060;transport="
+        );
         assert_eq!(response_uri(uri, None, RESPONSE_URI_BUF), uri);
         let long = format!("pjsip:{}", "a".repeat(100));
-        assert_eq!(response_uri(long.as_bytes(), None, RESPONSE_URI_BUF).len(), 78);
-        assert_eq!(response_uri(long.as_bytes(), None, HANDSHAKE_REQUIRED_URI_BUF).len(), 79);
-        assert_eq!(response_uri(long.as_bytes(), Some(b"tcp"), usize::MAX), format!("{};transport=tcp", long).as_bytes());
+        assert_eq!(
+            response_uri(long.as_bytes(), None, RESPONSE_URI_BUF).len(),
+            78
+        );
+        assert_eq!(
+            response_uri(long.as_bytes(), None, HANDSHAKE_REQUIRED_URI_BUF).len(),
+            79
+        );
+        assert_eq!(
+            response_uri(long.as_bytes(), Some(b"tcp"), usize::MAX),
+            format!("{};transport=tcp", long).as_bytes()
+        );
     }
 }

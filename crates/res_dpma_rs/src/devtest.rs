@@ -23,14 +23,30 @@ fn proto_selftest(a: &CliArgs) -> CliResult {
     };
     let salt = crypto::new_salt().unwrap_or([0; crypto::SALT_LEN]);
     let body = "x".repeat(1000);
-    let chunks = framing::split(body.as_bytes(), framing::COMMAND_PREFIX, framing::UDP_ENCRYPTED_LIMIT, false);
-    let ok = framing::encrypt_chunks(&chunks, &pass, &salt).ok().and_then(|b64| {
-        let refs: Vec<&[u8]> = b64.iter().map(|s| s.as_bytes()).collect();
-        framing::decrypt_chunks(&refs, &pass, crypto::salt_to_hex(&salt)).ok()
-    });
+    let chunks = framing::split(
+        body.as_bytes(),
+        framing::COMMAND_PREFIX,
+        framing::UDP_ENCRYPTED_LIMIT,
+        false,
+    );
+    let ok = framing::encrypt_chunks(&chunks, &pass, &salt)
+        .ok()
+        .and_then(|b64| {
+            let refs: Vec<&[u8]> = b64.iter().map(|s| s.as_bytes()).collect();
+            framing::decrypt_chunks(&refs, &pass, crypto::salt_to_hex(&salt)).ok()
+        });
     let expected: Vec<u8> = chunks.iter().flat_map(|c| c.plain.clone()).collect();
-    a.out(format!("chunks: {}, round trip: {}\n", chunks.len(), if ok == Some(expected) { "ok" } else { "FAILED" }));
-    a.out(format!("bad salt: {:?}\n", crypto::salt_from_hex("12G4").err().map(|e| e.message().to_string())));
+    a.out(format!(
+        "chunks: {}, round trip: {}\n",
+        chunks.len(),
+        if ok == Some(expected) { "ok" } else { "FAILED" }
+    ));
+    a.out(format!(
+        "bad salt: {:?}\n",
+        crypto::salt_from_hex("12G4")
+            .err()
+            .map(|e| e.message().to_string())
+    ));
     let r = uri::parse_uri("tel:+15551234", Some("sip:,sips:"), true, true);
     a.out(format!("tel: URI error: {}\n", r.error));
     CliResult::Success

@@ -20,10 +20,30 @@ pub fn load() -> Result<(), ()> {
     let mut res = Ok(());
     let table: [(&'static str, Option<&'static str>, bool, super::Handler); 10] = [
         (ECHO, None, false, handle_echo),
-        (HANDSHAKE, Some("HandshakeResponse"), false, crate::session::handshake::handle_handshake),
-        (HTTP_REQUEST, Some("HTTPResponse"), true, handle_http_or_asterisk),
-        (ASTERISK_REQUEST, Some("AsteriskResponse"), true, handle_http_or_asterisk),
-        (USERLIST_REQUEST, Some("UserlistResponse"), true, handle_userlist),
+        (
+            HANDSHAKE,
+            Some("HandshakeResponse"),
+            false,
+            crate::session::handshake::handle_handshake,
+        ),
+        (
+            HTTP_REQUEST,
+            Some("HTTPResponse"),
+            true,
+            handle_http_or_asterisk,
+        ),
+        (
+            ASTERISK_REQUEST,
+            Some("AsteriskResponse"),
+            true,
+            handle_http_or_asterisk,
+        ),
+        (
+            USERLIST_REQUEST,
+            Some("UserlistResponse"),
+            true,
+            handle_userlist,
+        ),
         (TOKEN_REQUEST, Some("TokenResponse"), true, handle_token),
         (CONFIG_REQUEST, Some("ConfigResponse"), true, handle_config),
         (FILE_REQUEST, Some("FileResponse"), true, handle_file),
@@ -36,7 +56,10 @@ pub fn load() -> Result<(), ()> {
         }
     }
     if res.is_err() {
-        dpma_ast::ast_log!(dpma_ast::log::LOG_ERROR, "DPMA: Unable to load all phone request handlers");
+        dpma_ast::ast_log!(
+            dpma_ast::log::LOG_ERROR,
+            "DPMA: Unable to load all phone request handlers"
+        );
     }
     res
 }
@@ -101,7 +124,10 @@ fn append(tx: &Transaction, data: &[u8]) {
 
 /// `phone_msg_session_get_id` (FUN_00149fa0) of the transaction's session.
 fn session_id(tx: &Transaction) -> Vec<u8> {
-    tx.session.as_ref().map(|s| s.id.clone()).unwrap_or_default()
+    tx.session
+        .as_ref()
+        .map(|s| s.id.clone())
+        .unwrap_or_default()
 }
 
 /// `phone_msg_session_get_auth_flags` (FUN_00149f90), as the official
@@ -155,7 +181,10 @@ fn cstr_at(b: &[u8], pos: usize) -> &[u8] {
 
 /// `ast_skip_blanks` and `ast_trim_blanks` (bytes 1 to 32 are blanks).
 fn strip_blanks(s: &[u8]) -> &[u8] {
-    let start = s.iter().position(|c| !(1..=0x20).contains(c)).unwrap_or(s.len());
+    let start = s
+        .iter()
+        .position(|c| !(1..=0x20).contains(c))
+        .unwrap_or(s.len());
     let s = &s[start..];
     let end = s.iter().rposition(|&c| c > 0x20).map_or(0, |i| i + 1);
     &s[..end]
@@ -196,7 +225,10 @@ fn file_reply(tx: &Transaction) {
     };
     // strsep(&p, "\r\n")
     let rest = &body[pos + 7..];
-    let name = &rest[..rest.iter().position(|&c| c == b'\r' || c == b'\n').unwrap_or(rest.len())];
+    let name = &rest[..rest
+        .iter()
+        .position(|&c| c == b'\r' || c == b'\n')
+        .unwrap_or(rest.len())];
     if name.eq_ignore_ascii_case(b"default") {
         let mut buf = Vec::with_capacity(0x400);
         crate::users::contacts::default_contacts_xml(&mut buf);
@@ -208,7 +240,10 @@ fn file_reply(tx: &Transaction) {
         return;
     }
     if escapes_file_dir(name) {
-        dpma_log!("File request for '{}' outside the file directory refused", name);
+        dpma_log!(
+            "File request for '{}' outside the file directory refused",
+            name
+        );
         set_error(tx, errors::msg::FILE_NOT_FOUND);
         return;
     }
@@ -251,8 +286,14 @@ fn escapes_file_dir(name: &[u8]) -> bool {
 /// `standard_phone_user_find_by_token` for the transaction's
 /// `Config-Token`, MAC, session, and Response-URI.
 fn phone_for_token(tx: &Transaction) -> Option<Vec<u8>> {
-    users::runtime::find_by_token(&tx.config_token, &tx.mac, &session_id(tx), &tx.response_uri, &config_password())
-        .phone
+    users::runtime::find_by_token(
+        &tx.config_token,
+        &tx.mac,
+        &session_id(tx),
+        &tx.response_uri,
+        &config_password(),
+    )
+    .phone
 }
 
 /// `handle_request_config` (FUN_00175be0): the configuration document of
@@ -353,7 +394,8 @@ fn token_reply(tx: &Transaction) {
         || (!global_pin.is_empty() && tx.config_password == global_pin)
         || users::runtime::find_w_grouppin(&name, &tx.config_password).is_some();
     let mac_ok = flags & auth::MAC == 0 || users::runtime::find_w_mac(&name, &tx.mac).is_some();
-    let pin_ok = flags & auth::PIN == 0 || users::runtime::find_authenticated(&name, &tx.password).is_some();
+    let pin_ok =
+        flags & auth::PIN == 0 || users::runtime::find_authenticated(&name, &tx.password).is_some();
     if !configpass_ok {
         set_error(tx, errors::msg::INVALID_CONFIG_PASSWORD);
         return;
@@ -362,7 +404,13 @@ fn token_reply(tx: &Transaction) {
         set_error(tx, errors::msg::USER_NOT_FOUND);
         return;
     }
-    match users::runtime::config_token_build(&name, &tx.mac, &session_id(tx), &tx.response_uri, &global_pin) {
+    match users::runtime::config_token_build(
+        &name,
+        &tx.mac,
+        &session_id(tx),
+        &tx.response_uri,
+        &global_pin,
+    ) {
         Some(token) => {
             with_out(tx, |o| o.config_token = token);
             tx.configured.store(true, Ordering::SeqCst);
@@ -509,7 +557,10 @@ fn asterisk_request(tx: &Arc<Transaction>, buf: &mut Vec<u8>) -> Option<Forwarde
     // the request text then ends at the first of those cuts after it.
     body[auth] = 0;
     let cred_start = auth + marker.len();
-    let mut cred_end = match body[cred_start..].iter().position(|&c| c == b'\r' || c == b'\n') {
+    let mut cred_end = match body[cred_start..]
+        .iter()
+        .position(|&c| c == b'\r' || c == b'\n')
+    {
         Some(i) => {
             body[cred_start + i] = 0;
             cred_start + i
@@ -522,8 +573,16 @@ fn asterisk_request(tx: &Arc<Transaction>, buf: &mut Vec<u8>) -> Option<Forwarde
     }
     let credentials = body[cred_start..cred_end].to_vec();
     let Some(phone) = authenticate(&credentials) else {
-        dpma_log!("Authentication failed for user credentials: {}", credentials);
-        error_response_json(buf, "", rq::AUTH_FAILED, &bformat!("authentication failed for {}", credentials));
+        dpma_log!(
+            "Authentication failed for user credentials: {}",
+            credentials
+        );
+        error_response_json(
+            buf,
+            "",
+            rq::AUTH_FAILED,
+            &bformat!("authentication failed for {}", credentials),
+        );
         return None;
     };
     let text = cstr_at(&body, start);
@@ -535,7 +594,12 @@ fn asterisk_request(tx: &Arc<Transaction>, buf: &mut Vec<u8>) -> Option<Forwarde
 }
 
 /// `handle_request_xml` (inlined in FUN_00176a60).
-fn xml_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<u8>) -> Option<Forwarded> {
+fn xml_request(
+    tx: &Arc<Transaction>,
+    phone: &[u8],
+    text: &[u8],
+    buf: &mut Vec<u8>,
+) -> Option<Forwarded> {
     use dpma_proto::errors::request as rq;
     let Some(doc) = astxml::Doc::read_memory(text) else {
         error_response_xml(buf, "", rq::PARSE);
@@ -554,7 +618,9 @@ fn xml_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<u
         return None;
     }
     let code = 'code: {
-        let Some(children) = root.children() else { break 'code rq::EMPTY };
+        let Some(children) = root.children() else {
+            break 'code rq::EMPTY;
+        };
         if method.is_empty() {
             break 'code rq::MISSING_METHOD;
         }
@@ -564,7 +630,11 @@ fn xml_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<u
         if let Some(f) = method::find_xml(&method) {
             // Methods get the <parameters> element as markup.
             let markup = doc.node_markup(&params).unwrap_or_default();
-            let call = MethodCall { phone: phone.to_vec(), method: method.clone(), tx: Some(tx.clone()) };
+            let call = MethodCall {
+                phone: phone.to_vec(),
+                method: method.clone(),
+                tx: Some(tx.clone()),
+            };
             f(&call, &markup, buf);
             if !buf.is_empty() {
                 return None;
@@ -573,7 +643,12 @@ fn xml_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<u
         }
         if method::is_ami(&method) {
             let text = params.text();
-            crate::ami::messages::raise_event(&tx.key, &method, "XML", text.as_deref().unwrap_or(b"(null)"));
+            crate::ami::messages::raise_event(
+                &tx.key,
+                &method,
+                "XML",
+                text.as_deref().unwrap_or(b"(null)"),
+            );
             return Some(Forwarded { method });
         }
         rq::METHOD_NOT_FOUND
@@ -586,7 +661,12 @@ fn xml_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<u
 /// with Asterisk's JSON library (jansson), as the official DPMA does, so
 /// the same documents are accepted and AMI sees the same parameter text;
 /// methods get the parameters as a `serde_json::Value`.
-fn json_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<u8>) -> Option<Forwarded> {
+fn json_request(
+    tx: &Arc<Transaction>,
+    phone: &[u8],
+    text: &[u8],
+    buf: &mut Vec<u8>,
+) -> Option<Forwarded> {
     use dpma_proto::errors::request as rq;
     let Some(doc) = json::Json::load(text) else {
         error_response_json(buf, "", rq::PARSE, "json body");
@@ -596,7 +676,11 @@ fn json_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<
         error_response_json(buf, "", rq::PARSE, "no request in body");
         return None;
     };
-    let Some(method) = request.get("method").filter(|m| m.kind() == json::STRING).map(|m| m.string()) else {
+    let Some(method) = request
+        .get("method")
+        .filter(|m| m.kind() == json::STRING)
+        .map(|m| m.string())
+    else {
         error_response_json(buf, "", rq::PARSE, "no method in body");
         return None;
     };
@@ -609,9 +693,17 @@ fn json_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<
         // jansson accepted the document; serde_json reads the same one.
         let value = serde_json::from_slice::<serde_json::Value>(text)
             .ok()
-            .and_then(|mut v| v.get_mut("request")?.get_mut("parameters").map(serde_json::Value::take))
+            .and_then(|mut v| {
+                v.get_mut("request")?
+                    .get_mut("parameters")
+                    .map(serde_json::Value::take)
+            })
             .unwrap_or(serde_json::Value::Null);
-        let call = MethodCall { phone: phone.to_vec(), method: method.clone(), tx: Some(tx.clone()) };
+        let call = MethodCall {
+            phone: phone.to_vec(),
+            method: method.clone(),
+            tx: Some(tx.clone()),
+        };
         f(&call, &value, buf);
         if buf.is_empty() {
             error_response_json(buf, &method, rq::PARSE, "empty response body");

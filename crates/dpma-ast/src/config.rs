@@ -27,7 +27,9 @@ impl VariableList {
             let (n, v) = (cstr(name), cstr(value));
             let (src, line, func) = crate::here!("VariableList::new");
             // SAFETY: `_ast_variable_new` copies the strings.
-            let var = unsafe { sys::_ast_variable_new(n.as_ptr(), v.as_ptr(), file.as_ptr(), src, func, line) };
+            let var = unsafe {
+                sys::_ast_variable_new(n.as_ptr(), v.as_ptr(), file.as_ptr(), src, func, line)
+            };
             if var.is_null() {
                 drop(VariableList(head));
                 return None;
@@ -59,7 +61,10 @@ impl Drop for VariableList {
 pub unsafe fn variables(mut v: *const AstVariable) -> Vec<(Vec<u8>, Vec<u8>)> {
     let mut out = Vec::new();
     while !v.is_null() {
-        out.push((from_ptr((*v).name).unwrap_or_default(), from_ptr((*v).value).unwrap_or_default()));
+        out.push((
+            from_ptr((*v).name).unwrap_or_default(),
+            from_ptr((*v).value).unwrap_or_default(),
+        ));
         v = (*v).next;
     }
     out

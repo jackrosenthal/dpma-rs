@@ -45,7 +45,10 @@ struct ReadQueue {
     wake: bool,
 }
 
-static QUEUE: Mutex<ReadQueue> = Mutex::new(ReadQueue { msgs: VecDeque::new(), wake: false });
+static QUEUE: Mutex<ReadQueue> = Mutex::new(ReadQueue {
+    msgs: VecDeque::new(),
+    wake: false,
+});
 static QUEUE_CV: Condvar = Condvar::new();
 
 fn queue() -> std::sync::MutexGuard<'static, ReadQueue> {
@@ -118,7 +121,10 @@ pub fn read_msg(timeout_ms: i32) -> Option<Msg> {
                 if now >= d {
                     return None;
                 }
-                QUEUE_CV.wait_timeout(q, d - now).unwrap_or_else(|e| e.into_inner()).0
+                QUEUE_CV
+                    .wait_timeout(q, d - now)
+                    .unwrap_or_else(|e| e.into_inner())
+                    .0
             }
         };
     }
@@ -188,23 +194,46 @@ pub fn destroy_routing() {
 /// the `digium_phone_module` (send) and `proxy` (receive) extensions for
 /// the channel technology `tech` ("pjsip").
 fn build_dialplan_routing(context: &[u8], tech: &str) -> Result<(), ()> {
-    dpma_debug!(5, "Build dialplan routing for {} - message context = {}", tech, context);
+    dpma_debug!(
+        5,
+        "Build dialplan routing for {} - message context = {}",
+        tech,
+        context
+    );
     if !pbx::context_create(context, REGISTRAR) {
-        dpma_log!("Unable to build dialplan routing - can't find/create context {}", context);
+        dpma_log!(
+            "Unable to build dialplan routing - can't find/create context {}",
+            context
+        );
         return Err(());
     }
     let tech_upper = tech.to_ascii_uppercase();
     let send: [(Option<&str>, &str, String); 7] = [
         (None, "Set", "MESSAGE(custom_data)=mark_all_outbound".into()),
-        (None, "Set", format!("TMP_RESPONSE_URI=${{MESSAGE_DATA({})}}", VAR_RESPONSE_URI)),
         (
             None,
             "Set",
-            format!("MESSAGE_DATA(Request-URI)=${{MESSAGE_DATA({})}}", VAR_RESPONSE_FULLCONTACT),
+            format!("TMP_RESPONSE_URI=${{MESSAGE_DATA({})}}", VAR_RESPONSE_URI),
+        ),
+        (
+            None,
+            "Set",
+            format!(
+                "MESSAGE_DATA(Request-URI)=${{MESSAGE_DATA({})}}",
+                VAR_RESPONSE_FULLCONTACT
+            ),
         ),
         (None, "Set", format!("MESSAGE_DATA({})=", VAR_RESPONSE_URI)),
-        (None, "Set", format!("MESSAGE_DATA({})=", VAR_RESPONSE_FULLCONTACT)),
-        (None, "MessageSend", format!("${{TMP_RESPONSE_URI}},{}", PROXY_EXTEN)),
+        (
+            None,
+            "Set",
+            format!("MESSAGE_DATA({})=", VAR_RESPONSE_FULLCONTACT),
+        ),
+        (
+            None,
+            "MessageSend",
+            format!("${{TMP_RESPONSE_URI}},{}", PROXY_EXTEN),
+        ),
         (None, "Hangup", String::new()),
     ];
     let proxy: [(Option<&str>, &str, String); 5] = [
@@ -212,12 +241,18 @@ fn build_dialplan_routing(context: &[u8], tech: &str) -> Result<(), ()> {
         (
             Some("recvaddr"),
             "Set",
-            format!("MESSAGE_DATA({})={}:${{MESSAGE_DATA({}_RECVADDR)}}", VAR_RESPONSE_URI, tech, tech_upper),
+            format!(
+                "MESSAGE_DATA({})={}:${{MESSAGE_DATA({}_RECVADDR)}}",
+                VAR_RESPONSE_URI, tech, tech_upper
+            ),
         ),
         (
             Some("fullcontact"),
             "Set",
-            format!("MESSAGE_DATA({})=${{MESSAGE_DATA({}_FULLCONTACT)}}", VAR_RESPONSE_FULLCONTACT, tech_upper),
+            format!(
+                "MESSAGE_DATA({})=${{MESSAGE_DATA({}_FULLCONTACT)}}",
+                VAR_RESPONSE_FULLCONTACT, tech_upper
+            ),
         ),
         (Some("send"), "MessageSend", format!("{}:blah", MSG_TECH)),
         (None, "Hangup", String::new()),
@@ -227,7 +262,17 @@ fn build_dialplan_routing(context: &[u8], tech: &str) -> Result<(), ()> {
             let data = (!data.is_empty()).then_some(data.as_bytes());
             let label = label.map(str::as_bytes);
             // The official DPMA ignores the results.
-            pbx::add_extension(context, true, exten.as_bytes(), i as i32 + 1, label, None, app.as_bytes(), data, REGISTRAR);
+            pbx::add_extension(
+                context,
+                true,
+                exten.as_bytes(),
+                i as i32 + 1,
+                label,
+                None,
+                app.as_bytes(),
+                data,
+                REGISTRAR,
+            );
         }
     }
     Ok(())
@@ -239,7 +284,11 @@ fn destroy_dialplan_routing(context: &[u8]) {
     if !pbx::context_exists(context) {
         return;
     }
-    dpma_debug!(5, "Destroy dialplan routing - message context = {}", context);
+    dpma_debug!(
+        5,
+        "Destroy dialplan routing - message context = {}",
+        context
+    );
     pbx::context_destroy(context, REGISTRAR);
 }
 
@@ -263,12 +312,23 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             return CliResult::Success;
         };
         let mut out = bformat!("Refcount: {}\n", m.refcount());
-        for (what, v) in [("To", m.to()), ("From", m.from()), ("Tech", m.tech()), ("Endpoint", m.endpoint())] {
+        for (what, v) in [
+            ("To", m.to()),
+            ("From", m.from()),
+            ("Tech", m.tech()),
+            ("Endpoint", m.endpoint()),
+        ] {
             bwrite!(out, "{}: {}\n", what, v.unwrap_or_default());
         }
         bwrite!(out, "Variables:\n");
         for v in m.vars() {
-            bwrite!(out, "  {}{}: {}\n", if v.outbound { "" } else { "(received) " }, v.name, v.value);
+            bwrite!(
+                out,
+                "  {}{}: {}\n",
+                if v.outbound { "" } else { "(received) " },
+                v.name,
+                v.value
+            );
         }
         bwrite!(out, "Body:\n{}\n", m.body().unwrap_or_default());
         a.out(&out);
@@ -320,8 +380,16 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         }
         let n = q.msgs.len();
         drop(q);
-        let by_ref: Vec<String> = counts.iter().map(|(r, c)| format!("{} with refcount {}", c, r)).collect();
-        a.out(format!("{} queued message(s){}{}\n", n, if n > 0 { ": " } else { "" }, by_ref.join(", ")));
+        let by_ref: Vec<String> = counts
+            .iter()
+            .map(|(r, c)| format!("{} with refcount {}", c, r))
+            .collect();
+        a.out(format!(
+            "{} queued message(s){}{}\n",
+            n,
+            if n > 0 { ": " } else { "" },
+            by_ref.join(", ")
+        ));
         CliResult::Success
     }
 

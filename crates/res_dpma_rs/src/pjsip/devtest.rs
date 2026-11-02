@@ -53,17 +53,34 @@ fn cmd_line(a: &CliArgs) -> CliResult {
 }
 
 fn cmd_objects(a: &CliArgs) -> CliResult {
-    a.out(bformat!("lines container {:p}\n", objects::lines_container()));
+    a.out(bformat!(
+        "lines container {:p}\n",
+        objects::lines_container()
+    ));
     for l in objects::all_lines() {
         let l: &LineObj = &l;
-        a.out(bformat!("  line {:p} '{}' refs {} pjsip_auth '{}'\n", l, l.key(), refs(l) - 1, l.pjsip_auth()));
+        a.out(bformat!(
+            "  line {:p} '{}' refs {} pjsip_auth '{}'\n",
+            l,
+            l.key(),
+            refs(l) - 1,
+            l.pjsip_auth()
+        ));
     }
-    a.out(bformat!("users container {:p}\n", objects::users_container()));
+    a.out(bformat!(
+        "users container {:p}\n",
+        objects::users_container()
+    ));
     // SAFETY: each object comes with a reference, dropped here.
     unsafe {
         for o in dpma_ast::ao2::collect(objects::users_container()) {
             let u = &*(o as *const UserObj);
-            a.out(bformat!("  user {:p} '{}' refs {}\n", o, u.key(), refs(u) - 1));
+            a.out(bformat!(
+                "  user {:p} '{}' refs {}\n",
+                o,
+                u.key(),
+                refs(u) - 1
+            ));
             dpma_ast::ao2::cleanup(o);
         }
     }
@@ -75,7 +92,11 @@ fn cmd_isdphone(a: &CliArgs) -> CliResult {
         return CliResult::ShowUsage;
     }
     let r = super::endpoint_is_dphone(&a.argv[3]);
-    a.out(bformat!("dpma_pjsip_endpoint_is_dphone('{}') = {}\n", a.argv[3], r));
+    a.out(bformat!(
+        "dpma_pjsip_endpoint_is_dphone('{}') = {}\n",
+        a.argv[3],
+        r
+    ));
     CliResult::Success
 }
 
@@ -88,9 +109,20 @@ fn cmd_info(a: &CliArgs) -> CliResult {
         return CliResult::Success;
     };
     let body = a.argv.get(4).map_or(&b""[..], Vec::as_slice);
-    let ct = if body.is_empty() { "" } else { "application/json" };
+    let ct = if body.is_empty() {
+        ""
+    } else {
+        "application/json"
+    };
     // SAFETY: we hold a reference on the channel.
-    let r = unsafe { super::info_send(chan.as_ptr(), &[("X-Event-Name", "digium.test"), ("X-Extra", "1")], ct, body) };
+    let r = unsafe {
+        super::info_send(
+            chan.as_ptr(),
+            &[("X-Event-Name", "digium.test"), ("X-Extra", "1")],
+            ct,
+            body,
+        )
+    };
     a.out(bformat!("info_send = {}\n", r));
     CliResult::Success
 }
@@ -98,7 +130,13 @@ fn cmd_info(a: &CliArgs) -> CliResult {
 static LAST_INFO: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
 
 /// Record a last URI set through a phone object.
-pub fn record_last_info(phone: &[u8], uri: &[u8], session: Option<&[u8]>, mac: Option<&[u8]>, linked: bool) {
+pub fn record_last_info(
+    phone: &[u8],
+    uri: &[u8],
+    session: Option<&[u8]>,
+    mac: Option<&[u8]>,
+    linked: bool,
+) {
     let mut v = LAST_INFO.lock().unwrap_or_else(|e| e.into_inner());
     let quoted = |x: Option<&[u8]>| x.map_or(b"NULL".to_vec(), |s| bformat!("'{}'", s));
     v.push(bformat!(

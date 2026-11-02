@@ -18,8 +18,8 @@
 use super::*;
 use crate::xmlutil;
 use dpma_ast::dpma_bytes::{ByteSlice, ByteVec};
-use dpma_ast::{bformat, dpma_log};
 use dpma_ast::xml::Doc;
+use dpma_ast::{bformat, dpma_log};
 
 /// Size of the official DPMA's escape buffers.
 const ESC_BUF: usize = 0x100;
@@ -102,19 +102,30 @@ pub fn primary_line<'a>(reg: &'a Registry, phone: &Phone) -> Option<&'a Line> {
 /// `phone_user_has_queue`.
 fn has_queue(reg: &Registry, phone: &Phone) -> bool {
     phone.applications.iter().any(|a| {
-        matches!(reg.applications.get(a).and_then(|a| a.kind.as_ref()), Some(AppKind::Queue(_)))
+        matches!(
+            reg.applications.get(a).and_then(|a| a.kind.as_ref()),
+            Some(AppKind::Queue(_))
+        )
     })
 }
 
 /// `phone_user_get_application_settings`: the first of the phone's
 /// applications of the given type (`AppKind::type_name`), logging every
 /// application name that does not exist on the way.
-pub fn application_settings<'a>(reg: &'a Registry, phone: &Phone, type_name: &str) -> Option<&'a Application> {
+pub fn application_settings<'a>(
+    reg: &'a Registry,
+    phone: &Phone,
+    type_name: &str,
+) -> Option<&'a Application> {
     for name in &phone.applications {
         match reg.applications.get(name) {
             None => dpma_log!("Failed to find application '{}'", name),
             Some(app) => {
-                if app.kind.as_ref().is_some_and(|k| k.type_name() == type_name) {
+                if app
+                    .kind
+                    .as_ref()
+                    .is_some_and(|k| k.type_name() == type_name)
+                {
                     return Some(app);
                 }
             }
@@ -132,7 +143,11 @@ fn app_account(o: &mut Out, server_uuid: &[u8], account_id: &[u8], phone: &Phone
     ap!(o, "account_id=\"{}\" ", esc(account_id));
     ap!(o, "username=\"{}\" ", esc(&phone.name));
     ap!(o, "password=\"{}\" ", esc(&phone.pin));
-    ap!(o, "appserver=\"dasp://{}/json\" apiformat=\"json\" />\n", net.registration_address);
+    ap!(
+        o,
+        "appserver=\"dasp://{}/json\" apiformat=\"json\" />\n",
+        net.registration_address
+    );
 }
 
 /// The phone's networks that exist, in the phone's order.
@@ -145,10 +160,20 @@ fn parking_settings(o: &mut Out, phone: &Phone) {
     if phone.parking_exten.is_empty() {
         return;
     }
-    ap!(o, "<setting id=\"parking_lot_extension\" value=\"{}\" />\n", phone.parking_exten);
+    ap!(
+        o,
+        "<setting id=\"parking_lot_extension\" value=\"{}\" />\n",
+        phone.parking_exten
+    );
     match phone.parking_transfer_type {
-        ParkingTransfer::Blind => ap!(o, "<setting id=\"parking_lot_enable_blind_transfer\" value=\"1\" />\n"),
-        ParkingTransfer::Attended => ap!(o, "<setting id=\"parking_lot_enable_blind_transfer\" value=\"0\" />\n"),
+        ParkingTransfer::Blind => ap!(
+            o,
+            "<setting id=\"parking_lot_enable_blind_transfer\" value=\"1\" />\n"
+        ),
+        ParkingTransfer::Attended => ap!(
+            o,
+            "<setting id=\"parking_lot_enable_blind_transfer\" value=\"0\" />\n"
+        ),
         ParkingTransfer::Default => {}
     }
 }
@@ -163,7 +188,11 @@ fn registration_timers(o: &mut Out, line: &Line) {
         ap!(o, "retry=\"{}\" ", line.registration_retry_interval as u32);
     }
     if line.registration_max_retries != 0 {
-        ap!(o, "num_retries=\"{}\" ", line.registration_max_retries as u32);
+        ap!(
+            o,
+            "num_retries=\"{}\" ",
+            line.registration_max_retries as u32
+        );
     }
 }
 
@@ -172,14 +201,29 @@ fn outbound_proxy(o: &mut Out, line: &Line) {
     if line.outboundproxy_address.is_empty() {
         return;
     }
-    ap!(o, "outbound_proxy=\"{}\"\n", esc(&line.outboundproxy_address));
-    let port = if line.outboundproxy_port.is_empty() { b"5060".to_vec() } else { esc(&line.outboundproxy_port) };
+    ap!(
+        o,
+        "outbound_proxy=\"{}\"\n",
+        esc(&line.outboundproxy_address)
+    );
+    let port = if line.outboundproxy_port.is_empty() {
+        b"5060".to_vec()
+    } else {
+        esc(&line.outboundproxy_port)
+    };
     ap!(o, "outbound_port=\"{}\"\n", port);
 }
 
 /// `add_internal_line_account`.  Returns the line, whose CustomPresence
 /// state the caller initializes (the official DPMA does it here).
-fn add_internal_line_account(o: &mut Out, phone: &Phone, line: &Line, net: &Network, index: i32, server_uuid: &[u8]) {
+fn add_internal_line_account(
+    o: &mut Out,
+    phone: &Phone,
+    line: &Line,
+    net: &Network,
+    index: i32,
+    server_uuid: &[u8],
+) {
     ap!(o, "<account \n");
     if !server_uuid.is_empty() {
         ap!(o, "server_uuid=\"{}\" ", server_uuid);
@@ -213,16 +257,33 @@ fn add_internal_line_account(o: &mut Out, phone: &Phone, line: &Line, net: &Netw
     ap!(o, "type_display=\"{}\"\n", "SIP Extension");
     ap!(o, "location=\"{}\"\n", esc(&line.location));
     ap!(o, "authname=\"{}\"\n", esc(or(&line.authname, &line.name)));
-    ap!(o, "line_label=\"{}\"\n", esc(or(&line.line_label, &line.name)));
-    ap!(o, "subscription_extension=\"{}{}\"\n", "auto_hint_", esc(&line.name));
+    ap!(
+        o,
+        "line_label=\"{}\"\n",
+        esc(or(&line.line_label, &line.name))
+    );
+    ap!(
+        o,
+        "subscription_extension=\"{}{}\"\n",
+        "auto_hint_",
+        esc(&line.name)
+    );
     outbound_proxy(o, line);
     ap!(o, "plar_number=\"{}\"\n", esc(&line.plar_number));
     ap!(o, "register=\"{}\"", i32::from(!line.no_register));
     ap!(o, ">\n");
 
-    ap!(o, "<host_primary server=\"{}\" ", esc(&net.registration_address));
+    ap!(
+        o,
+        "<host_primary server=\"{}\" ",
+        esc(&net.registration_address)
+    );
     ap!(o, "port=\"{}\" ", esc(&net.registration_port));
-    let transport = if line.transport == Transport::Unset { net.transport } else { line.transport };
+    let transport = if line.transport == Transport::Unset {
+        net.transport
+    } else {
+        line.transport
+    };
     ap!(o, "transport=\"{}\" ", transport.string());
     if !line.media_encryption.is_empty() {
         ap!(o, "media_encryption=\"{}\" ", line.media_encryption);
@@ -231,7 +292,11 @@ fn add_internal_line_account(o: &mut Out, phone: &Phone, line: &Line, net: &Netw
     ap!(o, "/>\n");
 
     if !net.alternate_registration_address.is_empty() {
-        ap!(o, "<host_alternate server=\"{}\" ", esc(&net.alternate_registration_address));
+        ap!(
+            o,
+            "<host_alternate server=\"{}\" ",
+            esc(&net.alternate_registration_address)
+        );
         ap!(o, "port=\"{}\" ", esc(&net.alternate_registration_port));
         let transport = if line.secondary_server_transport == Transport::Unset {
             net.alternate_transport
@@ -240,16 +305,32 @@ fn add_internal_line_account(o: &mut Out, phone: &Phone, line: &Line, net: &Netw
         };
         ap!(o, "transport=\"{}\" ", transport.string());
         if !line.secondary_media_encryption.is_empty() {
-            ap!(o, "media_encryption=\"{}\" ", line.secondary_media_encryption);
+            ap!(
+                o,
+                "media_encryption=\"{}\" ",
+                line.secondary_media_encryption
+            );
         }
         registration_timers(o, line);
         ap!(o, "/>\n");
     }
 
     parking_settings(o, phone);
-    ap!(o, "<permission id=\"use_voicemail\" value=\"{}\" />\n", i32::from(!line.mailbox.is_empty()));
-    ap!(o, "<permission id=\"send_to_voicemail\" value=\"{}\" />\n", i32::from(phone.send_to_vm));
-    ap!(o, "<permission id=\"record_own_calls\" value=\"{}\" />\n", i32::from(phone.record_own_calls));
+    ap!(
+        o,
+        "<permission id=\"use_voicemail\" value=\"{}\" />\n",
+        i32::from(!line.mailbox.is_empty())
+    );
+    ap!(
+        o,
+        "<permission id=\"send_to_voicemail\" value=\"{}\" />\n",
+        i32::from(phone.send_to_vm)
+    );
+    ap!(
+        o,
+        "<permission id=\"record_own_calls\" value=\"{}\" />\n",
+        i32::from(phone.record_own_calls)
+    );
     ap!(o, "</account>\n");
 }
 
@@ -307,11 +388,23 @@ fn add_external_line_account(o: &mut Out, line: &Line, net: &Network, index: i32
     ap!(o, "/>\n");
 
     if !line.secondary_server_address.is_empty() {
-        ap!(o, "<host_alternate server=\"{}\" ", esc(&line.secondary_server_address));
+        ap!(
+            o,
+            "<host_alternate server=\"{}\" ",
+            esc(&line.secondary_server_address)
+        );
         ap!(o, "port=\"{}\" ", esc(&line.secondary_server_port));
-        ap!(o, "transport=\"{}\" ", line.secondary_server_transport.string());
+        ap!(
+            o,
+            "transport=\"{}\" ",
+            line.secondary_server_transport.string()
+        );
         if !line.secondary_media_encryption.is_empty() {
-            ap!(o, "media_encryption=\"{}\" ", line.secondary_media_encryption);
+            ap!(
+                o,
+                "media_encryption=\"{}\" ",
+                line.secondary_media_encryption
+            );
         }
         registration_timers(o, line);
         ap!(o, "/>\n");
@@ -335,7 +428,11 @@ fn add_firmware_settings(o: &mut Out, reg: &Registry, phone: &Phone) {
         ap!(o, "<firmwares>\n");
         for fw_name in &phone.firmware {
             let Some(fw) = reg.firmware.get(fw_name) else {
-                dpma_log!("Could not find firmware profile '{}' for phone '{}'", fw_name, phone.name);
+                dpma_log!(
+                    "Could not find firmware profile '{}' for phone '{}'",
+                    fw_name,
+                    phone.name
+                );
                 continue;
             };
             if !net.file_url_prefix.is_empty() && !fw.version.is_empty() && !fw.file.is_empty() {
@@ -354,11 +451,18 @@ fn add_firmware_settings(o: &mut Out, reg: &Registry, phone: &Phone) {
         ap!(o, "<public_firmwares>\n");
         for fw_name in &phone.firmware {
             let Some(fw) = reg.firmware.get(fw_name) else {
-                dpma_log!("Could not find firmware profile '{}' for phone '{}'", fw_name, phone.name);
+                dpma_log!(
+                    "Could not find firmware profile '{}' for phone '{}'",
+                    fw_name,
+                    phone.name
+                );
                 continue;
             };
             if fw.public_firmware && !fw.version.is_empty() && !fw.file.is_empty() {
-                let prefix = or(&net.public_firmware_url_prefix, "http://dphone.dl.digium.com/firmware/asterisk/");
+                let prefix = or(
+                    &net.public_firmware_url_prefix,
+                    "http://dphone.dl.digium.com/firmware/asterisk/",
+                );
                 ap!(
                     o,
                     "<public_firmware model=\"{}\" version=\"{}\" url=\"{}{}/{}_{}_firmware.eff\" network_id=\"{}\" />\n",
@@ -378,13 +482,25 @@ fn add_firmware_settings(o: &mut Out, reg: &Registry, phone: &Phone) {
 
 /// Does `dir/name` exist (and can it be opened)?  FUN_001523a0.
 fn file_exists(dir: &[u8], name: &[u8]) -> bool {
-    std::fs::File::open(crate::util::path(&crate::util::truncate(&bformat!("{}/{}", dir, name), 0x1000))).is_ok()
+    std::fs::File::open(crate::util::path(&crate::util::truncate(
+        &bformat!("{}/{}", dir, name),
+        0x1000,
+    )))
+    .is_ok()
 }
 
 /// A user image setting (`logo_file`, `wallpaper_file`): served from the
 /// file directory when the file is there, otherwise from every network's
 /// file URL prefix.
-fn user_image(o: &mut Out, reg: &Registry, phone: &Phone, dir: &[u8], id: &str, file: &[u8], path: &str) {
+fn user_image(
+    o: &mut Out,
+    reg: &Registry,
+    phone: &Phone,
+    dir: &[u8],
+    id: &str,
+    file: &[u8],
+    path: &str,
+) {
     if file_exists(dir, file) {
         ap!(
             o,
@@ -411,15 +527,28 @@ fn user_image(o: &mut Out, reg: &Registry, phone: &Phone, dir: &[u8], id: &str, 
 /// `phone_user_build_config`.  Returns the internal lines whose
 /// CustomPresence state must be initialized, which the official DPMA does
 /// while adding their accounts.
-fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], model: &[u8]) -> Vec<Vec<u8>> {
+fn build_config(
+    reg: &Registry,
+    phone: &Phone,
+    out: &mut Vec<u8>,
+    dir: &[u8],
+    model: &[u8],
+) -> Vec<Vec<u8>> {
     let p = phone;
     out.clear();
-    let mut o = Out { s: out, cap: INITIAL_BUF };
+    let mut o = Out {
+        s: out,
+        cap: INITIAL_BUF,
+    };
     let general = crate::config::get();
     let uuid = general.server_uuid.as_slice();
     let has_queue = has_queue(reg, p);
     let primary = primary_line(reg, p);
-    let conflict = if p.lock_preferences { "freeze" } else { "replace" };
+    let conflict = if p.lock_preferences {
+        "freeze"
+    } else {
+        "replace"
+    };
     let slot0 = p.lines.first().map_or(&b""[..], |l| l.name.as_slice());
 
     // Softkeys.
@@ -432,22 +561,38 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         ap!(o, "<key id=\"{}\" action=\"missed_or_call_log\" />\n", 0);
         key = 1;
     }
-    ap!(o, "<key id=\"{}\" action=\"show_application\" label1=\"_CONTACTS\">\n", key);
+    ap!(
+        o,
+        "<key id=\"{}\" action=\"show_application\" label1=\"_CONTACTS\">\n",
+        key
+    );
     ap!(o, "<arg>contacts</arg>\n");
     ap!(o, "</key>\n");
-    ap!(o, "<key id=\"{}\" action=\"show_application\" label1=\"_STATUS\">\n", key + 1);
+    ap!(
+        o,
+        "<key id=\"{}\" action=\"show_application\" label1=\"_STATUS\">\n",
+        key + 1
+    );
     ap!(o, "<arg>status</arg>\n");
     ap!(o, "</key>\n");
     ap!(o, "<key id=\"{}\" action=\"info\" />\n", key + 2);
     key += 3;
     if p.show_call_parking {
-        ap!(o, "<key id=\"{}\" action=\"show_application\" label1=\"_PARKED_CALLS\">\n", key);
+        ap!(
+            o,
+            "<key id=\"{}\" action=\"show_application\" label1=\"_PARKED_CALLS\">\n",
+            key
+        );
         ap!(o, "<arg>parking</arg>\n");
         ap!(o, "</key>\n");
         key += 1;
     }
     if has_queue {
-        ap!(o, "<key id=\"{}\" action=\"show_application\" label1=\"_QUEUES\">\n", key);
+        ap!(
+            o,
+            "<key id=\"{}\" action=\"show_application\" label1=\"_QUEUES\">\n",
+            key
+        );
         ap!(o, "<arg>queues</arg>\n");
         ap!(o, "</key>\n");
         key += 1;
@@ -459,7 +604,12 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         };
         if let Some(AppKind::Custom(c)) = &app.kind {
             if c.idlescreen_softkey {
-                ap!(o, "<key id=\"{}\" action=\"show_application\" label1=\"{}\">\n", key, c.name);
+                ap!(
+                    o,
+                    "<key id=\"{}\" action=\"show_application\" label1=\"{}\">\n",
+                    key,
+                    c.name
+                );
                 key += 1;
                 ap!(o, "<arg>{}</arg>\n", c.name);
                 ap!(o, "</key>\n");
@@ -467,7 +617,11 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         }
     }
     if p.can_forward_calls {
-        ap!(o, "<key id=\"{}\" action=\"forward_calls\" label1=\"_FORWARD\" />\n", key);
+        ap!(
+            o,
+            "<key id=\"{}\" action=\"forward_calls\" label1=\"_FORWARD\" />\n",
+            key
+        );
         key += 1;
     }
     ap!(o, "<key id=\"{}\" action=\"menu\" />\n", key);
@@ -490,7 +644,10 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
     ap!(o, "<state id=\"dialing\" conflict=\"freeze\">\n");
     ap!(o, "<softkeys>\n");
     ap!(o, "<key id=\"0\" action=\"make_call\" />\n");
-    ap!(o, "<key id=\"1\" action=\"show_application\" label1=\"_CONTACTS\">\n");
+    ap!(
+        o,
+        "<key id=\"1\" action=\"show_application\" label1=\"_CONTACTS\">\n"
+    );
     ap!(o, "<arg>contacts</arg>\n");
     ap!(o, "</key>\n");
     ap!(o, "<key id=\"2\" action=\"backspace\" />\n");
@@ -518,7 +675,10 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
     ap!(o, "</softkeys>\n");
     ap!(o, "</state>\n");
 
-    ap!(o, "<state id=\"connected/conference\" conflict=\"freeze\">\n");
+    ap!(
+        o,
+        "<state id=\"connected/conference\" conflict=\"freeze\">\n"
+    );
     ap!(o, "<softkeys>\n");
     ap!(o, "<key id=\"0\" action=\"none\" />\n");
     ap!(o, "<key id=\"1\" action=\"split_conference\" />\n");
@@ -531,7 +691,13 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
     // Networks.
     ap!(o, "<networks>\n");
     for net in networks(reg, p) {
-        ap!(o, "<network id=\"{}\" display_name=\"{}\" cidr=\"{}\" />\n", net.name, net.alias, net.cidr);
+        ap!(
+            o,
+            "<network id=\"{}\" display_name=\"{}\" cidr=\"{}\" />\n",
+            net.name,
+            net.alias,
+            net.cidr
+        );
     }
     ap!(o, "</networks>\n");
 
@@ -587,24 +753,52 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
 
     // General settings.
     if p.transport_tls_allowed != -1 {
-        ap!(o, "<setting id=\"transport_tls_allowed\" value=\"{}\" />\n", p.transport_tls_allowed);
+        ap!(
+            o,
+            "<setting id=\"transport_tls_allowed\" value=\"{}\" />\n",
+            p.transport_tls_allowed
+        );
     }
     ap!(o, "<setting id=\"server_environment\" value=\"DPMA\" />\n");
-    ap!(o, "<setting id=\"enable_check_sync\" value=\"{}\" />\n", i32::from(p.enable_check_sync));
+    ap!(
+        o,
+        "<setting id=\"enable_check_sync\" value=\"{}\" />\n",
+        i32::from(p.enable_check_sync)
+    );
     if p.default_fontsize != 0 {
-        ap!(o, "<setting id=\"default_fontsize\" value=\"{}\" />\n", p.default_fontsize as u32);
+        ap!(
+            o,
+            "<setting id=\"default_fontsize\" value=\"{}\" />\n",
+            p.default_fontsize as u32
+        );
     }
-    ap!(o, "<setting id=\"enable_blf_on_unused_line_keys\" value=\"{}\" />\n", i32::from(p.blf_unused_linekeys));
-    ap!(o, "<setting id=\"blf_page_return_timeout\" value=\"{}\" />\n", p.blf_page_return_timeout);
+    ap!(
+        o,
+        "<setting id=\"enable_blf_on_unused_line_keys\" value=\"{}\" />\n",
+        i32::from(p.blf_unused_linekeys)
+    );
+    ap!(
+        o,
+        "<setting id=\"blf_page_return_timeout\" value=\"{}\" />\n",
+        p.blf_page_return_timeout
+    );
     if !p.timezone.is_empty() {
         ap!(o, "<setting id=\"time_zone\" value=\"{}\" />\n", p.timezone);
     }
     ap!(o, "<setting id=\"time_source\" value=\"ntp\" />\n");
     if p.ntp_resync != 0 {
-        ap!(o, "<setting id=\"ntp_resync\" value=\"{}\" />\n", p.ntp_resync as u32);
+        ap!(
+            o,
+            "<setting id=\"ntp_resync\" value=\"{}\" />\n",
+            p.ntp_resync as u32
+        );
     }
     if p.contacts_max_subscriptions != 0 {
-        ap!(o, "<setting id=\"contacts_max_subscriptions\" value=\"{}\" />\n", p.contacts_max_subscriptions);
+        ap!(
+            o,
+            "<setting id=\"contacts_max_subscriptions\" value=\"{}\" />\n",
+            p.contacts_max_subscriptions
+        );
     }
 
     // Contacts application and per-network settings.
@@ -613,7 +807,11 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         app_account(&mut o, uuid, slot0, p, net);
         ap!(o, "<auto_start/>\n");
         ap!(o, "<settings \n");
-        ap!(o, "use_local_storage=\"{}\" \n", i32::from(p.use_local_storage));
+        ap!(
+            o,
+            "use_local_storage=\"{}\" \n",
+            i32::from(p.use_local_storage)
+        );
         ap!(o, "can_transfer_vm=\"{}\" \n", i32::from(p.send_to_vm));
         if !p.name_format.is_empty() {
             ap!(o, "name_format=\"{}\" \n", p.name_format);
@@ -633,19 +831,47 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
             net.name
         );
         if !net.ntp_server.is_empty() {
-            ap!(o, "<setting id=\"ntp_server\" value=\"{}\" network_id=\"{}\" />\n", net.ntp_server, net.name);
+            ap!(
+                o,
+                "<setting id=\"ntp_server\" value=\"{}\" network_id=\"{}\" />\n",
+                net.ntp_server,
+                net.name
+            );
         }
         if net.syslog_server.is_empty() || net.syslog_level.is_empty() {
-            ap!(o, "<setting id=\"enable_logging\" value=\"0\" network_id=\"{}\" />\n", net.name);
+            ap!(
+                o,
+                "<setting id=\"enable_logging\" value=\"0\" network_id=\"{}\" />\n",
+                net.name
+            );
         } else {
-            ap!(o, "<setting id=\"enable_logging\" value=\"1\" network_id=\"{}\" />\n", net.name);
-            ap!(o, "<setting id=\"log_server\" value=\"{}\" network_id=\"{}\" />\n", net.syslog_server, net.name);
+            ap!(
+                o,
+                "<setting id=\"enable_logging\" value=\"1\" network_id=\"{}\" />\n",
+                net.name
+            );
+            ap!(
+                o,
+                "<setting id=\"log_server\" value=\"{}\" network_id=\"{}\" />\n",
+                net.syslog_server,
+                net.name
+            );
             if !net.syslog_port.is_empty() {
-                ap!(o, "<setting id=\"log_port\" value=\"{}\" network_id=\"{}\" />\n", net.syslog_port, net.name);
+                ap!(
+                    o,
+                    "<setting id=\"log_port\" value=\"{}\" network_id=\"{}\" />\n",
+                    net.syslog_port,
+                    net.name
+                );
             }
         }
         if !net.syslog_level.is_empty() {
-            ap!(o, "<setting id=\"log_level\" value=\"{}\" network_id=\"{}\" />\n", net.syslog_level, net.name);
+            ap!(
+                o,
+                "<setting id=\"log_level\" value=\"{}\" network_id=\"{}\" />\n",
+                net.syslog_level,
+                net.name
+            );
         }
         if !net.network_vlan_discovery_mode.is_empty() {
             ap!(
@@ -655,62 +881,154 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
                 net.name
             );
             if net.network_vlan_id > 0 {
-                ap!(o, "<setting id=\"network_vlan_id\" value=\"{}\" network_id=\"{}\" />\n", net.network_vlan_id, net.name);
+                ap!(
+                    o,
+                    "<setting id=\"network_vlan_id\" value=\"{}\" network_id=\"{}\" />\n",
+                    net.network_vlan_id,
+                    net.name
+                );
                 let rtp_qos = if net.rtp_qos == -1 { 6 } else { net.rtp_qos };
-                ap!(o, "<setting id=\"rtp_qos\" value=\"{}\" network_id=\"{}\" />\n", rtp_qos, net.name);
-                ap!(o, "<setting id=\"sip_qos\" value=\"{}\" network_id=\"{}\" />\n", net.sip_qos, net.name);
+                ap!(
+                    o,
+                    "<setting id=\"rtp_qos\" value=\"{}\" network_id=\"{}\" />\n",
+                    rtp_qos,
+                    net.name
+                );
+                ap!(
+                    o,
+                    "<setting id=\"sip_qos\" value=\"{}\" network_id=\"{}\" />\n",
+                    net.sip_qos,
+                    net.name
+                );
             }
         }
         if net.sip_dscp >= 0 {
-            ap!(o, "<setting id=\"sip_dscp\" value=\"{}\" network_id=\"{}\" />\n", net.sip_dscp, net.name);
+            ap!(
+                o,
+                "<setting id=\"sip_dscp\" value=\"{}\" network_id=\"{}\" />\n",
+                net.sip_dscp,
+                net.name
+            );
         }
         if net.rtp_dscp >= 0 {
-            ap!(o, "<setting id=\"rtp_dscp\" value=\"{}\" network_id=\"{}\" />\n", net.rtp_dscp, net.name);
+            ap!(
+                o,
+                "<setting id=\"rtp_dscp\" value=\"{}\" network_id=\"{}\" />\n",
+                net.rtp_dscp,
+                net.name
+            );
         }
         if net.pc_vlan_id >= 0 {
-            ap!(o, "<setting id=\"pc_vlan_id\" value=\"{}\" network_id=\"{}\" />\n", net.pc_vlan_id, net.name);
+            ap!(
+                o,
+                "<setting id=\"pc_vlan_id\" value=\"{}\" network_id=\"{}\" />\n",
+                net.pc_vlan_id,
+                net.name
+            );
         }
         if net.pc_qos >= 0 {
-            ap!(o, "<setting id=\"pc_qos\" value=\"{}\" network_id=\"{}\" />\n", net.pc_qos, net.name);
+            ap!(
+                o,
+                "<setting id=\"pc_qos\" value=\"{}\" network_id=\"{}\" />\n",
+                net.pc_qos,
+                net.name
+            );
         }
         if net.udp_ka_interval >= 0 {
-            ap!(o, "<setting id=\"udp_ka_interval\" value=\"{}\" network_id=\"{}\" />\n", net.udp_ka_interval, net.name);
+            ap!(
+                o,
+                "<setting id=\"udp_ka_interval\" value=\"{}\" network_id=\"{}\" />\n",
+                net.udp_ka_interval,
+                net.name
+            );
         }
     }
 
     // Phone settings.
-    ap!(o, "<setting id=\"web_ui_enabled\" value=\"{}\" />\n", i32::from(p.web_ui_enabled));
+    ap!(
+        o,
+        "<setting id=\"web_ui_enabled\" value=\"{}\" />\n",
+        i32::from(p.web_ui_enabled)
+    );
     if !p.login_password.is_empty() {
-        ap!(o, "<setting id=\"login_password\" value=\"{}\" />\n", p.login_password);
+        ap!(
+            o,
+            "<setting id=\"login_password\" value=\"{}\" />\n",
+            p.login_password
+        );
     }
     if !p.accept_local_calls.is_empty() {
-        ap!(o, "<setting id=\"accept_local_calls\" value=\"{}\" />\n", p.accept_local_calls);
+        ap!(
+            o,
+            "<setting id=\"accept_local_calls\" value=\"{}\" />\n",
+            p.accept_local_calls
+        );
     }
     if !p.name_format.is_empty() {
-        ap!(o, "<setting id=\"name_format\" value=\"{}\" />\n", p.name_format);
+        ap!(
+            o,
+            "<setting id=\"name_format\" value=\"{}\" />\n",
+            p.name_format
+        );
     }
     if !p.lan_port_mode.is_empty() {
-        ap!(o, "<setting id=\"lan_port_mode\" value=\"{}\" />\n", p.lan_port_mode);
+        ap!(
+            o,
+            "<setting id=\"lan_port_mode\" value=\"{}\" />\n",
+            p.lan_port_mode
+        );
     }
     if !p.pc_port_mode.is_empty() {
-        ap!(o, "<setting id=\"pc_port_mode\" value=\"{}\" />\n", p.pc_port_mode);
+        ap!(
+            o,
+            "<setting id=\"pc_port_mode\" value=\"{}\" />\n",
+            p.pc_port_mode
+        );
     }
     if p.brightness >= 0 {
-        ap!(o, "<setting id=\"brightness\" value=\"{}\" conflict=\"{}\" />\n", p.brightness, conflict);
+        ap!(
+            o,
+            "<setting id=\"brightness\" value=\"{}\" conflict=\"{}\" />\n",
+            p.brightness,
+            conflict
+        );
     }
     if p.contrast >= 0 {
-        ap!(o, "<setting id=\"contrast\" value=\"{}\" conflict=\"{}\" />\n", p.contrast, conflict);
+        ap!(
+            o,
+            "<setting id=\"contrast\" value=\"{}\" conflict=\"{}\" />\n",
+            p.contrast,
+            conflict
+        );
     }
     if p.backlight_dim_level >= 0 {
-        ap!(o, "<setting id=\"backlight_dim_level\" value=\"{}\" conflict=\"{}\" />\n", p.backlight_dim_level, conflict);
+        ap!(
+            o,
+            "<setting id=\"backlight_dim_level\" value=\"{}\" conflict=\"{}\" />\n",
+            p.backlight_dim_level,
+            conflict
+        );
     }
     if p.backlight_timeout > 0 {
-        ap!(o, "<setting id=\"backlight_timeout\" value=\"{}\" conflict=\"{}\" />\n", p.backlight_timeout, conflict);
+        ap!(
+            o,
+            "<setting id=\"backlight_timeout\" value=\"{}\" conflict=\"{}\" />\n",
+            p.backlight_timeout,
+            conflict
+        );
     }
     if p.dim_backlight && p.backlight_timeout != 0 {
-        ap!(o, "<setting id=\"dim_backlight\" value=\"1\" conflict=\"{}\" />\n", conflict);
+        ap!(
+            o,
+            "<setting id=\"dim_backlight\" value=\"1\" conflict=\"{}\" />\n",
+            conflict
+        );
     } else {
-        ap!(o, "<setting id=\"dim_backlight\" value=\"0\" conflict=\"{}\" />\n", conflict);
+        ap!(
+            o,
+            "<setting id=\"dim_backlight\" value=\"0\" conflict=\"{}\" />\n",
+            conflict
+        );
     }
     ap!(
         o,
@@ -719,42 +1037,119 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         conflict
     );
     if !p.idle_company_text.is_empty() {
-        ap!(o, "<setting id=\"idle_company_text\" value=\"{}\" />\n", p.idle_company_text);
+        ap!(
+            o,
+            "<setting id=\"idle_company_text\" value=\"{}\" />\n",
+            p.idle_company_text
+        );
     }
     if p.small_clock {
-        ap!(o, "<setting id=\"small_clock\" value=\"{}\" conflict=\"{}\" />\n", 1, conflict);
+        ap!(
+            o,
+            "<setting id=\"small_clock\" value=\"{}\" conflict=\"{}\" />\n",
+            1,
+            conflict
+        );
     }
-    ap!(o, "<setting id=\"handshake_timeout\" value=\"{}\" />\n", p.handshake_timeout);
+    ap!(
+        o,
+        "<setting id=\"handshake_timeout\" value=\"{}\" />\n",
+        p.handshake_timeout
+    );
     if p.allow_insecure_ssl {
-        ap!(o, "<setting id=\"allow_insecure_ssl\" value=\"1\" conflict=\"freeze\" />\n");
+        ap!(
+            o,
+            "<setting id=\"allow_insecure_ssl\" value=\"1\" conflict=\"freeze\" />\n"
+        );
     } else {
         ap!(o, "<setting id=\"allow_insecure_ssl\" value=\"0\" />\n");
     }
-    ap!(o, "<setting id=\"locale\" value=\"{}\" conflict=\"{}\" />\n", p.active_locale, conflict);
+    ap!(
+        o,
+        "<setting id=\"locale\" value=\"{}\" conflict=\"{}\" />\n",
+        p.active_locale,
+        conflict
+    );
     if p.ringer_volume >= 0 {
-        ap!(o, "<setting id=\"ringer_volume\" value=\"{}\" conflict=\"{}\" />\n", p.ringer_volume, conflict);
+        ap!(
+            o,
+            "<setting id=\"ringer_volume\" value=\"{}\" conflict=\"{}\" />\n",
+            p.ringer_volume,
+            conflict
+        );
     }
     if p.speaker_volume != 0 {
-        ap!(o, "<setting id=\"speaker_volume\" value=\"{}\" conflict=\"{}\" />\n", p.speaker_volume, conflict);
+        ap!(
+            o,
+            "<setting id=\"speaker_volume\" value=\"{}\" conflict=\"{}\" />\n",
+            p.speaker_volume,
+            conflict
+        );
     }
     if p.handset_volume != 0 {
-        ap!(o, "<setting id=\"handset_volume\" value=\"{}\" conflict=\"{}\" />\n", p.handset_volume, conflict);
+        ap!(
+            o,
+            "<setting id=\"handset_volume\" value=\"{}\" conflict=\"{}\" />\n",
+            p.handset_volume,
+            conflict
+        );
     }
     if p.headset_volume != 0 {
-        ap!(o, "<setting id=\"headset_volume\" value=\"{}\" conflict=\"{}\" />\n", p.headset_volume, conflict);
+        ap!(
+            o,
+            "<setting id=\"headset_volume\" value=\"{}\" conflict=\"{}\" />\n",
+            p.headset_volume,
+            conflict
+        );
     }
     if p.handset_sidetone_db != 0 {
-        let v = if p.handset_sidetone_db == -1 { -25 } else { p.handset_sidetone_db };
-        ap!(o, "<setting id=\"handset_sidetone_db\" value=\"{}\" />\n", v);
+        let v = if p.handset_sidetone_db == -1 {
+            -25
+        } else {
+            p.handset_sidetone_db
+        };
+        ap!(
+            o,
+            "<setting id=\"handset_sidetone_db\" value=\"{}\" />\n",
+            v
+        );
     }
     if p.headset_sidetone_db != 0 {
-        let v = if p.headset_sidetone_db == -1 { -15 } else { p.headset_sidetone_db };
-        ap!(o, "<setting id=\"headset_sidetone_db\" value=\"{}\" />\n", v);
+        let v = if p.headset_sidetone_db == -1 {
+            -15
+        } else {
+            p.headset_sidetone_db
+        };
+        ap!(
+            o,
+            "<setting id=\"headset_sidetone_db\" value=\"{}\" />\n",
+            v
+        );
     }
-    ap!(o, "<setting id=\"reset_call_volume\" value=\"{}\" conflict=\"{}\" />\n", i32::from(p.reset_call_volume), conflict);
-    ap!(o, "<setting id=\"headset_answer\" value=\"{}\" conflict=\"{}\" />\n", i32::from(p.headset_answer), conflict);
-    ap!(o, "<setting id=\"ring_headset_only\" value=\"{}\" conflict=\"{}\" />\n", i32::from(p.ring_headset_only), conflict);
-    ap!(o, "<setting id=\"call_waiting_tone\" value=\"{}\" conflict=\"{}\" />\n", i32::from(p.call_waiting_tone), conflict);
+    ap!(
+        o,
+        "<setting id=\"reset_call_volume\" value=\"{}\" conflict=\"{}\" />\n",
+        i32::from(p.reset_call_volume),
+        conflict
+    );
+    ap!(
+        o,
+        "<setting id=\"headset_answer\" value=\"{}\" conflict=\"{}\" />\n",
+        i32::from(p.headset_answer),
+        conflict
+    );
+    ap!(
+        o,
+        "<setting id=\"ring_headset_only\" value=\"{}\" conflict=\"{}\" />\n",
+        i32::from(p.ring_headset_only),
+        conflict
+    );
+    ap!(
+        o,
+        "<setting id=\"call_waiting_tone\" value=\"{}\" conflict=\"{}\" />\n",
+        i32::from(p.call_waiting_tone),
+        conflict
+    );
     if !p.ehs.is_empty() {
         ap!(o, "<setting id=\"ehs\" value=\"{}\" />\n", p.ehs);
     }
@@ -764,12 +1159,36 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         i32::from(p.expansion_enabled),
         i32::from(p.expansion_page_indicators_enabled)
     );
-    ap!(o, "<setting id=\"8021x_passthrough\" value=\"{}\" />\n", p.dot1x_passthrough);
-    ap!(o, "<setting id=\"8021x_method\" value=\"{}\" />\n", p.dot1x_method);
-    ap!(o, "<setting id=\"8021x_eapol_on_disconnect\" value=\"{}\" />\n", or(&p.dot1x_eapol_on_disconnect, "0"));
-    ap!(o, "<setting id=\"8021x_identity\" value=\"{}\" />\n", p.dot1x_identity);
-    ap!(o, "<setting id=\"8021x_anonymous_identity\" value=\"{}\" />\n", p.dot1x_anonymous_identity);
-    ap!(o, "<setting id=\"8021x_password\" value=\"{}\" />\n", p.dot1x_password);
+    ap!(
+        o,
+        "<setting id=\"8021x_passthrough\" value=\"{}\" />\n",
+        p.dot1x_passthrough
+    );
+    ap!(
+        o,
+        "<setting id=\"8021x_method\" value=\"{}\" />\n",
+        p.dot1x_method
+    );
+    ap!(
+        o,
+        "<setting id=\"8021x_eapol_on_disconnect\" value=\"{}\" />\n",
+        or(&p.dot1x_eapol_on_disconnect, "0")
+    );
+    ap!(
+        o,
+        "<setting id=\"8021x_identity\" value=\"{}\" />\n",
+        p.dot1x_identity
+    );
+    ap!(
+        o,
+        "<setting id=\"8021x_anonymous_identity\" value=\"{}\" />\n",
+        p.dot1x_anonymous_identity
+    );
+    ap!(
+        o,
+        "<setting id=\"8021x_password\" value=\"{}\" />\n",
+        p.dot1x_password
+    );
     ap!(
         o,
         "<setting id=\"8021x_client_cert\" url=\"{}\" value=\"{}\" />\n",
@@ -783,9 +1202,17 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         file_value(&p.dot1x_root_cert_url, &p.dot1x_root_cert_value)
     );
     if !p.dot1x_debug.is_empty() {
-        ap!(o, "<setting id=\"8021x_debug\" value=\"{}\" />\n", p.dot1x_debug);
+        ap!(
+            o,
+            "<setting id=\"8021x_debug\" value=\"{}\" />\n",
+            p.dot1x_debug
+        );
     }
-    ap!(o, "<setting id=\"network_default_enable_openvpn\" value=\"{}\" />\n", p.openvpn_enable);
+    ap!(
+        o,
+        "<setting id=\"network_default_enable_openvpn\" value=\"{}\" />\n",
+        p.openvpn_enable
+    );
     ap!(
         o,
         "<setting id=\"openvpn_config_file\" url=\"{}\" value=\"{}\" />\n",
@@ -811,7 +1238,11 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         file_value(&p.openvpn_client_key_url, &p.openvpn_client_key_value)
     );
     if !p.openvpn_logging.is_empty() {
-        ap!(o, "<setting id=\"openvpn_logging\" value=\"{}\" />\n", p.openvpn_logging);
+        ap!(
+            o,
+            "<setting id=\"openvpn_logging\" value=\"{}\" />\n",
+            p.openvpn_logging
+        );
     }
 
     // Status (and queues) applications, per network.
@@ -820,7 +1251,11 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         if p.send486_custom {
             for state in 0..7 {
                 if p.send486_mask & (1 << state) != 0 {
-                    ap!(o, "<send_dnd status=\"{}\" />", dpma_ast::presence::state2str(state));
+                    ap!(
+                        o,
+                        "<send_dnd status=\"{}\" />",
+                        dpma_ast::presence::state2str(state)
+                    );
                 }
             }
         } else {
@@ -845,13 +1280,25 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
             dpma_log!("Failed to find application '{}'", name);
             continue;
         };
-        let Some(AppKind::Custom(c)) = &app.kind else { continue };
+        let Some(AppKind::Custom(c)) = &app.kind else {
+            continue;
+        };
         for net in networks(reg, p) {
             if c.filename.is_empty() || net.file_url_prefix.is_empty() {
                 continue;
             }
-            ap!(o, "<appconfig id=\"{}\" network_id=\"{}\">\n", c.name, net.name);
-            ap!(o, "<url url=\"{}{}\" ", url_prefix(&c.filename, &net.file_url_prefix), c.filename);
+            ap!(
+                o,
+                "<appconfig id=\"{}\" network_id=\"{}\">\n",
+                c.name,
+                net.name
+            );
+            ap!(
+                o,
+                "<url url=\"{}{}\" ",
+                url_prefix(&c.filename, &net.file_url_prefix),
+                c.filename
+            );
             if !c.md5.is_empty() {
                 ap!(o, "md5=\"{}\" ", c.md5);
             }
@@ -891,9 +1338,17 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
             );
         }
     }
-    ap!(o, "<setting id=\"default_blf_contact_group\" value=\"{}\" />\n", "Internal Extensions");
+    ap!(
+        o,
+        "<setting id=\"default_blf_contact_group\" value=\"{}\" />\n",
+        "Internal Extensions"
+    );
     if !p.blf_contact_group.is_empty() {
-        ap!(o, "<setting id=\"blf_contact_group\" value=\"{}\" />\n", p.blf_contact_group);
+        ap!(
+            o,
+            "<setting id=\"blf_contact_group\" value=\"{}\" />\n",
+            p.blf_contact_group
+        );
     }
     parking_settings(&mut o, p);
 
@@ -902,7 +1357,9 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
     ap!(o, "<ringtones>\n");
     ap!(o, "<tones>\n");
     for name in &p.ringtones {
-        let Some(tone) = reg.ringtones.get(name) else { continue };
+        let Some(tone) = reg.ringtones.get(name) else {
+            continue;
+        };
         for net in networks(reg, p) {
             if tone.filename.is_empty() || net.file_url_prefix.is_empty() {
                 continue;
@@ -920,12 +1377,28 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
     }
     ap!(o, "</tones>\n");
     ap!(o, "<alerts>\n");
-    ap!(o, "<alert alert_info=\"normal\" ringtone_id=\"{}\" ring_type=\"normal\" />\n", active_ringtone);
-    ap!(o, "<alert alert_info=\"ring-answer\" ringtone_id=\"{}\" ring_type=\"ring-answer\" />\n", active_ringtone);
-    ap!(o, "<alert alert_info=\"visual\" ringtone_id=\"\" ring_type=\"visual\" />\n");
-    ap!(o, "<alert alert_info=\"intercom\" ringtone_id=\"\" ring_type=\"answer\" />\n");
+    ap!(
+        o,
+        "<alert alert_info=\"normal\" ringtone_id=\"{}\" ring_type=\"normal\" />\n",
+        active_ringtone
+    );
+    ap!(
+        o,
+        "<alert alert_info=\"ring-answer\" ringtone_id=\"{}\" ring_type=\"ring-answer\" />\n",
+        active_ringtone
+    );
+    ap!(
+        o,
+        "<alert alert_info=\"visual\" ringtone_id=\"\" ring_type=\"visual\" />\n"
+    );
+    ap!(
+        o,
+        "<alert alert_info=\"intercom\" ringtone_id=\"\" ring_type=\"answer\" />\n"
+    );
     for name in &p.alerts {
-        let Some(alert) = reg.alerts.get(name) else { continue };
+        let Some(alert) = reg.alerts.get(name) else {
+            continue;
+        };
         if !alert.alert_info.is_empty() {
             ap!(
                 o,
@@ -938,7 +1411,11 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
     }
     ap!(o, "</alerts>\n");
     ap!(o, "</ringtones>\n");
-    ap!(o, "<setting id=\"active_ringtone\" value=\"{}\" />\n", active_ringtone);
+    ap!(
+        o,
+        "<setting id=\"active_ringtone\" value=\"{}\" />\n",
+        active_ringtone
+    );
 
     // Multicast pages.
     let mut listeners = 0;
@@ -946,7 +1423,9 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         if name.is_empty() {
             continue;
         }
-        let Some(page) = reg.pages.get(name) else { continue };
+        let Some(page) = reg.pages.get(name) else {
+            continue;
+        };
         if listeners == 0 {
             ap!(o, "<multicastpage>\n");
         }
@@ -999,14 +1478,26 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         }
     }
     if !p.wallpaper_file.is_empty() {
-        user_image(&mut o, reg, p, dir, "wallpaper_file", &p.wallpaper_file, "/user_wallpaper.png");
+        user_image(
+            &mut o,
+            reg,
+            p,
+            dir,
+            "wallpaper_file",
+            &p.wallpaper_file,
+            "/user_wallpaper.png",
+        );
     }
 
     // Parking and voicemail applications of the primary line.
     if let Some(line) = primary.filter(|l| !l.external) {
         for net in networks(reg, p) {
             if p.show_call_parking {
-                ap!(o, "<appconfig id=\"parking\" network_id=\"{}\">\n", net.name);
+                ap!(
+                    o,
+                    "<appconfig id=\"parking\" network_id=\"{}\">\n",
+                    net.name
+                );
                 app_account(&mut o, uuid, &line.name, p, net);
                 ap!(o, "<auto_start />\n");
                 ap!(o, "</appconfig>\n");
@@ -1017,7 +1508,11 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
                     Some(AppKind::Voicemail(vm)) if vm.require_password
                 );
                 if line.voicemail_uri.is_empty() {
-                    ap!(o, "<appconfig id=\"voicemail\" network_id=\"{}\">\n", net.name);
+                    ap!(
+                        o,
+                        "<appconfig id=\"voicemail\" network_id=\"{}\">\n",
+                        net.name
+                    );
                     app_account(&mut o, uuid, &line.name, p, net);
                     if require_password {
                         ap!(o, "<settings require_password=\"1\"/>\n");
@@ -1027,9 +1522,15 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
             }
         }
         ap!(o, "<events>");
-        ap!(o, "<event id=\"digium.incomingCall.voicemail\" action=\"app\" />");
+        ap!(
+            o,
+            "<event id=\"digium.incomingCall.voicemail\" action=\"app\" />"
+        );
         if p.show_call_parking {
-            ap!(o, "<event id=\"digium.parkingLot.parked\" action=\"app\" />");
+            ap!(
+                o,
+                "<event id=\"digium.parkingLot.parked\" action=\"app\" />"
+            );
         }
         ap!(o, "</events>\n");
     }
@@ -1042,7 +1543,9 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
         if slot.name.is_empty() {
             continue;
         }
-        let Some(line) = reg.lines.get(&slot.name) else { continue };
+        let Some(line) = reg.lines.get(&slot.name) else {
+            continue;
+        };
         for net in networks(reg, p) {
             if slot.external {
                 add_external_line_account(&mut o, line, net, index);
@@ -1097,7 +1600,10 @@ fn insert_display_rules(rules: &[u8], o: &mut Out, dir: &[u8]) {
     };
     let Some(contacts) = xmlutil::xml_find(&doc, "//config/appconfig[@id='contacts']") else {
         drop(doc);
-        dpma_ast::dpma_debug!(3, "Contacts not found in phone config, display rules not added.");
+        dpma_ast::dpma_debug!(
+            3,
+            "Contacts not found in phone config, display rules not added."
+        );
         return;
     };
     let path = crate::util::truncate(&bformat!("{}/{}", dir, rules), 0x1000);
@@ -1155,7 +1661,12 @@ pub fn read_config(out: &mut Vec<u8>, dir: &[u8], file: &[u8]) -> Result<(), ()>
 /// its user agent (e.g., "D65"), which selects the `<model>_logo_file`.
 /// Calls `users::presence::user_application_sync` first, as the official
 /// DPMA does.  Err when the phone does not exist.
-pub fn get_config(phone: &[u8], out: &mut Vec<u8>, file_dir: &[u8], model: &[u8]) -> Result<(), ()> {
+pub fn get_config(
+    phone: &[u8],
+    out: &mut Vec<u8>,
+    file_dir: &[u8],
+    model: &[u8],
+) -> Result<(), ()> {
     super::presence::user_application_sync(phone);
     let presence_lines = {
         // The phone's lines are locked while they are read (the official
@@ -1198,7 +1709,12 @@ pub fn show_call_parking(line: &[u8]) -> bool {
     let g = read();
     let Some(reg) = g.as_ref() else { return true };
     let found = reg.phones.values().find(|p| {
-        (0..MAX_LINES).any(|i| p.lines.get(i).map_or(&b""[..], |l| l.name.as_slice()).eq_ignore_ascii_case(line))
+        (0..MAX_LINES).any(|i| {
+            p.lines
+                .get(i)
+                .map_or(&b""[..], |l| l.name.as_slice())
+                .eq_ignore_ascii_case(line)
+        })
     });
     found.is_none_or(|p| p.show_call_parking)
 }
@@ -1242,10 +1758,16 @@ mod devtest {
         }
         let pass = a.argv.get(2).map_or(&b""[..], |s| s.as_slice());
         let general = crate::config::get();
-        let filter = pass != general.globalpin && general.auth_flags & crate::config::auth::USERLIST_GLOBALPIN != 0;
+        let filter = pass != general.globalpin
+            && general.auth_flags & crate::config::auth::USERLIST_GLOBALPIN != 0;
         let mut out = Vec::new();
         match crate::users::userlist::build_userlist_json(&mut out, filter, pass) {
-            Ok(n) => a.out(bformat!("{} user(s), group pin filter {}\n{}\n", n, if filter { "on" } else { "off" }, out)),
+            Ok(n) => a.out(bformat!(
+                "{} user(s), group pin filter {}\n{}\n",
+                n,
+                if filter { "on" } else { "off" },
+                out
+            )),
             Err(()) => a.out("Failed to build the user list\n"),
         }
         CliResult::Success

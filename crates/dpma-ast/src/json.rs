@@ -16,9 +16,10 @@ use std::os::raw::{c_int, c_void};
 /// (`ast_json_object_set` and `ast_json_array_append` take over the
 /// value's reference, also on failure).
 pub use sys::{
-    ast_json, ast_json_array_append, ast_json_array_create, ast_json_dump_string_format, ast_json_free,
-    ast_json_load_string, ast_json_object_create, ast_json_object_get, ast_json_object_set, ast_json_pack,
-    ast_json_string_create, ast_json_string_get, ast_json_typeof, ast_json_unref,
+    ast_json, ast_json_array_append, ast_json_array_create, ast_json_dump_string_format,
+    ast_json_free, ast_json_load_string, ast_json_object_create, ast_json_object_get,
+    ast_json_object_set, ast_json_pack, ast_json_string_create, ast_json_string_get,
+    ast_json_typeof, ast_json_unref,
 };
 
 /// `AST_JSON_COMPACT`.

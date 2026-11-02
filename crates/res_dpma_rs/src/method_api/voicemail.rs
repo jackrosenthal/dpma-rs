@@ -45,12 +45,14 @@ use std::sync::{Arc, Mutex};
 
 /// app_voicemail's folders by index (the table at 0x5bd140).
 const FOLDERS: [&str; 12] = [
-    "INBOX", "Old", "Work", "Family", "Friends", "Cust1", "Cust2", "Cust3", "Cust4", "Cust5", "Deleted", "Urgent",
+    "INBOX", "Old", "Work", "Family", "Friends", "Cust1", "Cust2", "Cust3", "Cust4", "Cust5",
+    "Deleted", "Urgent",
 ];
 
 /// The folder a phone sees each folder as (the table at 0x5bd0e0).
 const CANONICAL: [&str; 12] = [
-    "INBOX", "INBOX", "Work", "Family", "Friends", "Cust1", "Cust2", "Cust3", "Cust4", "Cust5", "Deleted", "INBOX",
+    "INBOX", "INBOX", "Work", "Family", "Friends", "Cust1", "Cust2", "Cust3", "Cust4", "Cust5",
+    "Deleted", "INBOX",
 ];
 
 /// Folder indexes getFolderList reports (bit mask 0x21d: INBOX, Work,
@@ -124,7 +126,10 @@ fn list_reset(ut: &UserTracker) {
 
 /// `vm_message_tracker_add` (FUN_00184fe0).
 fn tracker_add(ut: &UserTracker, id: &[u8], folder: &[u8]) -> Result<(), ()> {
-    ut.messages.lock().unwrap().push(Arc::new(MsgTracker { id: id.to_vec(), folder: folder.to_vec() }));
+    ut.messages.lock().unwrap().push(Arc::new(MsgTracker {
+        id: id.to_vec(),
+        folder: folder.to_vec(),
+    }));
     Ok(())
 }
 
@@ -144,19 +149,40 @@ fn tracker_from_snapshot(id: &[u8], folder: &[u8], mailbox: &[u8]) -> Option<Msg
         return None;
     }
     let at = find(mailbox, b'@')?;
-    let snap = vm::mailbox_snapshot_create(&mailbox[..at], Some(&mailbox[at + 1..]), Some(folder), true, SortBy::Time, true)?;
+    let snap = vm::mailbox_snapshot_create(
+        &mailbox[..at],
+        Some(&mailbox[at + 1..]),
+        Some(folder),
+        true,
+        SortBy::Time,
+        true,
+    )?;
     snap.folders
         .iter()
         .flatten()
         .find(|m| m.msg_id == msg_id)
-        .map(|m| MsgTracker { id: id.to_vec(), folder: m.folder_name.clone() })
+        .map(|m| MsgTracker {
+            id: id.to_vec(),
+            folder: m.folder_name.clone(),
+        })
 }
 
 /// `vm_message_tracker_find` (FUN_00181aa0): the tracker for `id`, made
 /// from a snapshot when there is none, provided the message's folder shows
 /// as `folder` (compared case sensitively).
-fn tracker_find(ut: &UserTracker, id: &[u8], folder: &[u8], mailbox: &[u8]) -> Option<Arc<MsgTracker>> {
-    let found = ut.messages.lock().unwrap().iter().find(|t| t.id == id).cloned();
+fn tracker_find(
+    ut: &UserTracker,
+    id: &[u8],
+    folder: &[u8],
+    mailbox: &[u8],
+) -> Option<Arc<MsgTracker>> {
+    let found = ut
+        .messages
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|t| t.id == id)
+        .cloned();
     let t = match found {
         Some(t) => t,
         None => {
@@ -233,7 +259,10 @@ fn split_mailbox(mailbox: &[u8]) -> (&[u8], Option<&[u8]>) {
 
 /// `ast_json_string_get(ast_json_object_get(params, key))`.
 fn json_str<'a>(p: &'a Value, key: &str) -> Option<&'a [u8]> {
-    p.as_object()?.get(key)?.as_str().map(|s| c_view(s.as_bytes()))
+    p.as_object()?
+        .get(key)?
+        .as_str()
+        .map(|s| c_view(s.as_bytes()))
 }
 
 /// `ast_json_object_get(params, key)` (any type).
@@ -244,7 +273,9 @@ fn json_get<'a>(p: &'a Value, key: &str) -> Option<&'a Value> {
 /// A JSON string from bytes; None (a failed `ast_json_pack`) when they are
 /// not UTF-8, which jansson refuses.
 fn jstr(b: &[u8]) -> Option<Value> {
-    std::str::from_utf8(b).ok().map(|s| Value::String(s.to_string()))
+    std::str::from_utf8(b)
+        .ok()
+        .map(|s| Value::String(s.to_string()))
 }
 
 /// `strtol(s, NULL, 10)`.
@@ -269,7 +300,13 @@ fn strtol10(s: &[u8]) -> i64 {
     let mut overflow = false;
     while let Some(d) = s.get(i).filter(|c| c.is_ascii_digit()) {
         let d = (d - b'0') as i64;
-        match v.checked_mul(10).and_then(|x| if neg { x.checked_sub(d) } else { x.checked_add(d) }) {
+        match v.checked_mul(10).and_then(|x| {
+            if neg {
+                x.checked_sub(d)
+            } else {
+                x.checked_add(d)
+            }
+        }) {
             Some(n) => v = n,
             None => overflow = true,
         }
@@ -296,7 +333,9 @@ fn fail(out: &mut Vec<u8>, method: &[u8], code: i32, detail: impl AsRef<[u8]>) -
 /// the method is not UTF-8, where the official DPMA's `ast_json_pack`
 /// fails).
 fn respond(out: &mut Vec<u8>, method: &[u8], result: Value) {
-    let Some(method) = dpma_proto::json::utf8(method) else { return };
+    let Some(method) = dpma_proto::json::utf8(method) else {
+        return;
+    };
     let doc = json!({"response": {"method": method, "result": result}});
     out.extend_from_slice(dpma_proto::json::dump(&doc).as_bytes());
 }
@@ -310,7 +349,9 @@ fn vm_translation(phone: &[u8]) -> Option<Arc<Table>> {
     let p = reg.phones.get(phone)?;
     let app = users::build_config::application_settings(reg, p, "Voicemail")?;
     match &app.kind {
-        Some(users::AppKind::Voicemail(v)) => v.translation.as_deref().and_then(crate::translation::get),
+        Some(users::AppKind::Voicemail(v)) => {
+            v.translation.as_deref().and_then(crate::translation::get)
+        }
         _ => None,
     }
 }
@@ -350,7 +391,9 @@ fn unrecordings(folder: &[u8]) -> &[u8] {
 fn own_mailbox(phone: &[u8], line: &[u8]) -> Option<Vec<u8>> {
     let has = {
         let g = users::read();
-        g.as_ref().and_then(|r| r.phones.get(phone)).is_some_and(|p| p.has_line(line))
+        g.as_ref()
+            .and_then(|r| r.phones.get(phone))
+            .is_some_and(|p| p.has_line(line))
     };
     if !has {
         return None;
@@ -386,7 +429,9 @@ struct Grouped {
 
 enum GroupError {
     /// No `-` or nothing after it.
-    Decode { buf: Vec<u8> },
+    Decode {
+        buf: Vec<u8>,
+    },
     NotFound,
 }
 
@@ -395,7 +440,10 @@ enum GroupError {
 /// and its tracker found (or made) with `mailbox`.  Non-strings and
 /// messages in unknown folders are skipped.
 fn group_messages(ut: &UserTracker, ids: &[Value], mailbox: &[u8]) -> Result<Grouped, GroupError> {
-    let mut g = Grouped { ids: Default::default(), last_buf: Vec::new() };
+    let mut g = Grouped {
+        ids: Default::default(),
+        last_buf: Vec::new(),
+    };
     for el in ids {
         let Some(s) = el.as_str() else { continue };
         let buf = copy_trunc(s.as_bytes(), MSG_ID_BUF);
@@ -406,7 +454,9 @@ fn group_messages(ut: &UserTracker, ids: &[Value], mailbox: &[u8]) -> Result<Gro
         g.last_buf.truncate(dash);
         let msg_id = &buf[dash + 1..];
         if msg_id.is_empty() {
-            return Err(GroupError::Decode { buf: g.last_buf.clone() });
+            return Err(GroupError::Decode {
+                buf: g.last_buf.clone(),
+            });
         }
         let folder = unrecordings(&g.last_buf).to_vec();
         let Some(t) = tracker_find(ut, &buf, &folder, mailbox) else {
@@ -474,12 +524,24 @@ pub fn get_list(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
     let page: i32 = json_str(p, "page_number").map_or(1, |s| strtol10(s) as i32);
 
     let sort = if by_date { SortBy::Time } else { SortBy::Id };
-    let Some(snap) = vm::mailbox_snapshot_create(mbox, context, Some(unrecordings(&folder)), descending, sort, true) else {
+    let Some(snap) = vm::mailbox_snapshot_create(
+        mbox,
+        context,
+        Some(unrecordings(&folder)),
+        descending,
+        sort,
+        true,
+    ) else {
         return fail(
             out,
             m,
             INVALID_MAILBOX_FOLDER,
-            bformat!("could not create snapshot of {}@{} {}", show(Some(mbox)), show(context), show(Some(unrecordings(&folder)))),
+            bformat!(
+                "could not create snapshot of {}@{} {}",
+                show(Some(mbox)),
+                show(context),
+                show(Some(unrecordings(&folder)))
+            ),
         );
     };
 
@@ -508,14 +570,26 @@ pub fn get_list(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
         }
         let folder_name = &msg.folder_name;
         if msg.msg_id.is_empty() {
-            ast_log!(LOG_WARNING, "Cannot retrieve full list. Missing message id for folder {}", show(Some(folder_name)));
+            ast_log!(
+                LOG_WARNING,
+                "Cannot retrieve full list. Missing message id for folder {}",
+                show(Some(folder_name))
+            );
         }
         let id = make_id(canonical(folder_name), &msg.msg_id);
         if tracker_add(&ut, &id, folder_name).is_err() {
-            dpma_log!("Failed to track a voicemail message '{}' id sent to '{}'", show(Some(&msg.msg_id)), c.phone);
+            dpma_log!(
+                "Failed to track a voicemail message '{}' id sent to '{}'",
+                show(Some(&msg.msg_id)),
+                c.phone
+            );
         }
         let (number, name) = parse_callerid(&copy_trunc(&msg.callerid, CALLERID_BUF));
-        let read = if eq_ic(folder_name, b"INBOX") || eq_ic(folder_name, b"Urgent") { "No" } else { "Yes" };
+        let read = if eq_ic(folder_name, b"INBOX") || eq_ic(folder_name, b"Urgent") {
+            "No"
+        } else {
+            "Yes"
+        };
         let entry = (|| {
             Some(json!({
                 "id": jstr(&id)?,
@@ -583,12 +657,17 @@ pub fn get_folder_list(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
         return fail(out, m, NOT_PERMITTED, "must have line with mailbox");
     };
     let (mbox, context) = split_mailbox(&mailbox);
-    let Some(snap) = vm::mailbox_snapshot_create(mbox, context, None, false, SortBy::Time, true) else {
+    let Some(snap) = vm::mailbox_snapshot_create(mbox, context, None, false, SortBy::Time, true)
+    else {
         return fail(
             out,
             m,
             INVALID_MAILBOX_FOLDER,
-            bformat!("could not create snapshot of {}@{}", show(Some(mbox)), show(context)),
+            bformat!(
+                "could not create snapshot of {}@{}",
+                show(Some(mbox)),
+                show(context)
+            ),
         );
     };
     let mut folders = Vec::new();
@@ -650,8 +729,19 @@ pub fn move_message(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
         if group.is_empty() {
             continue;
         }
-        if vm::msg_move(mbox, context, FOLDERS[i].as_bytes(), group, unrecordings(&folder_to)) < 0 {
-            dpma_log!("Could not move msgs from {} to {}", show(Some(&folder_from)), show(Some(&folder_to)));
+        if vm::msg_move(
+            mbox,
+            context,
+            FOLDERS[i].as_bytes(),
+            group,
+            unrecordings(&folder_to),
+        ) < 0
+        {
+            dpma_log!(
+                "Could not move msgs from {} to {}",
+                show(Some(&folder_from)),
+                show(Some(&folder_to))
+            );
             return fail(out, m, PARAMS_NOT_FOUND, "could not move message");
         }
         for old in group {
@@ -759,7 +849,17 @@ pub fn forward(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
         if group.is_empty() {
             continue;
         }
-        if vm::msg_forward(mbox, context, FOLDERS[i].as_bytes(), to_box, to_context, b"INBOX", group, false) < 0 {
+        if vm::msg_forward(
+            mbox,
+            context,
+            FOLDERS[i].as_bytes(),
+            to_box,
+            to_context,
+            b"INBOX",
+            group,
+            false,
+        ) < 0
+        {
             dpma_log!(
                 "Could not forward msgs from {}@{} to {}@{}",
                 show(Some(mbox)),
@@ -808,12 +908,20 @@ fn mark_read_unread(c: &MethodCall, p: &Value, out: &mut Vec<u8>, read: bool) ->
         if eq_ic(&t.folder, target) {
             continue;
         }
-        if !(eq_ic(&t.folder, b"INBOX") || eq_ic(&t.folder, b"Old") || eq_ic(&t.folder, b"Urgent")) {
-            dpma_log!("Attempted to mark read/unread on {} folder", show(Some(&folder)));
+        if !(eq_ic(&t.folder, b"INBOX") || eq_ic(&t.folder, b"Old") || eq_ic(&t.folder, b"Urgent"))
+        {
+            dpma_log!(
+                "Attempted to mark read/unread on {} folder",
+                show(Some(&folder))
+            );
             continue;
         }
         if vm::msg_move(mbox, context, &t.folder, &[&msg_id], target) < 0 {
-            dpma_log!("Could not move msgs from {} to {}", show(Some(&folder)), show(Some(target)));
+            dpma_log!(
+                "Could not move msgs from {} to {}",
+                show(Some(&folder)),
+                show(Some(target))
+            );
             return fail(out, m, PARAMS_NOT_FOUND, "could not move message");
         }
         tracker_unlink(&ut, &t);
@@ -887,8 +995,11 @@ fn dial_phone_event_app(phone: &[u8], out: &mut Vec<u8>, method: &[u8], app: &[u
         let g = users::read();
         match g.as_ref().and_then(|r| r.phones.get(phone).map(|p| (r, p))) {
             Some((reg, p)) => (
-                users::build_config::primary_line(reg, p).map_or_else(Vec::new, |l| copy_trunc(&l.tech, TECH_BUF)),
-                p.lines.first().map_or_else(Vec::new, |l| copy_trunc(&l.name, LINE_NAME_BUF)),
+                users::build_config::primary_line(reg, p)
+                    .map_or_else(Vec::new, |l| copy_trunc(&l.tech, TECH_BUF)),
+                p.lines
+                    .first()
+                    .map_or_else(Vec::new, |l| copy_trunc(&l.name, LINE_NAME_BUF)),
             ),
             None => (Vec::new(), Vec::new()),
         }
@@ -916,12 +1027,21 @@ fn dial_phone_event_app(phone: &[u8], out: &mut Vec<u8>, method: &[u8], app: &[u
             return;
         }
         if tech == b"SIP" {
-            let header = copy_trunc(format!("X-Event-Name:{}", PLAYBACK_EVENT).as_bytes(), HEADER_BUF);
+            let header = copy_trunc(
+                format!("X-Event-Name:{}", PLAYBACK_EVENT).as_bytes(),
+                HEADER_BUF,
+            );
             channel::setvar(chan, "__SIPADDHEADER1", &header);
         } else {
-            channel::setvar(chan, "PJSIP_HEADER(add,X-Event-Name)", PLAYBACK_EVENT.as_bytes());
+            channel::setvar(
+                chan,
+                "PJSIP_HEADER(add,X-Event-Name)",
+                PLAYBACK_EVENT.as_bytes(),
+            );
         }
-        let data = Box::into_raw(Box::new(DialData { app_and_args: app.to_vec() }));
+        let data = Box::into_raw(Box::new(DialData {
+            app_and_args: app.to_vec(),
+        }));
         dial::set_user_data(d, data as *mut c_void);
         dial::option_global_enable(d, dial::OPTION_ANSWER_EXEC, app);
         let res = dial::spawn_detached(
@@ -933,7 +1053,12 @@ fn dial_phone_event_app(phone: &[u8], out: &mut Vec<u8>, method: &[u8], app: &[u
             "dial_phone_event_app_thread",
         );
         if res != 0 {
-            fail(out, method, PHONE_EVENT_APP_FAILED, "dial thread did not start");
+            fail(
+                out,
+                method,
+                PHONE_EVENT_APP_FAILED,
+                "dial thread did not start",
+            );
             drop(Box::from_raw(data));
             // The official DPMA reads the name after destroying the dial.
             let name = channel::name(chan);
@@ -959,7 +1084,11 @@ unsafe extern "C" fn dial_phone_event_app_thread(data: *mut c_void) -> *mut c_vo
             let res = dial::run(d, false);
             let ud = Box::from_raw(ud);
             if res != dial::RESULT_ANSWERED {
-                dpma_log!("Call to {} for {} was not answered", name, show(Some(&ud.app_and_args)));
+                dpma_log!(
+                    "Call to {} for {} was not answered",
+                    name,
+                    show(Some(&ud.app_and_args))
+                );
             }
         }
         dial::destroy(d);
@@ -986,14 +1115,21 @@ mod devtest {
             a.out("Tracker container does not exist\n");
             return CliResult::Success;
         };
-        let mut names: Vec<&Vec<u8>> = map.keys().filter(|n| a.argc() == 3 || **n == a.argv[3]).collect();
+        let mut names: Vec<&Vec<u8>> = map
+            .keys()
+            .filter(|n| a.argc() == 3 || **n == a.argv[3])
+            .collect();
         names.sort();
         a.out(bformat!("{} user tracker(s)\n", names.len()));
         for n in names {
             let msgs = map[n].messages.lock().unwrap();
             a.out(bformat!("{}: {} message(s)\n", n, msgs.len()));
             for t in msgs.iter() {
-                a.out(bformat!("  {} => {}\n", show(Some(&t.id)), show(Some(&t.folder))));
+                a.out(bformat!(
+                    "  {} => {}\n",
+                    show(Some(&t.id)),
+                    show(Some(&t.folder))
+                ));
             }
         }
         CliResult::Success
@@ -1007,11 +1143,17 @@ mod devtest {
         let (mbox, context) = split_mailbox(&a.argv[3]);
         let folder = a.argv.get(4).filter(|f| *f != b"-").map(Vec::as_slice);
         let combine = a.argv.get(5).is_some_and(|s| s == b"combine");
-        let Some(snap) = vm::mailbox_snapshot_create(mbox, context, folder, false, SortBy::Time, combine) else {
+        let Some(snap) =
+            vm::mailbox_snapshot_create(mbox, context, folder, false, SortBy::Time, combine)
+        else {
             a.out("No snapshot\n");
             return CliResult::Success;
         };
-        a.out(bformat!("total {} in {} folders\n", snap.total_msg_num, snap.folders.len()));
+        a.out(bformat!(
+            "total {} in {} folders\n",
+            snap.total_msg_num,
+            snap.folders.len()
+        ));
         for (i, list) in snap.folders.iter().enumerate() {
             for msg in list {
                 a.out(bformat!(

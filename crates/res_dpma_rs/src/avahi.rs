@@ -95,7 +95,9 @@ fn wanted() -> Option<Announcement> {
     if !s.as_ref().is_none_or(|s| s.enable_discovery) {
         return None;
     }
-    let text = |f: fn(&crate::config::Settings) -> &Vec<u8>| s.as_ref().map(|s| f(s).clone()).unwrap_or_default();
+    let text = |f: fn(&crate::config::Settings) -> &Vec<u8>| {
+        s.as_ref().map(|s| f(s).clone()).unwrap_or_default()
+    };
     let port = match text(|s| &s.mdns_port) {
         p if p.is_empty() => crate::config::DEFAULT_PORT.into(),
         p => p,
@@ -103,8 +105,13 @@ fn wanted() -> Option<Announcement> {
     let addr = text(|s| &s.mdns_addr);
     let sip_url = (!addr.is_empty()).then(|| {
         let transport = text(|s| &s.mdns_transport);
-        let sep = if transport.is_empty() { "" } else { ";transport=" };
-        let mut entry = dpma_ast::bformat!("sipUrl=sip:proxy@{}:{}{}{}", addr, port, sep, transport);
+        let sep = if transport.is_empty() {
+            ""
+        } else {
+            ";transport="
+        };
+        let mut entry =
+            dpma_ast::bformat!("sipUrl=sip:proxy@{}:{}{}{}", addr, port, sep, transport);
         entry.truncate(255);
         entry.split_off("sipUrl=".len())
     });
@@ -112,7 +119,11 @@ fn wanted() -> Option<Announcement> {
         n if n.is_empty() => crate::config::DEFAULT_SERVICE_NAME.into(),
         n => n,
     };
-    Some(Announcement { name, port: (strtol(&port) & 0xffff) as u16, sip_url })
+    Some(Announcement {
+        name,
+        port: (strtol(&port) & 0xffff) as u16,
+        sip_url,
+    })
 }
 
 /// The host label (the system host name up to its first dot).
@@ -120,7 +131,9 @@ fn host_label() -> String {
     let mut buf = [0u8; 256];
     let ok = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut c_char, buf.len() - 1) } == 0;
     let name = if ok {
-        CStr::from_bytes_until_nul(&buf).map(|c| c.to_string_lossy().into_owned()).unwrap_or_default()
+        CStr::from_bytes_until_nul(&buf)
+            .map(|c| c.to_string_lossy().into_owned())
+            .unwrap_or_default()
     } else {
         String::new()
     };
@@ -148,7 +161,11 @@ fn multicast_capable(name: &str) -> bool {
             return false;
         }
         let mut req: libc::ifreq = std::mem::zeroed();
-        for (d, s) in req.ifr_name.iter_mut().zip(name.bytes().take(libc::IFNAMSIZ - 1)) {
+        for (d, s) in req
+            .ifr_name
+            .iter_mut()
+            .zip(name.bytes().take(libc::IFNAMSIZ - 1))
+        {
             *d = s as c_char;
         }
         let ok = libc::ioctl(fd, libc::SIOCGIFFLAGS as _, &mut req) == 0;
@@ -161,7 +178,9 @@ fn multicast_capable(name: &str) -> bool {
 fn new_daemon() -> Option<ServiceDaemon> {
     let daemon = ServiceDaemon::new().ok()?;
     let _ = daemon.disable_interface(IfKind::All);
-    let _ = daemon.enable_interface(IfKind::Predicate(IfPredicate::new(|i| multicast_capable(&i.name))));
+    let _ = daemon.enable_interface(IfKind::Predicate(IfPredicate::new(|i| {
+        multicast_capable(&i.name)
+    })));
     Some(daemon)
 }
 
@@ -173,7 +192,11 @@ fn service_info(a: &Announcement) -> Option<ServiceInfo> {
         return None;
     }
     let Ok(name) = std::str::from_utf8(&a.name) else {
-        ast_log!(LOG_ERROR, "Service name '{}' is not valid UTF-8; not announcing it over mDNS", a.name);
+        ast_log!(
+            LOG_ERROR,
+            "Service name '{}' is not valid UTF-8; not announcing it over mDNS",
+            a.name
+        );
         return None;
     };
     let mut txt = vec![TxtProperty::from(("serviceType", "asterisk"))];
@@ -199,9 +222,13 @@ fn withdraw(r: &mut Responder) {
 fn wait_daemon_thread_exit() {
     let deadline = Instant::now() + REPLY_TIMEOUT;
     while Instant::now() < deadline {
-        let running =
-            std::fs::read_dir("/proc/self/task").into_iter().flatten().flatten().any(|t| {
-                std::fs::read_to_string(t.path().join("comm")).is_ok_and(|n| n.trim_end() == DAEMON_THREAD_NAME)
+        let running = std::fs::read_dir("/proc/self/task")
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|t| {
+                std::fs::read_to_string(t.path().join("comm"))
+                    .is_ok_and(|n| n.trim_end() == DAEMON_THREAD_NAME)
             });
         if !running {
             return;
@@ -231,7 +258,12 @@ fn publish(state: &mut Option<Responder>) {
     };
     if state.is_none() {
         match new_daemon() {
-            Some(daemon) => *state = Some(Responder { daemon, registered: None }),
+            Some(daemon) => {
+                *state = Some(Responder {
+                    daemon,
+                    registered: None,
+                })
+            }
             None => {
                 dpma_log!("Could not create Avahi client.");
                 return;

@@ -23,7 +23,8 @@ use serde_json::{json, Value};
 /// then nothing is written, and the result is still 0.)
 fn respond(c: &MethodCall, result: Value, out: &mut Vec<u8>) -> i32 {
     if let Some(method) = utf8(&c.method) {
-        *out = dpma_proto::json::dump(&json!({"response": {"method": method, "result": result}})).into_bytes();
+        *out = dpma_proto::json::dump(&json!({"response": {"method": method, "result": result}}))
+            .into_bytes();
     }
     0
 }
@@ -80,7 +81,12 @@ pub fn update(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
         return fail(c, err::PARAMS_NOT_FOUND, "option_id_str", out);
     };
     if presence::update(&c.phone, id, message).is_err() {
-        return fail(c, err::PRESENCE_ACCOUNT_MISMATCH, "phone_presence_update", out);
+        return fail(
+            c,
+            err::PRESENCE_ACCOUNT_MISMATCH,
+            "phone_presence_update",
+            out,
+        );
     }
     respond(c, json!({"success": {}}), out)
 }
@@ -93,7 +99,9 @@ pub fn update(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
 /// sub-state is not UTF-8.
 pub fn options_get_list(c: &MethodCall, _p: &Value, out: &mut Vec<u8>) -> i32 {
     presence::user_application_sync(&c.phone);
-    let current = presence::get_current(&c.phone).and_then(|(o, _)| o).map(|o| o.id);
+    let current = presence::get_current(&c.phone)
+        .and_then(|(o, _)| o)
+        .map(|o| o.id);
     let Some(options) = presence::options(&c.phone) else {
         // The official DPMA always has the phone; its only failure here is
         // the option iterator's allocation.
@@ -102,7 +110,8 @@ pub fn options_get_list(c: &MethodCall, _p: &Value, out: &mut Vec<u8>) -> i32 {
     let mut list: Vec<Value> = Vec::new();
     for o in &options {
         let state = dpma_ast::presence::state2str(o.state);
-        let (Some(state), Some(sub)) = (utf8(&state), utf8(o.subtype.as_deref().unwrap_or(b""))) else {
+        let (Some(state), Some(sub)) = (utf8(&state), utf8(o.subtype.as_deref().unwrap_or(b"")))
+        else {
             return fail(c, err::PARSE, "pack options array", out);
         };
         list.push(json!({
@@ -113,5 +122,9 @@ pub fn options_get_list(c: &MethodCall, _p: &Value, out: &mut Vec<u8>) -> i32 {
             "active": if current == Some(o.id) { "1" } else { "0" },
         }));
     }
-    respond(c, json!({"presence_options": {"presence_option": list}}), out)
+    respond(
+        c,
+        json!({"presence_options": {"presence_option": list}}),
+        out,
+    )
 }

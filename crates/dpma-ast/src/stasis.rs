@@ -27,7 +27,11 @@ struct Subscription {
     router: usize,
 }
 
-static SUBSCRIPTION: Mutex<Subscription> = Mutex::new(Subscription { topic: 0, forward: 0, router: 0 });
+static SUBSCRIPTION: Mutex<Subscription> = Mutex::new(Subscription {
+    topic: 0,
+    forward: 0,
+    router: 0,
+});
 
 /// The router's callback for parked call messages.
 unsafe extern "C" fn parked_call_message(
@@ -64,21 +68,24 @@ pub fn parking_subscribe(topic_name: &str, f: ParkedCallFn) -> bool {
         unsafe {
             let topic = sys::stasis_topic_create(t.as_ptr());
             s.topic = topic as usize;
-            !topic.is_null() && {
-                let forward = sys::stasis_forward_all(sys::ast_parking_topic(), topic);
-                s.forward = forward as usize;
-                !forward.is_null()
-            } && {
-                let (file, line, func) = crate::here!("parking_subscribe");
-                let router = sys::__stasis_message_router_create(topic, file, line, func);
-                s.router = router as usize;
-                !router.is_null()
-            } && sys::stasis_message_router_add(
-                s.router as *mut sys::stasis_message_router,
-                sys::ast_parked_call_type(),
-                Some(parked_call_message),
-                std::ptr::null_mut(),
-            ) == 0
+            !topic.is_null()
+                && {
+                    let forward = sys::stasis_forward_all(sys::ast_parking_topic(), topic);
+                    s.forward = forward as usize;
+                    !forward.is_null()
+                }
+                && {
+                    let (file, line, func) = crate::here!("parking_subscribe");
+                    let router = sys::__stasis_message_router_create(topic, file, line, func);
+                    s.router = router as usize;
+                    !router.is_null()
+                }
+                && sys::stasis_message_router_add(
+                    s.router as *mut sys::stasis_message_router,
+                    sys::ast_parked_call_type(),
+                    Some(parked_call_message),
+                    std::ptr::null_mut(),
+                ) == 0
         }
     };
     if !ok {
@@ -94,7 +101,9 @@ pub fn parking_unsubscribe() {
     // SAFETY: the objects `parking_subscribe` made (each may be NULL).
     unsafe {
         sys::stasis_forward_cancel(s.forward as *mut sys::stasis_forward);
-        sys::stasis_message_router_unsubscribe_and_join(s.router as *mut sys::stasis_message_router);
+        sys::stasis_message_router_unsubscribe_and_join(
+            s.router as *mut sys::stasis_message_router,
+        );
         crate::ao2::cleanup(s.topic as *mut sys::stasis_topic);
     }
     *PARKED_CALL_FN.write().unwrap_or_else(|e| e.into_inner()) = None;

@@ -24,9 +24,17 @@ fn or_not_set(value: Vec<u8>) -> Vec<u8> {
 /// "Config Authentication": `snprintf(buf, 0x80, "%s%s%s%s", mac, sep,
 /// pin, globalpin)`, where `sep` is a space after `mac`.
 fn config_auth_text(flags: u32) -> String {
-    let (mac, sep) = if flags & auth::MAC != 0 { ("mac", " ") } else { ("", "") };
+    let (mac, sep) = if flags & auth::MAC != 0 {
+        ("mac", " ")
+    } else {
+        ("", "")
+    };
     let pin = if flags & auth::PIN != 0 { "pin" } else { "" };
-    let globalpin = if flags & auth::GLOBALPIN != 0 { "globalpin" } else { "" };
+    let globalpin = if flags & auth::GLOBALPIN != 0 {
+        "globalpin"
+    } else {
+        ""
+    };
     let s = format!("{}{}{}{}", mac, sep, pin, globalpin);
     if s.is_empty() {
         "disabled".into()
@@ -47,25 +55,59 @@ fn cli_show_settings(a: &CliArgs) -> CliResult {
     };
     let flags = s.map_or(1, |s| s.auth_flags);
     a.out("---- Digium Phone Module Global Settings ---- \n");
-    a.out(bformat!("Server UUID: {}\n", or_not_set(text(|s| &s.server_uuid))));
+    a.out(bformat!(
+        "Server UUID: {}\n",
+        or_not_set(text(|s| &s.server_uuid))
+    ));
     let pin_set = !text(|s| &s.password).is_empty();
-    a.out(bformat!("GlobalPin: {}\n", if pin_set { "<Set>" } else { "<Not Set>" }));
+    a.out(bformat!(
+        "GlobalPin: {}\n",
+        if pin_set { "<Set>" } else { "<Not Set>" }
+    ));
     let discovery = s.is_none_or(|s| s.enable_discovery);
-    a.out(bformat!("Service Discovery: {}\n", if discovery { "Enabled" } else { "Disabled" }));
-    a.out(bformat!("Service Disc. Name: {}\n", defaulted(|s| &s.service_name, config::DEFAULT_SERVICE_NAME)));
-    a.out(bformat!("Service Disc. Addr: {}\n", or_not_set(text(|s| &s.mdns_addr))));
-    a.out(bformat!("Service Disc. Port: {}\n", defaulted(|s| &s.mdns_port, config::DEFAULT_PORT)));
-    let userlist = if flags & auth::USERLIST_GLOBALPIN != 0 { "globalpin" } else { "disabled" };
+    a.out(bformat!(
+        "Service Discovery: {}\n",
+        if discovery { "Enabled" } else { "Disabled" }
+    ));
+    a.out(bformat!(
+        "Service Disc. Name: {}\n",
+        defaulted(|s| &s.service_name, config::DEFAULT_SERVICE_NAME)
+    ));
+    a.out(bformat!(
+        "Service Disc. Addr: {}\n",
+        or_not_set(text(|s| &s.mdns_addr))
+    ));
+    a.out(bformat!(
+        "Service Disc. Port: {}\n",
+        defaulted(|s| &s.mdns_port, config::DEFAULT_PORT)
+    ));
+    let userlist = if flags & auth::USERLIST_GLOBALPIN != 0 {
+        "globalpin"
+    } else {
+        "disabled"
+    };
     a.out(bformat!("Userlist Authentication: {}\n", userlist));
-    a.out(bformat!("Config Authentication: {}\n", config_auth_text(flags)));
-    a.out(bformat!("Firmware Package Directory: {}\n", or_not_set(text(|s| &s.firmware_package_dir))));
+    a.out(bformat!(
+        "Config Authentication: {}\n",
+        config_auth_text(flags)
+    ));
+    a.out(bformat!(
+        "Firmware Package Directory: {}\n",
+        or_not_set(text(|s| &s.firmware_package_dir))
+    ));
     let file_dir = s.map_or_else(config::default_file_dir, |s| s.file_dir.clone());
     a.out(bformat!("File Directory: {}\n", file_dir));
     a.out(bformat!(
         "PJSIP message context: {}\n",
-        defaulted(|s| &s.pjsip_message_context, config::DEFAULT_PJSIP_MESSAGE_CONTEXT)
+        defaulted(
+            |s| &s.pjsip_message_context,
+            config::DEFAULT_PJSIP_MESSAGE_CONTEXT
+        )
     ));
-    a.out(bformat!("Message Delay: {} ms\n", s.map_or(config::DEFAULT_MESSAGE_DELAY, |s| s.delay)));
+    a.out(bformat!(
+        "Message Delay: {} ms\n",
+        s.map_or(config::DEFAULT_MESSAGE_DELAY, |s| s.delay)
+    ));
     CliResult::Success
 }
 

@@ -58,20 +58,35 @@ fn load_trust() -> Result<Trust, ()> {
         crate::config::DEFAULT_PHONE_CA.to_vec()
     } else {
         std::fs::read(crate::util::path(&g.phone_ca_file)).map_err(|e| {
-            dpma_log!("Error creating castore: cannot read phone_ca_file '{}': {}", g.phone_ca_file, e);
+            dpma_log!(
+                "Error creating castore: cannot read phone_ca_file '{}': {}",
+                g.phone_ca_file,
+                e
+            );
         })?
     };
     let ca = CaStore::from_pem(&ca_pem).map_err(|e| {
-        dpma_log!("Error creating castore from '{}': {}", g.phone_ca_file, e.message());
+        dpma_log!(
+            "Error creating castore from '{}': {}",
+            g.phone_ca_file,
+            e.message()
+        );
     })?;
     let appserver_pem = if g.appserver_certificate.is_empty() {
         crate::config::DEFAULT_APPSERVER_CERTIFICATE.to_vec()
     } else {
         std::fs::read(crate::util::path(&g.appserver_certificate)).map_err(|e| {
-            dpma_log!("Cannot read appserver_certificate '{}': {}", g.appserver_certificate, e);
+            dpma_log!(
+                "Cannot read appserver_certificate '{}': {}",
+                g.appserver_certificate,
+                e
+            );
         })?
     };
-    Ok(Trust { ca: Some(ca), appserver_pem })
+    Ok(Trust {
+        ca: Some(ca),
+        appserver_pem,
+    })
 }
 
 /// `phone_msg_load` (FUN_00150440): load the CA store, create the
@@ -83,7 +98,8 @@ pub fn load(_config_file: &[u8]) -> Result<(), ()> {
     super::incoming::reset();
     *SESSIONS.lock().unwrap_or_else(|e| e.into_inner()) = Some(NamedMap::new(BUCKETS));
     set_global_auth_flags(g.auth_flags);
-    *CLI.lock().unwrap_or_else(|e| e.into_inner()) = Some(CliGroup::register(&super::cli::commands()));
+    *CLI.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some(CliGroup::register(&super::cli::commands()));
     super::persist::restore_all();
     crate::transport::load()
 }
@@ -122,7 +138,12 @@ pub fn unload() {
 /// (case insensitive; the id is cut to 127 bytes first).
 pub fn find(id: &[u8]) -> Option<Arc<Session>> {
     let id = crate::util::truncate(id, 0x80);
-    SESSIONS.lock().unwrap_or_else(|e| e.into_inner()).as_ref()?.get(&id).cloned()
+    SESSIONS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()?
+        .get(&id)
+        .cloned()
 }
 
 /// `phone_msg_session_find_by_mac` (FUN_00149e30): the first session (in
@@ -260,7 +281,11 @@ pub(crate) fn alloc(n: &NewSession) -> Option<Arc<Session>> {
     };
     let mac = n.mac.filter(|m| !m.is_empty());
     let verified = {
-        let info = ClientInfo { contact: n.contact, mac, user_agent: ua };
+        let info = ClientInfo {
+            contact: n.contact,
+            mac,
+            user_agent: ua,
+        };
         with_trust(|t| match t.and_then(|t| t.ca.as_ref()) {
             Some(store) => dpma_proto::cert::verify_client_chain(store, n.client_cert, &info).ok(),
             None => {
@@ -309,7 +334,9 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         if a.argc() != 5 {
             return CliResult::ShowUsage;
         }
-        let Some(s) = session_arg(a, 3) else { return CliResult::Failure };
+        let Some(s) = session_arg(a, 3) else {
+            return CliResult::Failure;
+        };
         match a.argv[4].as_slice() {
             b"authenticated" => mark_authenticated(&s, None),
             b"inactive" => mark_inactive(&s),
@@ -330,11 +357,19 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         if a.argc() != 5 {
             return CliResult::ShowUsage;
         }
-        let Some(s) = session_arg(a, 3) else { return CliResult::Failure };
-        let Ok(secs) = crate::util::parse::<i64>(&a.argv[4]) else { return CliResult::ShowUsage };
+        let Some(s) = session_arg(a, 3) else {
+            return CliResult::Failure;
+        };
+        let Ok(secs) = crate::util::parse::<i64>(&a.argv[4]) else {
+            return CliResult::ShowUsage;
+        };
         s.lock().last_activity = now() - secs;
         super::incoming::force_prune();
-        a.out(bformat!("Session {} last activity set {} s ago\n", s.id, secs));
+        a.out(bformat!(
+            "Session {} last activity set {} s ago\n",
+            s.id,
+            secs
+        ));
         CliResult::Success
     }
 
@@ -345,9 +380,15 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         if a.argc() != 4 {
             return CliResult::ShowUsage;
         }
-        let Ok(secs) = crate::util::parse::<i64>(&a.argv[3]) else { return CliResult::ShowUsage };
+        let Ok(secs) = crate::util::parse::<i64>(&a.argv[3]) else {
+            return CliResult::ShowUsage;
+        };
         let n = super::incoming::backdate_pending(secs);
-        a.out(bformat!("{} incomplete transaction(s) made {} s older\n", n, secs));
+        a.out(bformat!(
+            "{} incomplete transaction(s) made {} s older\n",
+            n,
+            secs
+        ));
         CliResult::Success
     }
 
@@ -356,14 +397,16 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         if a.argc() < 6 {
             return CliResult::ShowUsage;
         }
-        let Some(s) = session_arg(a, 3) else { return CliResult::Failure };
+        let Some(s) = session_arg(a, 3) else {
+            return CliResult::Failure;
+        };
         let body = match (a.argc(), crate::util::parse::<usize>(&a.argv[5])) {
             (6, Ok(n)) => {
                 let mut b = b"<config>".to_vec();
                 let filler = b"0123456789abcdefghijklmnopqrstuvwxyz";
                 while b.len() + 9 < n {
                     let take = (n - 9 - b.len()).min(filler.len());
-                b.extend_from_slice(&filler[..take]);
+                    b.extend_from_slice(&filler[..take]);
                 }
                 b.extend_from_slice(b"</config>");
                 b

@@ -14,7 +14,8 @@ use std::ptr;
 
 /// `ast_vm_msg_play_cb`: plays `playfile` (a path without extension) of a
 /// message `duration` seconds long on `chan`.
-pub type MsgPlayCb = unsafe extern "C" fn(chan: *mut AstChannel, playfile: *const c_char, duration: c_int);
+pub type MsgPlayCb =
+    unsafe extern "C" fn(chan: *mut AstChannel, playfile: *const c_char, duration: c_int);
 
 /// `enum ast_vm_snapshot_sort_val`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,7 +101,11 @@ pub fn mailbox_snapshot_create(
         let mut folders = Vec::with_capacity(count);
         for i in 0..count {
             let mut list = Vec::new();
-            let mut m = if snapshot.snapshots.is_null() { ptr::null_mut() } else { (*snapshot.snapshots.add(i)).first };
+            let mut m = if snapshot.snapshots.is_null() {
+                ptr::null_mut()
+            } else {
+                (*snapshot.snapshots.add(i)).first
+            };
             while !m.is_null() {
                 let msg = &*m;
                 list.push(MsgSnapshot {
@@ -121,7 +126,10 @@ pub fn mailbox_snapshot_create(
         }
         let total_msg_num = snapshot.total_msg_num;
         sys::ast_vm_mailbox_snapshot_destroy(raw);
-        Some(MailboxSnapshot { total_msg_num, folders })
+        Some(MailboxSnapshot {
+            total_msg_num,
+            folders,
+        })
     }
 }
 
@@ -135,7 +143,10 @@ impl CArray {
     fn new<T: AsRef<[u8]>>(items: &[T]) -> CArray {
         let owned: Vec<CString> = items.iter().map(|s| c_bytes(s.as_ref())).collect();
         let ptrs = owned.iter().map(|c| c.as_ptr()).collect();
-        CArray { _owned: owned, ptrs }
+        CArray {
+            _owned: owned,
+            ptrs,
+        }
     }
 }
 
@@ -165,10 +176,23 @@ pub fn msg_move<T: AsRef<[u8]>>(
 
 /// `ast_vm_msg_remove`: remove `ids` from `folder`.  Returns the
 /// provider's result (nonzero on failure).
-pub fn msg_remove<T: AsRef<[u8]>>(mailbox: &[u8], context: Option<&[u8]>, folder: &[u8], ids: &[T]) -> i32 {
+pub fn msg_remove<T: AsRef<[u8]>>(
+    mailbox: &[u8],
+    context: Option<&[u8]>,
+    folder: &[u8],
+    ids: &[T],
+) -> i32 {
     let (mailbox, context, folder) = (c_bytes(mailbox), opt_c(context), c_bytes(folder));
     let ids = CArray::new(ids);
-    unsafe { sys::ast_vm_msg_remove(mailbox.as_ptr(), opt_ptr(&context), ids.ptrs.len(), folder.as_ptr(), ids.ptrs.as_ptr() as *mut *const c_char) }
+    unsafe {
+        sys::ast_vm_msg_remove(
+            mailbox.as_ptr(),
+            opt_ptr(&context),
+            ids.ptrs.len(),
+            folder.as_ptr(),
+            ids.ptrs.as_ptr() as *mut *const c_char,
+        )
+    }
 }
 
 /// `ast_vm_msg_forward`: copy `ids` from a folder of one mailbox to a
@@ -185,7 +209,11 @@ pub fn msg_forward<T: AsRef<[u8]>>(
     ids: &[T],
     delete_old: bool,
 ) -> i32 {
-    let (fm, fc, ff) = (c_bytes(from_mailbox), opt_c(from_context), c_bytes(from_folder));
+    let (fm, fc, ff) = (
+        c_bytes(from_mailbox),
+        opt_c(from_context),
+        c_bytes(from_folder),
+    );
     let (tm, tc, tf) = (c_bytes(to_mailbox), opt_c(to_context), c_bytes(to_folder));
     let ids = CArray::new(ids);
     unsafe {
@@ -230,5 +258,12 @@ pub unsafe fn msg_play(
 ) -> i32 {
     let (mailbox, context) = (c_bytes(mailbox), opt_c(context));
     let (folder, msg_num) = (c_bytes(folder), c_bytes(msg_num));
-    sys::ast_vm_msg_play(chan, mailbox.as_ptr(), opt_ptr(&context), folder.as_ptr(), msg_num.as_ptr(), Some(cb))
+    sys::ast_vm_msg_play(
+        chan,
+        mailbox.as_ptr(),
+        opt_ptr(&context),
+        folder.as_ptr(),
+        msg_num.as_ptr(),
+        Some(cb),
+    )
 }

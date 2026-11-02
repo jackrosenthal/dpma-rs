@@ -86,7 +86,11 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 /// restricted, else the number at `domain`.
 fn uri_of(party: &Party, domain: &CStr) -> Vec<u8> {
     let (user, domain): (CString, &CStr) = if party.number_restricted {
-        let user = if party.number_valid { c"anonymous" } else { c"" };
+        let user = if party.number_valid {
+            c"anonymous"
+        } else {
+            c""
+        };
         (user.to_owned(), c"anonymous.invalid")
     } else {
         (s_cor(party.number_valid, &party.number), domain)
@@ -113,7 +117,10 @@ fn display_name_of(party: &Party) -> CString {
 
 /// The first child of `parent` called `name`, or NULL.
 unsafe fn find_node(parent: *const sys::pj_xml_node, name: &CStr) -> *mut sys::pj_xml_node {
-    let s = sys::pj_str_t { ptr: name.as_ptr() as *mut c_char, slen: name.to_bytes().len() as sys::pj_ssize_t };
+    let s = sys::pj_str_t {
+        ptr: name.as_ptr() as *mut c_char,
+        slen: name.to_bytes().len() as sys::pj_ssize_t,
+    };
     sys::pj_xml_find_node(parent, &s)
 }
 
@@ -121,7 +128,10 @@ unsafe fn find_node(parent: *const sys::pj_xml_node, name: &CStr) -> *mut sys::p
 /// (RINGING or RINGINUSE), the oldest one, with a reference; NULL if none.
 unsafe fn find_ringing_channel(device_state_info: *mut ao2::Container) -> *mut AstChannel {
     let mut found: *mut AstChannel = null_mut();
-    let mut tv = sys::timeval { tv_sec: 0, tv_usec: 0 };
+    let mut tv = sys::timeval {
+        tv_sec: 0,
+        tv_usec: 0,
+    };
     let mut it = ao2::Iter::new(device_state_info);
     loop {
         let device_state = it.next_ref() as *mut sys::ast_device_state_info;
@@ -130,11 +140,15 @@ unsafe fn find_ringing_channel(device_state_info: *mut ao2::Container) -> *mut A
         }
         let chan = (*device_state).causing_channel;
         let state = (*device_state).device_state;
-        if !chan.is_null() && (state == sys::AST_DEVICE_RINGING || state == sys::AST_DEVICE_RINGINUSE) {
+        if !chan.is_null()
+            && (state == sys::AST_DEVICE_RINGING || state == sys::AST_DEVICE_RINGINUSE)
+        {
             channel::lock(chan);
             let created = channel::creationtime(chan);
             // ast_tvzero(tv) || ast_tvcmp(created, tv) < 0
-            if (tv.tv_sec == 0 && tv.tv_usec == 0) || (created.tv_sec, created.tv_usec) < (tv.tv_sec, tv.tv_usec) {
+            if (tv.tv_sec == 0 && tv.tv_usec == 0)
+                || (created.tv_sec, created.tv_usec) < (tv.tv_sec, tv.tv_usec)
+            {
                 ao2::cleanup(found);
                 found = chan;
                 tv = created;
@@ -165,29 +179,62 @@ unsafe fn setup_elements(
 
     let mut node = find_node(dialog, tag);
     if node.is_null() {
-        debug!(3, FUNC, "Exten: {} {} Local: {}  Created {} node\n", exten, statestring, local, t);
+        debug!(
+            3,
+            FUNC, "Exten: {} {} Local: {}  Created {} node\n", exten, statestring, local, t
+        );
         node = sys::ast_sip_presence_xml_create_node(st.pool, dialog, tag.as_ptr());
     } else {
-        debug!(3, FUNC, "Exten: {} {} Local: {}  Using existing {} node\n", exten, statestring, local, t);
+        debug!(
+            3,
+            FUNC, "Exten: {} {} Local: {}  Using existing {} node\n", exten, statestring, local, t
+        );
     }
 
     if find_node(node, c"target").is_null() {
-        debug!(3, FUNC, "Exten: {} {} Local: {}  Created {} target node\n", exten, statestring, local, t);
+        debug!(
+            3,
+            FUNC, "Exten: {} {} Local: {}  Created {} target node\n", exten, statestring, local, t
+        );
         let target = sys::ast_sip_presence_xml_create_node(st.pool, node, c"target".as_ptr());
         sys::ast_sip_presence_xml_create_attr(st.pool, target, c"uri".as_ptr(), uri.as_ptr());
     } else {
-        debug!(3, FUNC, "Exten: {} {} Local: {}  Skipping due to existing {} target node\n", exten, statestring, local, t);
+        debug!(
+            3,
+            FUNC,
+            "Exten: {} {} Local: {}  Skipping due to existing {} target node\n",
+            exten,
+            statestring,
+            local,
+            t
+        );
     }
 
     if find_node(node, c"identity").is_null() {
-        debug!(3, FUNC, "Exten: {} {} Local: {}  Created {} id node\n", exten, statestring, local, t);
+        debug!(
+            3,
+            FUNC, "Exten: {} {} Local: {}  Created {} id node\n", exten, statestring, local, t
+        );
         let identity = sys::ast_sip_presence_xml_create_node(st.pool, node, c"identity".as_ptr());
         sys::pj_strdup2(st.pool, &mut (*identity).content, uri.as_ptr());
         if !name.is_empty() {
-            sys::ast_sip_presence_xml_create_attr(st.pool, identity, c"display".as_ptr(), name.as_ptr());
+            sys::ast_sip_presence_xml_create_attr(
+                st.pool,
+                identity,
+                c"display".as_ptr(),
+                name.as_ptr(),
+            );
         }
     } else {
-        debug!(3, FUNC, "Exten: {} {} Local: {}  Skipping due to existing {} id node\n", exten, statestring, local, t);
+        debug!(
+            3,
+            FUNC,
+            "Exten: {} {} Local: {}  Skipping due to existing {} id node\n",
+            exten,
+            statestring,
+            local,
+            t
+        );
     }
 }
 
@@ -204,16 +251,30 @@ unsafe fn supplement(body: *mut sys::pj_xml_node, st: &sys::ast_sip_exten_state_
         !ua.is_empty() && (contains(ua, b"digium") || contains(ua, b"sangoma"))
     };
     if !is_phone {
-        debug!(2, FUNC, "Exten: {} Local: {}  Remote: {} Bail.  Not a digium or sangoma phone\n", exten, local, remote);
+        debug!(
+            2,
+            FUNC,
+            "Exten: {} Local: {}  Remote: {} Bail.  Not a digium or sangoma phone\n",
+            exten,
+            local,
+            remote
+        );
         return 0;
     }
 
     // Deviation: the official DPMA iterates the device state container
     // without checking it, which fails when there is none; that is "no
     // channel" here.
-    let callee = if st.device_state_info.is_null() { null_mut() } else { find_ringing_channel(st.device_state_info) };
+    let callee = if st.device_state_info.is_null() {
+        null_mut()
+    } else {
+        find_ringing_channel(st.device_state_info)
+    };
     if callee.is_null() {
-        debug!(2, FUNC, "Exten: {} Local: {}  Remote: {} Bail.  No Channel\n", exten, local, remote);
+        debug!(
+            2,
+            FUNC, "Exten: {} Local: {}  Remote: {} Bail.  No Channel\n", exten, local, remote
+        );
         return 0;
     }
 
@@ -232,8 +293,14 @@ unsafe fn supplement(body: *mut sys::pj_xml_node, st: &sys::ast_sip_exten_state_
     let state_str = text(statestring);
 
     // The domain of the local URI.
-    let mut local_copy = CStr::from_ptr(st.local.as_ptr()).to_bytes_with_nul().to_vec();
-    let stripped = sys::ast_strip_quoted(local_copy.as_mut_ptr() as *mut c_char, c"<".as_ptr(), c">".as_ptr());
+    let mut local_copy = CStr::from_ptr(st.local.as_ptr())
+        .to_bytes_with_nul()
+        .to_vec();
+    let stripped = sys::ast_strip_quoted(
+        local_copy.as_mut_ptr() as *mut c_char,
+        c"<".as_ptr(),
+        c">".as_ptr(),
+    );
     let mut sanitized = vec![0 as c_char; MAX_URL_SIZE];
     sys::ast_sip_sanitize_xml(stripped, sanitized.as_mut_ptr(), MAX_URL_SIZE);
     let sanitized = CStr::from_ptr(sanitized.as_ptr()).to_owned();
@@ -253,18 +320,48 @@ unsafe fn supplement(body: *mut sys::pj_xml_node, st: &sys::ast_sip_exten_state_
     };
     let domain = CString::new(&sanitized.to_bytes()[at + 1..]).unwrap_or_default();
 
-    debug!(1, FUNC, "Exten: {} {} Local: {}  Remote: {}  Channel: {}\n", exten, state_str, local, remote, channel::name(callee));
+    debug!(
+        1,
+        FUNC,
+        "Exten: {} {} Local: {}  Remote: {}  Channel: {}\n",
+        exten,
+        state_str,
+        local,
+        remote,
+        channel::name(callee)
+    );
 
     let mut dialog = find_node(body, c"dialog");
     if dialog.is_null() {
-        debug!(1, FUNC, "Exten: {} {} Local: {}  Remote: {}.  Created dialog node\n", exten, state_str, local, remote);
+        debug!(
+            1,
+            FUNC,
+            "Exten: {} {} Local: {}  Remote: {}.  Created dialog node\n",
+            exten,
+            state_str,
+            local,
+            remote
+        );
         dialog = sys::ast_sip_presence_xml_create_node(st.pool, body, c"dialog".as_ptr());
         sys::ast_sip_presence_xml_create_attr(st.pool, dialog, c"id".as_ptr(), st.exten);
         if !statestring.is_null() && CStr::from_ptr(statestring) == c"early" {
-            sys::ast_sip_presence_xml_create_attr(st.pool, dialog, c"direction".as_ptr(), c"recipient".as_ptr());
+            sys::ast_sip_presence_xml_create_attr(
+                st.pool,
+                dialog,
+                c"direction".as_ptr(),
+                c"recipient".as_ptr(),
+            );
         }
     } else {
-        debug!(2, FUNC, "Exten: {} {} Local: {}  Remote: {}.  Existing dialog node\n", exten, state_str, local, remote);
+        debug!(
+            2,
+            FUNC,
+            "Exten: {} {} Local: {}  Remote: {}.  Existing dialog node\n",
+            exten,
+            state_str,
+            local,
+            remote
+        );
     }
 
     channel::lock(callee);
@@ -302,7 +399,10 @@ unsafe extern "C" fn supplement_body(body: *mut c_void, data: *mut c_void) -> c_
             return 0;
         }
         // SAFETY: the types res_pjsip_pubsub passes for dialog-info+xml.
-        supplement(body.cast(), &*(data as *const sys::ast_sip_exten_state_data))
+        supplement(
+            body.cast(),
+            &*(data as *const sys::ast_sip_exten_state_data),
+        )
     })
 }
 
@@ -311,7 +411,11 @@ unsafe extern "C" fn supplement_body(body: *mut c_void, data: *mut c_void) -> c_
 pub(super) fn load() -> sys::ast_module_load_result {
     // SAFETY: a static supplement, unregistered by `unload`.
     if unsafe { sys::ast_sip_pubsub_register_body_supplement(SUPPLEMENT.get()) } != 0 {
-        log!(LOG_WARNING, "load_module", "Refusing to load.  Unable to register body supplement.\n");
+        log!(
+            LOG_WARNING,
+            "load_module",
+            "Refusing to load.  Unable to register body supplement.\n"
+        );
         return sys::AST_MODULE_LOAD_DECLINE;
     }
     sys::AST_MODULE_LOAD_SUCCESS

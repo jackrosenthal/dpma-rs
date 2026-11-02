@@ -16,7 +16,15 @@ pub fn context_create(name: impl AsRef<[u8]>, registrar: &str) -> bool {
     let n = cstr(name);
     let r = cstr(registrar);
     // SAFETY: valid C strings (the context copies its registrar).
-    unsafe { !sys::ast_context_find_or_create(std::ptr::null_mut(), std::ptr::null_mut(), n.as_ptr(), r.as_ptr()).is_null() }
+    unsafe {
+        !sys::ast_context_find_or_create(
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            n.as_ptr(),
+            r.as_ptr(),
+        )
+        .is_null()
+    }
 }
 
 /// Remove everything `registrar` added to the context `name`.
@@ -77,7 +85,12 @@ pub fn add_extension(
     }
 }
 
-pub fn remove_extension(context: impl AsRef<[u8]>, exten: impl AsRef<[u8]>, priority: i32, registrar: &str) -> bool {
+pub fn remove_extension(
+    context: impl AsRef<[u8]>,
+    exten: impl AsRef<[u8]>,
+    priority: i32,
+    registrar: &str,
+) -> bool {
     let c = cstr(context);
     let e = cstr(exten);
     let r = cstr(registrar);

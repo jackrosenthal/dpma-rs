@@ -19,22 +19,38 @@ struct Entry {
 }
 
 const fn json(name: &'static str, f: JsonMethod) -> Entry {
-    Entry { name, xml: None, json: Some(f) }
+    Entry {
+        name,
+        xml: None,
+        json: Some(f),
+    }
 }
 
 /// The official DPMA's table, in order.
 const TABLE: &[Entry] = &[
     json("switchvox.users.presence.getInfo", presence::get_info),
     json("switchvox.users.presence.update", presence::update),
-    json("switchvox.users.presence.options.getList", presence::options_get_list),
-    json("switchvox.users.parkingLots.getList", calls::parking_lots_get_list),
+    json(
+        "switchvox.users.presence.options.getList",
+        presence::options_get_list,
+    ),
+    json(
+        "switchvox.users.parkingLots.getList",
+        calls::parking_lots_get_list,
+    ),
     json("switchvox.users.voicemail.getList", voicemail::get_list),
-    json("switchvox.users.voicemail.getFolderList", voicemail::get_folder_list),
+    json(
+        "switchvox.users.voicemail.getFolderList",
+        voicemail::get_folder_list,
+    ),
     json("switchvox.users.voicemail.move", voicemail::move_message),
     json("switchvox.users.voicemail.remove", voicemail::remove),
     json("switchvox.users.voicemail.forward", voicemail::forward),
     json("switchvox.users.voicemail.markRead", voicemail::mark_read),
-    json("switchvox.users.voicemail.markUnread", voicemail::mark_unread),
+    json(
+        "switchvox.users.voicemail.markUnread",
+        voicemail::mark_unread,
+    ),
     json("switchvox.users.voicemail.play", voicemail::play),
     Entry {
         name: "switchvox.users.currentCalls.startRecording",
@@ -47,12 +63,18 @@ const TABLE: &[Entry] = &[
         json: Some(calls::stop_recording_json),
     },
     json("switchvox.users.callQueues.getList", calls::queues_get_list),
-    json("switchvox.users.callQueues.getTodaysStatus", calls::queues_get_todays_status),
+    json(
+        "switchvox.users.callQueues.getTodaysStatus",
+        calls::queues_get_todays_status,
+    ),
     json("switchvox.users.callQueues.login", calls::queue_login),
     json("switchvox.users.callQueues.logout", calls::queue_logout),
     json("switchvox.users.callQueues.pause", calls::queue_pause),
     json("switchvox.users.callQueues.resume", calls::queue_resume),
-    json("switchvox.users.phonebooks.entries.add", calls::phonebook_entries_add),
+    json(
+        "switchvox.users.phonebooks.entries.add",
+        calls::phonebook_entries_add,
+    ),
     json("test.dpma.api.echo", calls::echo),
 ];
 

@@ -17,7 +17,8 @@ fn s(v: &Value) -> &str {
 
 #[test]
 fn simulator_vectors() {
-    let text = std::fs::read_to_string(SIM_VECTORS).unwrap_or_else(|e| panic!("{SIM_VECTORS}: {e}"));
+    let text =
+        std::fs::read_to_string(SIM_VECTORS).unwrap_or_else(|e| panic!("{SIM_VECTORS}: {e}"));
     let v: Value = serde_json::from_str(&text).unwrap();
     let password = hex::decode(s(&v["password_hex"])).unwrap();
     let salt = crypto::salt_from_hex(s(&v["salt_hex"])).unwrap();
@@ -33,9 +34,13 @@ fn simulator_vectors() {
         crypto::decrypt_body(&password, s(&v["salt_hex"]), s(&v["cipher_b64"])).unwrap(),
         s(&v["plain"]).as_bytes()
     );
-    assert_eq!(crypto::encrypt_field(&password, &salt, b"1234").unwrap(), s(&v["field_1234_b64"]));
     assert_eq!(
-        crypto::decrypt_header_field(&password, s(&v["salt_hex"]), s(&v["field_1234_b64"])).unwrap(),
+        crypto::encrypt_field(&password, &salt, b"1234").unwrap(),
+        s(&v["field_1234_b64"])
+    );
+    assert_eq!(
+        crypto::decrypt_header_field(&password, s(&v["salt_hex"]), s(&v["field_1234_b64"]))
+            .unwrap(),
         b"1234"
     );
 
@@ -53,9 +58,22 @@ fn simulator_vectors() {
     for ((f, c), w) in frames.iter().zip(&chunks).zip(&wire) {
         assert_eq!(s(&f["body"]), w);
         let h = &f["headers"];
-        assert_eq!(s(&h["X-Digium-AppServer-Message-Salt"]), crypto::salt_to_hex(&salt));
-        assert_eq!(h["X-Digium-AppServer-Message-Sequence"].as_str().map(str::to_string), c.sequence.map(|n| n.to_string()));
-        assert_eq!(h.get("X-Digium-AppServer-Message-Finished").and_then(Value::as_str) == Some("1"), c.finished);
+        assert_eq!(
+            s(&h["X-Digium-AppServer-Message-Salt"]),
+            crypto::salt_to_hex(&salt)
+        );
+        assert_eq!(
+            h["X-Digium-AppServer-Message-Sequence"]
+                .as_str()
+                .map(str::to_string),
+            c.sequence.map(|n| n.to_string())
+        );
+        assert_eq!(
+            h.get("X-Digium-AppServer-Message-Finished")
+                .and_then(Value::as_str)
+                == Some("1"),
+            c.finished
+        );
     }
     let bodies: Vec<&[u8]> = frames.iter().map(|f| s(&f["body"]).as_bytes()).collect();
     let plain = framing::decrypt_chunks(&bodies, &password, s(&v["salt_hex"])).unwrap();

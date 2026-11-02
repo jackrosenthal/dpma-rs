@@ -23,14 +23,14 @@ const fn oid(s: &str) -> ObjectIdentifier {
 
 /// The extensions a certificate may mark critical.
 const HANDLED: [ObjectIdentifier; 9] = [
-    oid("2.5.29.19"), // basicConstraints
-    oid("2.5.29.15"), // keyUsage
-    oid("2.5.29.37"), // extendedKeyUsage
-    oid("2.5.29.17"), // subjectAltName
-    oid("2.5.29.32"), // certificatePolicies
-    oid("2.5.29.33"), // policyMappings
-    oid("2.5.29.36"), // policyConstraints
-    oid("2.5.29.54"), // inhibitAnyPolicy
+    oid("2.5.29.19"),             // basicConstraints
+    oid("2.5.29.15"),             // keyUsage
+    oid("2.5.29.37"),             // extendedKeyUsage
+    oid("2.5.29.17"),             // subjectAltName
+    oid("2.5.29.32"),             // certificatePolicies
+    oid("2.5.29.33"),             // policyMappings
+    oid("2.5.29.36"),             // policyConstraints
+    oid("2.5.29.54"),             // inhibitAnyPolicy
     oid("2.16.840.1.113730.1.1"), // Netscape certificate type
 ];
 
@@ -42,7 +42,11 @@ const MIN_RSA_BITS: usize = 512;
 
 /// Verify `leaf` against the store, with `untrusted` the certificates the
 /// phone sent (which may include `leaf`).  Err holds the error text.
-pub(crate) fn verify(store: &[Certificate], leaf: &Certificate, untrusted: &[Certificate]) -> Result<(), &'static str> {
+pub(crate) fn verify(
+    store: &[Certificate],
+    leaf: &Certificate,
+    untrusted: &[Certificate],
+) -> Result<(), &'static str> {
     let chain = build_chain(store, leaf, untrusted)?;
     check_extensions(&chain)?;
     for pair in chain.windows(2) {
@@ -68,11 +72,17 @@ fn build_chain<'a>(
             if in_store(x) {
                 return Ok(chain);
             }
-            return Err(if chain.len() == 1 { DEPTH_ZERO_SELF_SIGNED_CERT } else { SELF_SIGNED_CERT_IN_CHAIN });
+            return Err(if chain.len() == 1 {
+                DEPTH_ZERO_SELF_SIGNED_CERT
+            } else {
+                SELF_SIGNED_CERT_IN_CHAIN
+            });
         }
         let issues_x = |c: &&Certificate| {
-            names_match(&c.cert.tbs_certificate.subject, &x.cert.tbs_certificate.issuer)
-                && !chain.iter().any(|d| d.der == c.der)
+            names_match(
+                &c.cert.tbs_certificate.subject,
+                &x.cert.tbs_certificate.issuer,
+            ) && !chain.iter().any(|d| d.der == c.der)
         };
         let issuer = match store.iter().find(issues_x) {
             Some(i) => {
@@ -95,7 +105,11 @@ fn build_chain<'a>(
 fn check_extensions(chain: &[&Certificate]) -> Result<(), &'static str> {
     for (i, c) in chain.iter().enumerate() {
         let t = &c.cert.tbs_certificate;
-        if t.extensions.iter().flatten().any(|e| e.critical && !HANDLED.contains(&e.extn_id)) {
+        if t.extensions
+            .iter()
+            .flatten()
+            .any(|e| e.critical && !HANDLED.contains(&e.extn_id))
+        {
             return Err(UNHANDLED_CRITICAL_EXTENSION);
         }
         if i == 0 {
@@ -111,7 +125,11 @@ fn check_extensions(chain: &[&Certificate]) -> Result<(), &'static str> {
             return Err(KEYUSAGE_NO_CERTSIGN);
         }
         // The intermediates below chain[i] are chain[1..i].
-        if let Some(max) = c.basic_constraints.as_ref().and_then(|bc| bc.path_len_constraint) {
+        if let Some(max) = c
+            .basic_constraints
+            .as_ref()
+            .and_then(|bc| bc.path_len_constraint)
+        {
             if i - 1 > usize::from(max) {
                 return Err(PATH_LENGTH_EXCEEDED);
             }
@@ -122,19 +140,34 @@ fn check_extensions(chain: &[&Certificate]) -> Result<(), &'static str> {
 
 /// Is `c` signed with `issuer`'s key?
 fn signed_by(c: &Certificate, issuer: &Certificate) -> bool {
-    let Some(PublicKey::Rsa(k)) = &issuer.key else { return false };
-    let Ok(key) = RsaPublicKey::new(BigUint::from_bytes_be(&k.n()), BigUint::from_bytes_be(&k.e())) else {
+    let Some(PublicKey::Rsa(k)) = &issuer.key else {
+        return false;
+    };
+    let Ok(key) = RsaPublicKey::new(
+        BigUint::from_bytes_be(&k.n()),
+        BigUint::from_bytes_be(&k.e()),
+    ) else {
         return false;
     };
     let alg = &c.cert.signature_algorithm;
-    let Some(sig) = c.cert.signature.as_bytes() else { return false };
+    let Some(sig) = c.cert.signature.as_bytes() else {
+        return false;
+    };
     if k.bits() < MIN_RSA_BITS || *alg != c.cert.tbs_certificate.signature {
         return false;
     }
     let verified = if alg.oid == SHA1_WITH_RSA {
-        key.verify(Pkcs1v15Sign::new::<sha1::Sha1>(), &sha1::Sha1::digest(&c.tbs), sig)
+        key.verify(
+            Pkcs1v15Sign::new::<sha1::Sha1>(),
+            &sha1::Sha1::digest(&c.tbs),
+            sig,
+        )
     } else if alg.oid == SHA256_WITH_RSA {
-        key.verify(Pkcs1v15Sign::new::<sha2::Sha256>(), &sha2::Sha256::digest(&c.tbs), sig)
+        key.verify(
+            Pkcs1v15Sign::new::<sha2::Sha256>(),
+            &sha2::Sha256::digest(&c.tbs),
+            sig,
+        )
     } else {
         return false;
     };

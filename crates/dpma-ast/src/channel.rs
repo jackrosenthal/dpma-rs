@@ -15,7 +15,14 @@ use std::os::raw::c_int;
 /// `chan` must be a live channel.
 pub unsafe fn lock(chan: *mut AstChannel) {
     let (file, line, func) = here!("channel::lock");
-    sys::__ao2_lock(chan.cast(), sys::AO2_LOCK_REQ_MUTEX, file, func, line, c"chan".as_ptr());
+    sys::__ao2_lock(
+        chan.cast(),
+        sys::AO2_LOCK_REQ_MUTEX,
+        file,
+        func,
+        line,
+        c"chan".as_ptr(),
+    );
 }
 
 /// `ast_channel_unlock(chan)`.
@@ -183,7 +190,9 @@ impl Channel {
                 let matches = !tech.is_null()
                     && (*tech).get_pvt_uniqueid.is_some_and(|f| {
                         let id = f(chan);
-                        !id.is_null() && std::ffi::CStr::from_ptr(id).to_bytes() == crate::dpma_bytes::c_view(callid)
+                        !id.is_null()
+                            && std::ffi::CStr::from_ptr(id).to_bytes()
+                                == crate::dpma_bytes::c_view(callid)
                     });
                 unlock(chan);
                 if matches {
@@ -242,7 +251,10 @@ pub fn queue_member_call_created(interface: &[u8]) -> Option<i64> {
                 break;
             }
             lock(chan);
-            let member = bytes_or_empty(sys::pbx_builtin_getvar_helper(chan, c"MEMBERINTERFACE".as_ptr()));
+            let member = bytes_or_empty(sys::pbx_builtin_getvar_helper(
+                chan,
+                c"MEMBERINTERFACE".as_ptr(),
+            ));
             if crate::dpma_bytes::eq_ic(member, interface) {
                 let position = sys::pbx_builtin_getvar_helper(chan, c"QUEUEPOSITION".as_ptr());
                 if crate::util::strlen_zero(position) {

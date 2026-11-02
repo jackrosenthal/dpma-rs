@@ -3,8 +3,8 @@
 
 use super::now;
 use crate::ami::AmiAction;
-use dpma_ast::{bformat, bwrite};
 use dpma_ast::manager::{self, Request};
+use dpma_ast::{bformat, bwrite};
 
 fn one_zero(b: bool) -> &'static str {
     if b {
@@ -22,15 +22,27 @@ fn user_details(mac: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let g = crate::users::read();
-    let p = g.as_ref()?.phones.values().find(|p| p.last_mac.eq_ignore_ascii_case(mac))?;
-    Some(bformat!("Username: {}\r\nTokenURI: {}\r\n", p.name, p.last_uri))
+    let p = g
+        .as_ref()?
+        .phones
+        .values()
+        .find(|p| p.last_mac.eq_ignore_ascii_case(mac))?;
+    Some(bformat!(
+        "Username: {}\r\nTokenURI: {}\r\n",
+        p.name,
+        p.last_uri
+    ))
 }
 
 /// `action_dpma_show_phones`: one `DPMAShowPhonesList` event per session.
 fn action_show_phones(r: &Request) -> i32 {
     let id = r.header("ActionID");
     // snprintf into an 80-byte buffer.
-    let idtext = if id.is_empty() { Vec::new() } else { crate::util::truncate(&bformat!("ActionID: {}\r\n", id), 0x50) };
+    let idtext = if id.is_empty() {
+        Vec::new()
+    } else {
+        crate::util::truncate(&bformat!("ActionID: {}\r\n", id), 0x50)
+    };
     r.send_listack("DPMA phone list will follow", "start");
     let mut count = 0;
     for s in super::store::all() {
@@ -74,5 +86,9 @@ fn action_show_phones(r: &Request) -> i32 {
 
 /// Actions contributed to the AMI registration (see `ami::register_actions`).
 pub fn actions() -> Vec<AmiAction> {
-    vec![AmiAction { name: "DPMAShowPhones", authority: manager::AUTH_CALL, handler: action_show_phones }]
+    vec![AmiAction {
+        name: "DPMAShowPhones",
+        authority: manager::AUTH_CALL,
+        handler: action_show_phones,
+    }]
 }

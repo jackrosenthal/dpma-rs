@@ -15,7 +15,12 @@ pub const INVALID: i32 = 7;
 /// Asterisk's name for a presence state (from its static table).
 pub fn state2str(state: i32) -> Vec<u8> {
     // SAFETY: returns a static string.
-    unsafe { from_ptr(sys::ast_presence_state2str(state as sys::ast_presence_state)).unwrap_or_default() }
+    unsafe {
+        from_ptr(sys::ast_presence_state2str(
+            state as sys::ast_presence_state,
+        ))
+        .unwrap_or_default()
+    }
 }
 
 /// Asterisk's presence state for a name (INVALID when unknown).

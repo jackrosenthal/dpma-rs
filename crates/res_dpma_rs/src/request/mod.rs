@@ -110,7 +110,12 @@ pub fn register_handler(
     requires_session: bool,
     handler: Handler,
 ) -> Result<(), ()> {
-    HANDLERS.write().unwrap().push(Registration { request_type, response_type, requires_session, handler });
+    HANDLERS.write().unwrap().push(Registration {
+        request_type,
+        response_type,
+        requires_session,
+        handler,
+    });
     Ok(())
 }
 
@@ -126,7 +131,11 @@ pub fn handle_incoming(tx: Arc<Transaction>) -> Result<(), ()> {
         .read()
         .unwrap()
         .iter()
-        .find(|r| r.request_type.as_bytes().eq_ignore_ascii_case(&tx.request_type))
+        .find(|r| {
+            r.request_type
+                .as_bytes()
+                .eq_ignore_ascii_case(&tx.request_type)
+        })
         .copied();
     let Some(reg) = reg else {
         dpma_log!("Received request with unknown type '{}'", tx.request_type);
@@ -155,13 +164,20 @@ pub fn handle_incoming(tx: Arc<Transaction>) -> Result<(), ()> {
     let task: dpma_ast::threadpool::Task = Box::new(move || {
         handler(tx);
     });
-    let origin = Origin { file: c"dpma_request.c", line: 0x19, function: c"request_task_push" };
+    let origin = Origin {
+        file: c"dpma_request.c",
+        line: 0x19,
+        function: c"request_task_push",
+    };
     let pushed = match REQUEST_POOL.read().unwrap().as_ref() {
         Some(pool) => pool.push(task, origin).is_ok(),
         None => false,
     };
     if !pushed {
-        ast_log!(LOG_ERROR, "DPMA: Failed to push task to request threadpool.");
+        ast_log!(
+            LOG_ERROR,
+            "DPMA: Failed to push task to request threadpool."
+        );
         return Err(());
     }
     Ok(())
@@ -171,13 +187,20 @@ pub fn handle_incoming(tx: Arc<Transaction>) -> Result<(), ()> {
 /// `DPMA_extended` pool (long-running work such as dialing a phone).  On
 /// failure the task is dropped unrun.
 pub fn push_extended(task: Box<dyn FnOnce() + Send + 'static>) -> Result<(), ()> {
-    let origin = Origin { file: c"dpma_request.c", line: 0x29, function: c"request_extended_task_push" };
+    let origin = Origin {
+        file: c"dpma_request.c",
+        line: 0x29,
+        function: c"request_extended_task_push",
+    };
     let pushed = match EXTENDED_POOL.read().unwrap().as_ref() {
         Some(pool) => pool.push(task, origin).is_ok(),
         None => false,
     };
     if !pushed {
-        ast_log!(LOG_ERROR, "DPMA: Failed to push task to extended threadpool.");
+        ast_log!(
+            LOG_ERROR,
+            "DPMA: Failed to push task to extended threadpool."
+        );
         return Err(());
     }
     Ok(())
@@ -227,11 +250,21 @@ pub fn error_response_xml(out: &mut Vec<u8>, method: impl AsRef<[u8]>, code: i32
 /// As with the official DPMA's `ast_json_pack`, a method or detail that is
 /// not valid UTF-8 fails: the official DPMA then logs "Unable to generate
 /// JSON for error response" and leaves `out` as it was.
-pub fn error_response_json(out: &mut Vec<u8>, method: impl AsRef<[u8]>, code: i32, detail: impl AsRef<[u8]>) {
-    let message = bformat!("{}: {} ", dpma_proto::errors::request_error_text(code), detail.as_ref());
-    let (Some(method), Some(message)) =
-        (dpma_proto::json::utf8(method_or_na(method.as_ref())), dpma_proto::json::utf8(&message))
-    else {
+pub fn error_response_json(
+    out: &mut Vec<u8>,
+    method: impl AsRef<[u8]>,
+    code: i32,
+    detail: impl AsRef<[u8]>,
+) {
+    let message = bformat!(
+        "{}: {} ",
+        dpma_proto::errors::request_error_text(code),
+        detail.as_ref()
+    );
+    let (Some(method), Some(message)) = (
+        dpma_proto::json::utf8(method_or_na(method.as_ref())),
+        dpma_proto::json::utf8(&message),
+    ) else {
         dpma_log!("Unable to generate JSON for error response");
         return;
     };
@@ -255,7 +288,11 @@ mod devtest {
     static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 
     /// A synthetic transaction as session::next_transaction would build it.
-    pub fn synthetic(request_type: &[u8], response_type: &[u8], session: Option<&[u8]>) -> Transaction {
+    pub fn synthetic(
+        request_type: &[u8],
+        response_type: &[u8],
+        session: Option<&[u8]>,
+    ) -> Transaction {
         let n = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let id = bformat!("dpmadev-{}", n);
         let mac = b"000fd3dead01".to_vec();
@@ -287,7 +324,11 @@ mod devtest {
             return CliResult::ShowUsage;
         }
         let request_type = arg_or_empty(&a.argv[2]);
-        let session = a.argv.get(3).map(|s| arg_or_empty(s)).filter(|s| !s.is_empty());
+        let session = a
+            .argv
+            .get(3)
+            .map(|s| arg_or_empty(s))
+            .filter(|s| !s.is_empty());
         let response_type = a.argv.get(4).map(|s| arg_or_empty(s)).unwrap_or(b"");
         let tx = Arc::new(synthetic(request_type, response_type, session));
         let probe = tx.clone();
@@ -311,7 +352,11 @@ mod devtest {
             }
             a.out(bformat!(
                 "Handler {} after {} ms\n",
-                if Arc::strong_count(&probe) > 1 { "still running" } else { "finished" },
+                if Arc::strong_count(&probe) > 1 {
+                    "still running"
+                } else {
+                    "finished"
+                },
                 start.elapsed().as_millis()
             ));
         }
@@ -334,7 +379,10 @@ mod devtest {
             return CliResult::ShowUsage;
         }
         let h = HANDLERS.read().unwrap();
-        a.out(format!("{:<18} {:<18} {}\n", "Request", "Response", "Session"));
+        a.out(format!(
+            "{:<18} {:<18} {}\n",
+            "Request", "Response", "Session"
+        ));
         for r in h.iter() {
             a.out(format!(
                 "{:<18} {:<18} {}\n",
@@ -346,7 +394,11 @@ mod devtest {
         a.out(format!(
             "{} handlers; pools {}\n",
             h.len(),
-            if is_loaded() { "running" } else { "not created" }
+            if is_loaded() {
+                "running"
+            } else {
+                "not created"
+            }
         ));
         CliResult::Success
     }
@@ -381,10 +433,16 @@ mod devtest {
             let reference = jansson_error_doc(
                 method_or_na(method),
                 code,
-                &bformat!("{}: {} ", dpma_proto::errors::request_error_text(code), detail),
+                &bformat!(
+                    "{}: {} ",
+                    dpma_proto::errors::request_error_text(code),
+                    detail
+                ),
             );
             match reference {
-                Some(r) if r == out => a.out("Identical to Asterisk's ast_json_pack/ast_json_dump_string output\n"),
+                Some(r) if r == out => {
+                    a.out("Identical to Asterisk's ast_json_pack/ast_json_dump_string output\n")
+                }
                 Some(r) => a.out(bformat!("DIFFERS from Asterisk's output: {:?}\n", r)),
                 None => a.out("Asterisk could not build the reference document\n"),
             }
@@ -396,8 +454,15 @@ mod devtest {
         use dpma_ast::json::{ast_json_pack, ast_json_unref, dump_string};
         use std::os::raw::c_int;
         let c = |s: &str| dpma_ast::cstr(s);
-        let (fmt, response, m, errors, error, code_k, message_k) =
-            (c("{s: {s: s, s: {s: {s: i, s: s}}}}"), c("response"), c("method"), c("errors"), c("error"), c("code"), c("message"));
+        let (fmt, response, m, errors, error, code_k, message_k) = (
+            c("{s: {s: s, s: {s: {s: i, s: s}}}}"),
+            c("response"),
+            c("method"),
+            c("errors"),
+            c("error"),
+            c("code"),
+            c("message"),
+        );
         let (mv, msgv) = (dpma_ast::cstr(method), dpma_ast::cstr(message));
         unsafe {
             let j = ast_json_pack(
@@ -433,7 +498,10 @@ mod devtest {
             std::thread::sleep(Duration::from_millis(ms));
             dpma_log!("dpmadev extended task finished after {} ms", ms);
         }));
-        a.out(format!("push_extended: {}\n", if res.is_ok() { "queued" } else { "failed" }));
+        a.out(format!(
+            "push_extended: {}\n",
+            if res.is_ok() { "queued" } else { "failed" }
+        ));
         CliResult::Success
     }
 

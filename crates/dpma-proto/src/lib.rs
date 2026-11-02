@@ -106,7 +106,10 @@ pub(crate) mod testlog {
     }
 
     fn hook(_level: super::LogLevel, _file: &str, _line: u32, _func: &str, msg: &[u8]) {
-        LINES.with(|l| l.borrow_mut().push(String::from_utf8_lossy(msg).into_owned()));
+        LINES.with(|l| {
+            l.borrow_mut()
+                .push(String::from_utf8_lossy(msg).into_owned())
+        });
     }
 
     /// Run `f` and return what it logged on this thread.

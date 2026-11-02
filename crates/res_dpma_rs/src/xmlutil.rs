@@ -50,4 +50,3 @@ pub fn xml_add_file(parent: Node<'_>, path: &[u8], xpath: Option<&str>) {
         dpma_log!("Unable to add file {} to parent", path);
     }
 }
-

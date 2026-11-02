@@ -128,7 +128,10 @@ pub fn destroy_containers() {
 fn c_name(name: &[u8]) -> [c_char; NAME_LEN] {
     // ast_copy_string(obj->name, name, sizeof(obj->name))
     let mut out = [0 as c_char; NAME_LEN];
-    for (d, &s) in out.iter_mut().zip(dpma_ast::dpma_bytes::c_view(name).iter().take(NAME_LEN - 1)) {
+    for (d, &s) in out
+        .iter_mut()
+        .zip(dpma_ast::dpma_bytes::c_view(name).iter().take(NAME_LEN - 1))
+    {
         *d = s as c_char;
     }
     out
@@ -158,7 +161,10 @@ fn new_line(key: &[u8], pjsip_auth: &[u8]) -> *mut LineObj {
             LineObj {
                 name: c_name(key),
                 key: key.to_vec(),
-                state: Mutex::new(LineState { detached: None, pjsip_auth: pjsip_auth.to_vec() }),
+                state: Mutex::new(LineState {
+                    detached: None,
+                    pjsip_auth: pjsip_auth.to_vec(),
+                }),
             },
         );
     }
@@ -172,7 +178,14 @@ fn new_user(key: &[u8]) -> *mut UserObj {
     }
     // SAFETY: as in `new_line`.
     unsafe {
-        std::ptr::write(obj, UserObj { name: c_name(key), key: key.to_vec(), linked: AtomicBool::new(true) });
+        std::ptr::write(
+            obj,
+            UserObj {
+                name: c_name(key),
+                key: key.to_vec(),
+                linked: AtomicBool::new(true),
+            },
+        );
     }
     obj
 }
@@ -298,15 +311,24 @@ pub fn sync(swept: Vec<Line>) {
         let g = users::read();
         let Some(reg) = g.as_ref() else { return };
         (
-            reg.lines.values().map(|l| (l.name.clone(), l.pjsip_auth.clone())).collect(),
+            reg.lines
+                .values()
+                .map(|l| (l.name.clone(), l.pjsip_auth.clone()))
+                .collect(),
             reg.phones.values().map(|p| p.name.clone()).collect(),
         )
     };
-    let mut swept: HashMap<Vec<u8>, Line> = swept.into_iter().map(|l| (l.name.to_ascii_lowercase(), l)).collect();
+    let mut swept: HashMap<Vec<u8>, Line> = swept
+        .into_iter()
+        .map(|l| (l.name.to_ascii_lowercase(), l))
+        .collect();
 
     unsafe {
         // ---- lines ----
-        let want: HashMap<Vec<u8>, &[u8]> = lines.iter().map(|(n, a)| (n.to_ascii_lowercase(), a.as_slice())).collect();
+        let want: HashMap<Vec<u8>, &[u8]> = lines
+            .iter()
+            .map(|(n, a)| (n.to_ascii_lowercase(), a.as_slice()))
+            .collect();
         let mut have = std::collections::HashSet::new();
         for o in ao2::collect(lines_c) {
             let obj = o as *mut LineObj;
@@ -335,7 +357,8 @@ pub fn sync(swept: Vec<Line>) {
         }
 
         // ---- phones ----
-        let want: std::collections::HashSet<Vec<u8>> = phones.iter().map(|n| n.to_ascii_lowercase()).collect();
+        let want: std::collections::HashSet<Vec<u8>> =
+            phones.iter().map(|n| n.to_ascii_lowercase()).collect();
         let mut have = std::collections::HashSet::new();
         for o in ao2::collect(users_c) {
             let obj = o as *mut UserObj;
@@ -465,7 +488,10 @@ pub fn find_line(name: &std::ffi::CStr) -> Option<LineRef> {
 /// Every line object, in container order.
 pub fn all_lines() -> Vec<LineRef> {
     // SAFETY: each object comes with a reference.
-    unsafe { ao2::collect(lines_container()) }.into_iter().map(|o| LineRef(o as *mut LineObj)).collect()
+    unsafe { ao2::collect(lines_container()) }
+        .into_iter()
+        .map(|o| LineRef(o as *mut LineObj))
+        .collect()
 }
 
 /// `ao2_callback(lines, OBJ_NODATA | OBJ_MULTIPLE, cb, NULL)` on the lines

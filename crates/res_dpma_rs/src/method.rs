@@ -79,7 +79,11 @@ pub fn load() -> Result<(), ()> {
         );
         return Err(());
     }
-    *g = Some(Registries { xml: BTreeMap::new(), json: BTreeMap::new(), ami: BTreeMap::new() });
+    *g = Some(Registries {
+        xml: BTreeMap::new(),
+        json: BTreeMap::new(),
+        ami: BTreeMap::new(),
+    });
     Ok(())
 }
 
@@ -91,7 +95,11 @@ pub fn unload() {
 
 /// `__phone_method_register`: fails for an empty name or when the
 /// registries do not exist.
-fn register<T>(name: &[u8], value: T, pick: fn(&mut Registries) -> &mut Registry<T>) -> Result<(), ()> {
+fn register<T>(
+    name: &[u8],
+    value: T,
+    pick: fn(&mut Registries) -> &mut Registry<T>,
+) -> Result<(), ()> {
     if name.is_empty() {
         return Err(());
     }
@@ -133,11 +141,23 @@ pub fn unregister_ami(name: impl AsRef<[u8]>) {
 }
 
 pub fn find_xml(name: impl AsRef<[u8]>) -> Option<XmlMethod> {
-    REGISTRIES.read().unwrap().as_ref()?.xml.get(&key(name.as_ref())).map(|(_, f)| *f)
+    REGISTRIES
+        .read()
+        .unwrap()
+        .as_ref()?
+        .xml
+        .get(&key(name.as_ref()))
+        .map(|(_, f)| *f)
 }
 
 pub fn find_json(name: impl AsRef<[u8]>) -> Option<JsonMethod> {
-    REGISTRIES.read().unwrap().as_ref()?.json.get(&key(name.as_ref())).map(|(_, f)| *f)
+    REGISTRIES
+        .read()
+        .unwrap()
+        .as_ref()?
+        .json
+        .get(&key(name.as_ref()))
+        .map(|(_, f)| *f)
 }
 
 pub fn is_ami(name: impl AsRef<[u8]>) -> bool {
@@ -200,13 +220,18 @@ mod devtest {
     fn test_xml(call: &MethodCall, params: &[u8], out: &mut Vec<u8>) -> i32 {
         out.extend_from_slice(&bformat!(
             "<response method=\"{}\"><result phone=\"{}\" registry=\"xml\">{}</result></response>",
-            call.method, call.phone, params
+            call.method,
+            call.phone,
+            params
         ));
         0
     }
 
     fn test_json(call: &MethodCall, params: &serde_json::Value, out: &mut Vec<u8>) -> i32 {
-        let (method, phone) = (String::from_utf8_lossy(&call.method), String::from_utf8_lossy(&call.phone));
+        let (method, phone) = (
+            String::from_utf8_lossy(&call.method),
+            String::from_utf8_lossy(&call.phone),
+        );
         let v = serde_json::json!({
             "response": {"method": method, "result": {"phone": phone, "registry": "json", "parameters": params}}
         });
@@ -272,7 +297,12 @@ mod devtest {
         } else {
             "not found"
         };
-        a.out(bformat!("{} '{}': {}\n", a.argv[3].to_ascii_uppercase(), name, what));
+        a.out(bformat!(
+            "{} '{}': {}\n",
+            a.argv[3].to_ascii_uppercase(),
+            name,
+            what
+        ));
         CliResult::Success
     }
 
@@ -293,7 +323,11 @@ mod devtest {
         let mut out = Vec::new();
         match find_json(&method) {
             Some(f) => {
-                let call = MethodCall { phone, method: method.clone(), tx: None };
+                let call = MethodCall {
+                    phone,
+                    method: method.clone(),
+                    tx: None,
+                };
                 let code = f(&call, &params, &mut out);
                 a.out(bformat!("Return code: {}\n", code));
                 if out.is_empty() {
@@ -311,7 +345,11 @@ mod devtest {
                 a.out(bformat!(
                     "No JSON method '{}'{}\n",
                     method,
-                    if ami { "; registered by AMI (would raise DPMAMessage)" } else { "" }
+                    if ami {
+                        "; registered by AMI (would raise DPMAMessage)"
+                    } else {
+                        ""
+                    }
                 ));
                 if ami {
                     return CliResult::Success;

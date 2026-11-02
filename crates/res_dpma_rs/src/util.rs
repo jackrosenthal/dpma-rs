@@ -23,7 +23,12 @@ pub struct NamedMap<T> {
 
 impl<T> NamedMap<T> {
     pub fn new(buckets: u32) -> Self {
-        NamedMap { buckets, seq: 0, order: BTreeMap::new(), items: HashMap::new() }
+        NamedMap {
+            buckets,
+            seq: 0,
+            order: BTreeMap::new(),
+            items: HashMap::new(),
+        }
     }
 
     fn key(name: &[u8]) -> Vec<u8> {
@@ -129,18 +134,27 @@ pub fn first_token<'a>(s: &'a [u8], delims: &[u8]) -> &'a [u8] {
 /// digits; the value wraps like an unsigned int.  Returns None when no
 /// digits were found.
 pub fn scan_u32(s: &[u8]) -> Option<i64> {
-    let start = s.iter().position(|&c| !dpma_ast::dpma_bytes::c::is_space(c)).unwrap_or(s.len());
+    let start = s
+        .iter()
+        .position(|&c| !dpma_ast::dpma_bytes::c::is_space(c))
+        .unwrap_or(s.len());
     let t = &s[start..];
     let (neg, digits) = match t.first() {
         Some(b'-') => (true, &t[1..]),
         Some(b'+') => (false, &t[1..]),
         _ => (false, t),
     };
-    let end = digits.iter().position(|c| !c.is_ascii_digit()).unwrap_or(digits.len());
+    let end = digits
+        .iter()
+        .position(|c| !c.is_ascii_digit())
+        .unwrap_or(digits.len());
     if end == 0 {
         return None;
     }
-    let v = std::str::from_utf8(&digits[..end]).ok()?.parse::<u64>().unwrap_or(u64::MAX) as u32;
+    let v = std::str::from_utf8(&digits[..end])
+        .ok()?
+        .parse::<u64>()
+        .unwrap_or(u64::MAX) as u32;
     let v = if neg { v.wrapping_neg() } else { v };
     Some(i64::from(v as i32))
 }
@@ -165,5 +179,8 @@ pub fn path(s: &[u8]) -> &Path {
 /// `str::parse` on the bytes of a (test or CLI) argument; Err when they
 /// are not UTF-8 or do not parse.
 pub fn parse<T: std::str::FromStr>(s: &[u8]) -> Result<T, ()> {
-    std::str::from_utf8(s).map_err(|_| ())?.parse().map_err(|_| ())
+    std::str::from_utf8(s)
+        .map_err(|_| ())?
+        .parse()
+        .map_err(|_| ())
 }

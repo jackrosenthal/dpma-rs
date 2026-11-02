@@ -121,7 +121,8 @@ pub(crate) fn contains_ignore_case(hay: &[u8], needle: &[u8]) -> bool {
     if needle.is_empty() {
         return true;
     }
-    hay.windows(needle.len()).any(|w| w.eq_ignore_ascii_case(needle))
+    hay.windows(needle.len())
+        .any(|w| w.eq_ignore_ascii_case(needle))
 }
 
 /// The bytes of a C string: everything before the first NUL.

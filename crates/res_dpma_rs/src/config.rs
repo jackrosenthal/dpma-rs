@@ -130,7 +130,10 @@ pub fn get() -> Arc<General> {
 }
 
 fn parse_uint(name: &str, value: &[u8]) -> Option<u32> {
-    match std::str::from_utf8(value.trim_ascii()).ok().and_then(|v| v.parse::<u32>().ok()) {
+    match std::str::from_utf8(value.trim_ascii())
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+    {
         Some(v) => Some(v),
         None => {
             ast_log!(
@@ -168,7 +171,10 @@ pub fn load() -> Result<(Option<Arc<General>>, Arc<General>), ()> {
     let mut g = General::defaults();
     let mut mdns_port_set = false;
 
-    if let Some(cat) = cats.iter().find(|c| c.name.eq_ignore_ascii_case(b"general")) {
+    if let Some(cat) = cats
+        .iter()
+        .find(|c| c.name.eq_ignore_ascii_case(b"general"))
+    {
         for v in &cat.vars {
             let name = v.name.to_ascii_lowercase();
             let value = v.value.as_slice();
@@ -200,12 +206,16 @@ pub fn load() -> Result<(Option<Arc<General>>, Arc<General>), ()> {
                     }
                 }
                 b"service_name" => g.service_name = value.into(),
-                b"service_discovery_enabled" => g.discovery_enabled = dpma_ast::util::ast_true(value),
+                b"service_discovery_enabled" => {
+                    g.discovery_enabled = dpma_ast::util::ast_true(value)
+                }
                 b"config_auth" => {
                     let v = value.to_ascii_lowercase();
                     match v.as_slice() {
                         b"mac_pin" => g.auth_flags |= auth::USER | auth::PIN | auth::MAC,
-                        b"mac_globalpin" => g.auth_flags |= auth::USER | auth::GLOBALPIN | auth::MAC,
+                        b"mac_globalpin" => {
+                            g.auth_flags |= auth::USER | auth::GLOBALPIN | auth::MAC
+                        }
                         b"mac" => g.auth_flags = (g.auth_flags & !auth::USER) | auth::MAC,
                         b"pin" => g.auth_flags |= auth::USER | auth::PIN,
                         b"globalpin" => g.auth_flags |= auth::USER | auth::GLOBALPIN,
@@ -322,7 +332,10 @@ pub fn settings() -> Option<Settings> {
         mdns_port: or(cut(g.mdns_port(), 10), DEFAULT_PORT),
         mdns_transport: cut(&g.mdns_transport, 10),
         service_name: or(cut(&g.service_name, 0x80), DEFAULT_SERVICE_NAME),
-        pjsip_message_context: or(cut(&g.pjsip_message_context, 0x50), DEFAULT_PJSIP_MESSAGE_CONTEXT),
+        pjsip_message_context: or(
+            cut(&g.pjsip_message_context, 0x50),
+            DEFAULT_PJSIP_MESSAGE_CONTEXT,
+        ),
         file_dir: match cut(&g.file_directory, 0x1000) {
             d if d.is_empty() => default_file_dir(),
             d => d,

@@ -83,9 +83,15 @@ pub const CODECS: &[(&str, &str)] = &[
     ("PCMU", "packetization=\"20\""),
     ("PCMA", "packetization=\"20\""),
     ("G722", "packetization=\"20\""),
-    ("G7221", "packetization=\"20\" samplerate=\"uwb\" bitrate=\"48000\""),
+    (
+        "G7221",
+        "packetization=\"20\" samplerate=\"uwb\" bitrate=\"48000\"",
+    ),
     ("G726-32", "packetization=\"20\""),
-    ("opus", "packetization=\"20\" complexity=\"10\" samplerate=\"wb\" use_vbr=\"0\""),
+    (
+        "opus",
+        "packetization=\"20\" complexity=\"10\" samplerate=\"wb\" use_vbr=\"0\"",
+    ),
     ("G729", "packetization=\"20\""),
     ("iLBC", "packetization=\"30\""),
     ("L16", "packetization=\"20\""),
@@ -96,8 +102,20 @@ pub const CODECS: &[(&str, &str)] = &[
 /// phone's `ringtone` option selects it as the active ringtone instead of
 /// loading a custom one.
 pub const BUILTIN_RINGTONES: &[&str] = &[
-    "Alarm", "Chimes", "Digium", "GuitarStrum", "Jingle", "Office", "Office2", "RotaryPhone",
-    "SteelDrum", "Techno", "Theme", "Tweedle", "Twinkle", "Vibe",
+    "Alarm",
+    "Chimes",
+    "Digium",
+    "GuitarStrum",
+    "Jingle",
+    "Office",
+    "Office2",
+    "RotaryPhone",
+    "SteelDrum",
+    "Techno",
+    "Theme",
+    "Tweedle",
+    "Twinkle",
+    "Vibe",
 ];
 
 /// A line slot on a phone.
@@ -255,7 +273,10 @@ pub struct Phone {
 
 impl Phone {
     pub fn new(name: &[u8]) -> Phone {
-        Phone { name: name.to_vec(), ..Phone::blank() }
+        Phone {
+            name: name.to_vec(),
+            ..Phone::blank()
+        }
     }
 
     /// Reset everything that comes from configuration (`set_user_defaults`),
@@ -453,7 +474,11 @@ pub struct Line {
 
 impl Line {
     pub fn new(name: &[u8], external: bool) -> Line {
-        Line { name: name.to_vec(), external, ..Default::default() }
+        Line {
+            name: name.to_vec(),
+            external,
+            ..Default::default()
+        }
     }
 
     /// `set_line_defaults`: applied whenever a phone (re)claims the line.
@@ -746,9 +771,10 @@ impl Registry {
 
     /// The phone whose primary line is `line`.
     pub fn phone_for_line(&self, line: &[u8]) -> Option<&Phone> {
-        self.phones
-            .values()
-            .find(|p| p.primary_line().is_some_and(|l| l.name.eq_ignore_ascii_case(line)))
+        self.phones.values().find(|p| {
+            p.primary_line()
+                .is_some_and(|l| l.name.eq_ignore_ascii_case(line))
+        })
     }
 }
 
@@ -769,14 +795,25 @@ pub fn write() -> RwLockWriteGuard<'static, Option<Registry>> {
 pub fn reconfigure(name: &[u8], delete_token: bool) -> Result<(), ()> {
     let (name, uri, session) = {
         let g = read();
-        let Some(p) = g.as_ref().and_then(|r| r.phones.get(name)) else { return Err(()) };
-        (p.name.clone(), p.last_uri.clone(), p.last_session_id.clone())
+        let Some(p) = g.as_ref().and_then(|r| r.phones.get(name)) else {
+            return Err(());
+        };
+        (
+            p.name.clone(),
+            p.last_uri.clone(),
+            p.last_session_id.clone(),
+        )
     };
     send_reconfigure(&name, &uri, &session, delete_token)
 }
 
 /// Send the reconfigure message to the phone's last known location.
-pub fn send_reconfigure(name: &[u8], uri: &[u8], session: &[u8], delete_token: bool) -> Result<(), ()> {
+pub fn send_reconfigure(
+    name: &[u8],
+    uri: &[u8],
+    session: &[u8],
+    delete_token: bool,
+) -> Result<(), ()> {
     if uri.is_empty() {
         return Err(());
     }

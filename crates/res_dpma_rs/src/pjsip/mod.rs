@@ -107,7 +107,12 @@ pub fn process_lines() {
 ///
 /// # Safety
 /// `chan` must be a live channel the caller holds a reference on.
-pub unsafe fn info_send(chan: *mut AstChannel, headers: &[(&str, &str)], content_type: &str, body: &[u8]) -> i32 {
+pub unsafe fn info_send(
+    chan: *mut AstChannel,
+    headers: &[(&str, &str)],
+    content_type: &str,
+    body: &[u8],
+) -> i32 {
     let registered = INFO_HANDLER.read().unwrap_or_else(|e| e.into_inner());
     if !*registered || !dpma_bytes::eq_ic(&dpma_ast::channel::tech_type(chan), b"PJSIP") {
         return -1;

@@ -16,7 +16,8 @@ pub type Destructor = unsafe extern "C" fn(obj: *mut c_void);
 pub type Container = sys::ao2_container;
 
 /// The callback of [`callback`] (`ao2_callback_fn`).
-pub type CallbackFn = unsafe extern "C" fn(obj: *mut c_void, arg: *mut c_void, flags: c_int) -> c_int;
+pub type CallbackFn =
+    unsafe extern "C" fn(obj: *mut c_void, arg: *mut c_void, flags: c_int) -> c_int;
 
 /// `ao2_alloc(size, destructor)`: an object of `size` bytes (zeroed) with
 /// a recursive mutex and one reference.
@@ -24,7 +25,15 @@ pub fn alloc(size: usize, destructor: Option<Destructor>) -> *mut c_void {
     let (file, line, func) = here!("ao2::alloc");
     // SAFETY: plain allocation; the destructor runs on this object only.
     unsafe {
-        sys::__ao2_alloc(size, destructor, sys::AO2_ALLOC_OPT_LOCK_MUTEX, std::ptr::null(), file, line, func)
+        sys::__ao2_alloc(
+            size,
+            destructor,
+            sys::AO2_ALLOC_OPT_LOCK_MUTEX,
+            std::ptr::null(),
+            file,
+            line,
+            func,
+        )
     }
 }
 
@@ -54,7 +63,14 @@ pub unsafe fn cleanup<T>(obj: *mut T) {
 /// `obj` must be a live ao2 object.
 pub unsafe fn lock<T>(obj: *mut T) {
     let (file, line, func) = here!("ao2::lock");
-    sys::__ao2_lock(obj.cast(), sys::AO2_LOCK_REQ_MUTEX, file, func, line, c"obj".as_ptr());
+    sys::__ao2_lock(
+        obj.cast(),
+        sys::AO2_LOCK_REQ_MUTEX,
+        file,
+        func,
+        line,
+        c"obj".as_ptr(),
+    );
 }
 
 /// `ao2_unlock(obj)`.
@@ -80,7 +96,9 @@ unsafe extern "C" fn name_hash(obj: *const c_void, flags: c_int) -> c_int {
     if s.is_empty() {
         return 5381;
     }
-    let hash = s.iter().fold(5381u32, |h, &c| h.wrapping_mul(33) ^ u32::from(c.to_ascii_lowercase()));
+    let hash = s.iter().fold(5381u32, |h, &c| {
+        h.wrapping_mul(33) ^ u32::from(c.to_ascii_lowercase())
+    });
     (hash & 0x7fff_ffff) as c_int
 }
 
@@ -151,7 +169,15 @@ pub unsafe fn find_key(c: *mut Container, key: *const c_char) -> *mut c_void {
         return std::ptr::null_mut();
     }
     let (file, line, func) = here!("ao2::find_key");
-    sys::__ao2_find(c, key.cast(), sys::OBJ_SEARCH_KEY, std::ptr::null(), file, line, func)
+    sys::__ao2_find(
+        c,
+        key.cast(),
+        sys::OBJ_SEARCH_KEY,
+        std::ptr::null(),
+        file,
+        line,
+        func,
+    )
 }
 
 /// `ao2_callback(c, OBJ_NODATA | OBJ_MULTIPLE, cb, arg)`: call `cb` for
@@ -162,7 +188,16 @@ pub unsafe fn find_key(c: *mut Container, key: *const c_char) -> *mut c_void {
 /// and `arg`.
 pub unsafe fn callback_all(c: *mut Container, cb: CallbackFn, arg: *mut c_void) {
     let (file, line, func) = here!("ao2::callback_all");
-    sys::__ao2_callback(c, sys::OBJ_NODATA | sys::OBJ_MULTIPLE, Some(cb), arg, std::ptr::null(), file, line, func);
+    sys::__ao2_callback(
+        c,
+        sys::OBJ_NODATA | sys::OBJ_MULTIPLE,
+        Some(cb),
+        arg,
+        std::ptr::null(),
+        file,
+        line,
+        func,
+    );
 }
 
 /// An `ao2_iterator` over a container (`ao2_iterator_init(c, 0)`),

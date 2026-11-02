@@ -108,19 +108,47 @@ fn show_list(
 }
 
 fn show_phones(a: &CliArgs) -> CliResult {
-    show_list(a, false, "---- Digium Phones ----\n", "", "----  {} Phones Found    ----\n", phone_names)
+    show_list(
+        a,
+        false,
+        "---- Digium Phones ----\n",
+        "",
+        "----  {} Phones Found    ----\n",
+        phone_names,
+    )
 }
 
 fn show_networks(a: &CliArgs) -> CliResult {
-    show_list(a, true, "--- Networks ---\n", "    ", "---- {} Networks found ----\n", network_names)
+    show_list(
+        a,
+        true,
+        "--- Networks ---\n",
+        "    ",
+        "---- {} Networks found ----\n",
+        network_names,
+    )
 }
 
 fn show_alerts(a: &CliArgs) -> CliResult {
-    show_list(a, false, "--- Alerts ---\n", "    ", "---- {} Alerts found ----\n", alert_names)
+    show_list(
+        a,
+        false,
+        "--- Alerts ---\n",
+        "    ",
+        "---- {} Alerts found ----\n",
+        alert_names,
+    )
 }
 
 fn show_pages(a: &CliArgs) -> CliResult {
-    show_list(a, true, "--- Multicastpages ---\n", "    ", "---- {} Multicastpages found ----\n", page_names)
+    show_list(
+        a,
+        true,
+        "--- Multicastpages ---\n",
+        "    ",
+        "---- {} Multicastpages found ----\n",
+        page_names,
+    )
 }
 
 fn show_phone(a: &CliArgs) -> CliResult {
@@ -128,12 +156,20 @@ fn show_phone(a: &CliArgs) -> CliResult {
         return CliResult::ShowUsage;
     }
     let g = read();
-    let Some(reg) = g.as_ref() else { return CliResult::Success };
-    let Some(p) = reg.phones.values().find(|p| p.name == a.argv[3]) else { return CliResult::Success };
+    let Some(reg) = g.as_ref() else {
+        return CliResult::Success;
+    };
+    let Some(p) = reg.phones.values().find(|p| p.name == a.argv[3]) else {
+        return CliResult::Success;
+    };
 
     let mut o = Vec::new();
     bwriteln!(o, "Name: {}", p.name);
-    bwriteln!(o, "Accept Local Calls From: {}", or(&p.accept_local_calls, "None"));
+    bwriteln!(
+        o,
+        "Accept Local Calls From: {}",
+        or(&p.accept_local_calls, "None")
+    );
     bwriteln!(o, "Active Locale: {}", p.active_locale);
     bwriteln!(o, "Active Ringtone: {}", or(&p.active_ringtone, "Digium"));
     for x in &p.alerts {
@@ -149,25 +185,41 @@ fn show_phone(a: &CliArgs) -> CliResult {
             None => dpma_log!("Failed to find application '{}'", x),
         }
     }
-    bwriteln!(o, "BLF on unused Line keys: {}", yes_no(p.blf_unused_linekeys));
+    bwriteln!(
+        o,
+        "BLF on unused Line keys: {}",
+        yes_no(p.blf_unused_linekeys)
+    );
     bwriteln!(o, "BLF page return timeout: {}", p.blf_page_return_timeout);
     bwriteln!(o, "BLF phone book: {}", or(&p.blf_contact_group, "None"));
     bwriteln!(o, "BLF Items: {}", or(&p.blf_items, "None"));
     bwriteln!(
         o,
         "Call Forwarding Application: {}",
-        if p.can_forward_calls { "Enabled" } else { "Disabled" }
+        if p.can_forward_calls {
+            "Enabled"
+        } else {
+            "Disabled"
+        }
     );
     bwriteln!(o, "Call Waiting Tone: {}", yes_no(p.call_waiting_tone));
     bwriteln!(o, "ConfigFile: {}", or(&p.config_file, "AUTO_GENERATED"));
     for x in &p.contacts {
         bwriteln!(o, "Contact: {}", x);
     }
-    bwriteln!(o, "Contacts Display Items: {}", or(&p.contacts_display_rules, "None"));
+    bwriteln!(
+        o,
+        "Contacts Display Items: {}",
+        or(&p.contacts_display_rules, "None")
+    );
     if p.contacts_max_subscriptions == 0 {
         bwriteln!(o, "Contacts Max Subscriptions: default");
     } else {
-        bwriteln!(o, "Contacts Max Subscriptions: {}", p.contacts_max_subscriptions);
+        bwriteln!(
+            o,
+            "Contacts Max Subscriptions: {}",
+            p.contacts_max_subscriptions
+        );
     }
     if p.default_fontsize < 1 {
         bwriteln!(o, "Default Font Size: <Use Default>");
@@ -177,12 +229,20 @@ fn show_phone(a: &CliArgs) -> CliResult {
     for (model, file) in &p.logos {
         bwriteln!(o, "{} Logo File: {}", model, file);
     }
-    bwriteln!(o, "Display Missed Calls: {}", yes_no(p.display_mc_notification));
+    bwriteln!(
+        o,
+        "Display Missed Calls: {}",
+        yes_no(p.display_mc_notification)
+    );
     bwriteln!(o, "Display Small-Format Clock: {}", yes_no(p.small_clock));
     bwriteln!(o, "Electronic Hook Switch: {}", or(&p.ehs, "None"));
     bwriteln!(o, "Enable Check Sync: {}", yes_no(p.enable_check_sync));
     bwriteln!(o, "Expansion Enabled: {}", yes_no(p.expansion_enabled));
-    bwriteln!(o, "Expansion Page Indicators Enabled: {}", yes_no(p.expansion_page_indicators_enabled));
+    bwriteln!(
+        o,
+        "Expansion Page Indicators Enabled: {}",
+        yes_no(p.expansion_page_indicators_enabled)
+    );
     bwriteln!(o, "Full Name: {}", p.full_name);
     bwriteln!(o, "Group Pin:  {}", set_or_not(&p.group_pin));
     if p.handset_sidetone_db != -1 {
@@ -202,13 +262,29 @@ fn show_phone(a: &CliArgs) -> CliResult {
     } else {
         bwriteln!(o, "Headset Volume: {}", p.headset_volume);
     }
-    bwriteln!(o, "Idle Company Text: {}", or(&p.idle_company_text, "<Not Set>"));
-    bwriteln!(o, "LAN Port Mode: {}", or(&p.lan_port_mode, "<Use Default>"));
-    bwriteln!(o, "LCD Backlight Dimming: {}", if p.dim_backlight { "On" } else { "Off" });
+    bwriteln!(
+        o,
+        "Idle Company Text: {}",
+        or(&p.idle_company_text, "<Not Set>")
+    );
+    bwriteln!(
+        o,
+        "LAN Port Mode: {}",
+        or(&p.lan_port_mode, "<Use Default>")
+    );
+    bwriteln!(
+        o,
+        "LCD Backlight Dimming: {}",
+        if p.dim_backlight { "On" } else { "Off" }
+    );
     if p.backlight_dim_level < 0 {
         bwriteln!(o, "LCD Backlight Dimming Brightness: <Use Default>");
     } else {
-        bwriteln!(o, "LCD Backlight Dimming Brightness: {}", p.backlight_dim_level);
+        bwriteln!(
+            o,
+            "LCD Backlight Dimming Brightness: {}",
+            p.backlight_dim_level
+        );
     }
     match p.backlight_timeout {
         t if t > 0 => {
@@ -232,7 +308,16 @@ fn show_phone(a: &CliArgs) -> CliResult {
         bwriteln!(o, "LCD Contrast: {}", p.contrast);
     }
     for l in &p.lines {
-        bwriteln!(o, "{}:  {}", if l.external { "Line (External)" } else { "Line" }, l.name);
+        bwriteln!(
+            o,
+            "{}:  {}",
+            if l.external {
+                "Line (External)"
+            } else {
+                "Line"
+            },
+            l.name
+        );
     }
     bwriteln!(o, "Lock Phone Preferences: {}", yes_no(p.lock_preferences));
     bwriteln!(o, "Login Password: {}", set_or_not(&p.login_password));
@@ -267,7 +352,11 @@ fn show_phone(a: &CliArgs) -> CliResult {
         bwriteln!(o, "Preferred Firmware: {}", x);
     }
     bwriteln!(o, "Recording enabled: {}", yes_no(p.record_own_calls));
-    bwriteln!(o, "Reset Volume levels between calls: {}", yes_no(p.reset_call_volume));
+    bwriteln!(
+        o,
+        "Reset Volume levels between calls: {}",
+        yes_no(p.reset_call_volume)
+    );
     bwriteln!(o, "Ring Headset Only: {}", yes_no(p.ring_headset_only));
     if p.ringer_volume < 0 {
         bwriteln!(o, "Ringer Volume: <Use Default>");
@@ -283,7 +372,11 @@ fn show_phone(a: &CliArgs) -> CliResult {
         if p.send_to_vm { "Enabled" } else { "Disabled" }
     );
     bwriteln!(o, "Show Call Log Application: {}", yes_no(p.show_call_log));
-    bwriteln!(o, "Show Call Parking Application: {}", yes_no(p.show_call_parking));
+    bwriteln!(
+        o,
+        "Show Call Parking Application: {}",
+        yes_no(p.show_call_parking)
+    );
     if p.speaker_volume == 0 {
         bwriteln!(o, "Speaker Volume: <Use Default>");
     } else {
@@ -299,7 +392,11 @@ fn show_phone(a: &CliArgs) -> CliResult {
             _ => "Yes",
         }
     );
-    bwriteln!(o, "Use Local Contact Storage: {}", yes_no(p.use_local_storage));
+    bwriteln!(
+        o,
+        "Use Local Contact Storage: {}",
+        yes_no(p.use_local_storage)
+    );
     bwriteln!(o, "Use small clock: {}", yes_no(p.small_clock));
     bwriteln!(o, "Wallpaper File: {}", or(&p.wallpaper_file, "None"));
     bwriteln!(o, "Web UI enabled: {}", yes_no(p.web_ui_enabled));
@@ -311,7 +408,9 @@ fn show_phone(a: &CliArgs) -> CliResult {
 /// (No argument count check, as in the official DPMA.)
 fn show_lines(a: &CliArgs) -> CliResult {
     let g = read();
-    let Some(reg) = g.as_ref() else { return CliResult::Success };
+    let Some(reg) = g.as_ref() else {
+        return CliResult::Success;
+    };
     let kind = |l: &Line| if l.external { "External" } else { "Internal" };
     a.out("--- Lines Mapped to Phones ---\n");
     for l in reg.lines.values().filter(|l| reg.line_is_mapped(&l.name)) {
@@ -332,12 +431,24 @@ fn show_line(a: &CliArgs) -> CliResult {
     // Locked while shown, as in the official DPMA (see users::objects).
     let _line = crate::users::objects::lock_lines([a.argv[3].as_slice()]);
     let g = read();
-    let Some(reg) = g.as_ref() else { return CliResult::Success };
-    let Some(l) = reg.lines.values().find(|l| l.name == a.argv[3]) else { return CliResult::Success };
+    let Some(reg) = g.as_ref() else {
+        return CliResult::Success;
+    };
+    let Some(l) = reg.lines.values().find(|l| l.name == a.argv[3]) else {
+        return CliResult::Success;
+    };
 
     let mut o = Vec::new();
     bwriteln!(o, "Name: {}", l.name);
-    bwriteln!(o, "Type: {}", if l.external { "External Line" } else { "Internal Line" });
+    bwriteln!(
+        o,
+        "Type: {}",
+        if l.external {
+            "External Line"
+        } else {
+            "Internal Line"
+        }
+    );
     bwriteln!(o, "Dialable Extension: {}", l.dialable_exten());
     bwriteln!(o, "Context: {}", l.context);
     bwriteln!(o, "Subscribe Context: {}", l.hint_context);
@@ -350,21 +461,49 @@ fn show_line(a: &CliArgs) -> CliResult {
         bwriteln!(o, "Re-registration: {}", l.reregistration_timeout);
     }
     if l.registration_retry_interval != 0 {
-        bwriteln!(o, "Registration Retry Interval: {}", l.registration_retry_interval);
+        bwriteln!(
+            o,
+            "Registration Retry Interval: {}",
+            l.registration_retry_interval
+        );
     }
     if l.registration_max_retries != 0 {
-        bwriteln!(o, "Registration Max Retries: {}", l.registration_max_retries);
+        bwriteln!(
+            o,
+            "Registration Max Retries: {}",
+            l.registration_max_retries
+        );
     }
     if !l.server_address.is_empty() {
-        bwriteln!(o, "SIP Secret: {}", if l.secret.is_empty() { "<not set>" } else { "<set>" });
+        bwriteln!(
+            o,
+            "SIP Secret: {}",
+            if l.secret.is_empty() {
+                "<not set>"
+            } else {
+                "<set>"
+            }
+        );
         bwriteln!(o, "Server Address: {}", l.server_address);
         bwriteln!(o, "Server Port: {}", l.server_port);
         bwriteln!(o, "Transport: {}", l.transport.type_str());
         bwriteln!(o, "Media Encryption: {}", l.media_encryption);
-        bwriteln!(o, "Secondary Server Address: {}", l.secondary_server_address);
+        bwriteln!(
+            o,
+            "Secondary Server Address: {}",
+            l.secondary_server_address
+        );
         bwriteln!(o, "Secondary Server Port: {}", l.secondary_server_port);
-        bwriteln!(o, "Secondary Server Transport: {}", l.secondary_server_transport.type_str());
-        bwriteln!(o, "Secondary Media Encryption: {}", l.secondary_media_encryption);
+        bwriteln!(
+            o,
+            "Secondary Server Transport: {}",
+            l.secondary_server_transport.type_str()
+        );
+        bwriteln!(
+            o,
+            "Secondary Media Encryption: {}",
+            l.secondary_media_encryption
+        );
         // Deviation (plan section 8, item 15): the official DPMA prints the
         // secondary server port here (the field at +0x120, not authname's
         // at +0x128).
@@ -386,8 +525,12 @@ fn show_network(a: &CliArgs) -> CliResult {
         return CliResult::ShowUsage;
     }
     let g = read();
-    let Some(reg) = g.as_ref() else { return CliResult::Success };
-    let Some(n) = reg.networks.values().find(|n| n.name == a.argv[3]) else { return CliResult::Success };
+    let Some(reg) = g.as_ref() else {
+        return CliResult::Success;
+    };
+    let Some(n) = reg.networks.values().find(|n| n.name == a.argv[3]) else {
+        return CliResult::Success;
+    };
     let ns = |s: &[u8]| or(s, "<Not Set>").to_vec();
 
     let mut o = Vec::new();
@@ -398,15 +541,27 @@ fn show_network(a: &CliArgs) -> CliResult {
     bwriteln!(o, "Registration Port: {}", ns(&n.registration_port));
     bwriteln!(o, "Transport: {}", n.transport.type_str());
     bwriteln!(o, "File URL Prefix: {}", ns(&n.file_url_prefix));
-    bwriteln!(o, "Public Firmware URL Prefix: {}", or(&n.public_firmware_url_prefix, "<Use Default>"));
+    bwriteln!(
+        o,
+        "Public Firmware URL Prefix: {}",
+        or(&n.public_firmware_url_prefix, "<Use Default>")
+    );
     bwriteln!(o, "NTP Server: {}", ns(&n.ntp_server));
     bwriteln!(o, "syslog Server: {}", ns(&n.syslog_server));
     bwriteln!(o, "syslog Port: {}", ns(&n.syslog_port));
-    bwriteln!(o, "Network VLAN Discovery Mode: {}", ns(&n.network_vlan_discovery_mode));
+    bwriteln!(
+        o,
+        "Network VLAN Discovery Mode: {}",
+        ns(&n.network_vlan_discovery_mode)
+    );
     bwriteln!(o, "Network VLAN ID: {}", n.network_vlan_id);
     bwriteln!(o, "PC VLAN ID: {}", n.pc_vlan_id);
     bwriteln!(o, "SIP Quality of Service Level: {}", n.sip_qos);
-    bwriteln!(o, "RTP Quality of Service Level: {}", if n.rtp_qos == -1 { 6 } else { n.rtp_qos });
+    bwriteln!(
+        o,
+        "RTP Quality of Service Level: {}",
+        if n.rtp_qos == -1 { 6 } else { n.rtp_qos }
+    );
     bwriteln!(o, "PC Quality of Service Level: {}", n.pc_qos);
     bwriteln!(o, "SIP DSCP: {}", n.sip_dscp);
     bwriteln!(o, "RTP DSCP: {}", n.rtp_dscp);
@@ -421,8 +576,12 @@ fn show_alert(a: &CliArgs) -> CliResult {
         return CliResult::ShowUsage;
     }
     let g = read();
-    let Some(reg) = g.as_ref() else { return CliResult::Success };
-    let Some(x) = reg.alerts.values().find(|x| x.name == a.argv[3]) else { return CliResult::Success };
+    let Some(reg) = g.as_ref() else {
+        return CliResult::Success;
+    };
+    let Some(x) = reg.alerts.values().find(|x| x.name == a.argv[3]) else {
+        return CliResult::Success;
+    };
     let mut o = Vec::new();
     bwriteln!(o, "Name: {}", x.name);
     bwriteln!(o, "Alert Info: {}", or(&x.alert_info, "<Not Set>"));
@@ -438,8 +597,12 @@ fn show_page(a: &CliArgs) -> CliResult {
         return CliResult::ShowUsage;
     }
     let g = read();
-    let Some(reg) = g.as_ref() else { return CliResult::Success };
-    let Some(x) = reg.pages.values().find(|x| x.name == a.argv[3]) else { return CliResult::Success };
+    let Some(reg) = g.as_ref() else {
+        return CliResult::Success;
+    };
+    let Some(x) = reg.pages.values().find(|x| x.name == a.argv[3]) else {
+        return CliResult::Success;
+    };
     let mut o = Vec::new();
     bwriteln!(o, "Name: {}", x.name);
     bwriteln!(o, "Alias: {}", or(&x.alias, "<Not Set>"));
@@ -476,7 +639,10 @@ fn show_firmware(a: &CliArgs) -> CliResult {
     a.out(bformat!("Model: {}\n", f.model));
     a.out(bformat!("Version: {}\n", f.version));
     a.out(bformat!("File: {}\n", f.file));
-    a.out(bformat!("Use public firmware: {}\n", if f.public_firmware { "yes" } else { "no" }));
+    a.out(bformat!(
+        "Use public firmware: {}\n",
+        if f.public_firmware { "yes" } else { "no" }
+    ));
     CliResult::Success
 }
 
@@ -485,13 +651,18 @@ fn show_applications(a: &CliArgs) -> CliResult {
         return CliResult::ShowUsage;
     }
     let g = read();
-    let Some(reg) = g.as_ref() else { return CliResult::Success };
+    let Some(reg) = g.as_ref() else {
+        return CliResult::Success;
+    };
     a.out("--- Applications ---\n");
     for app in reg.applications.values() {
         let ty = app.kind.as_ref().map_or("", |k| k.type_name());
         a.out(bformat!("    {} : {}\n", ty, app.name));
     }
-    a.out(bformat!("---- {} Applications found ----\n", reg.applications.len()));
+    a.out(bformat!(
+        "---- {} Applications found ----\n",
+        reg.applications.len()
+    ));
     CliResult::Success
 }
 
@@ -500,8 +671,12 @@ fn show_application(a: &CliArgs) -> CliResult {
         return CliResult::ShowUsage;
     }
     let g = read();
-    let Some(reg) = g.as_ref() else { return CliResult::Success };
-    let Some(app) = reg.applications.values().find(|x| x.name == a.argv[3]) else { return CliResult::Success };
+    let Some(reg) = g.as_ref() else {
+        return CliResult::Success;
+    };
+    let Some(app) = reg.applications.values().find(|x| x.name == a.argv[3]) else {
+        return CliResult::Success;
+    };
     let mut o = Vec::new();
     bwriteln!(o, "{}", app.name);
     match &app.kind {
@@ -593,7 +768,9 @@ fn show_application(a: &CliArgs) -> CliResult {
 
 fn show_tokens(a: &CliArgs) -> CliResult {
     let g = read();
-    let Some(reg) = g.as_ref() else { return CliResult::Success };
+    let Some(reg) = g.as_ref() else {
+        return CliResult::Success;
+    };
     a.out("---- Valid Tokens ----\n");
     let mut n = 0;
     for p in reg.phones.values() {
@@ -601,7 +778,10 @@ fn show_tokens(a: &CliArgs) -> CliResult {
             n += 1;
             a.out(bformat!(
                 "{}  MAC:{}  URI:{:<30} SessionID:{}\n",
-                p.name, p.last_mac, p.last_uri, p.last_session_id
+                p.name,
+                p.last_mac,
+                p.last_uri,
+                p.last_session_id
             ));
         }
     }
@@ -627,7 +807,10 @@ fn reconfigure_phone(a: &CliArgs) -> CliResult {
         match g.as_ref().and_then(|r| r.phones.get(&a.argv[3])) {
             Some(p) => or(&p.full_name, &p.name).to_vec(),
             None => {
-                a.out(bformat!("Could not find user with name '{}' to reconfigure.\n", a.argv[3]));
+                a.out(bformat!(
+                    "Could not find user with name '{}' to reconfigure.\n",
+                    a.argv[3]
+                ));
                 return CliResult::Success;
             }
         }
@@ -645,10 +828,22 @@ fn reconfigure_phone(a: &CliArgs) -> CliResult {
 
 macro_rules! cmd {
     ($cmd:expr, $usage:expr, $exec:expr) => {
-        CliCommand { command: $cmd, summary: $cmd, usage: $usage, exec: $exec, complete: None }
+        CliCommand {
+            command: $cmd,
+            summary: $cmd,
+            usage: $usage,
+            exec: $exec,
+            complete: None,
+        }
     };
     ($cmd:expr, $usage:expr, $exec:expr, $complete:expr) => {
-        CliCommand { command: $cmd, summary: $cmd, usage: $usage, exec: $exec, complete: Some($complete) }
+        CliCommand {
+            command: $cmd,
+            summary: $cmd,
+            usage: $usage,
+            exec: $exec,
+            complete: Some($complete),
+        }
     };
 }
 

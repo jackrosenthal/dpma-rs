@@ -37,7 +37,9 @@ impl RsaKey {
     /// A key from big-endian modulus and exponent octets (leading zeros
     /// allowed, as `BN_bin2bn` reads them).
     pub fn from_be_bytes(n: &[u8], e: &[u8]) -> RsaKey {
-        RsaKey { key: RsaPublicKey::new_unchecked(BigUint::from_bytes_be(n), BigUint::from_bytes_be(e)) }
+        RsaKey {
+            key: RsaPublicKey::new_unchecked(BigUint::from_bytes_be(n), BigUint::from_bytes_be(e)),
+        }
     }
 
     /// The modulus, big endian, without leading zeros.
@@ -79,7 +81,12 @@ impl RsaKey {
     /// `m^e mod n`, left-padded to [`Self::size`] octets; None for an even
     /// modulus (`BN_MONT_CTX_set` fails).
     fn public_op(&self, m: &BigUint) -> Option<Vec<u8>> {
-        let odd = self.key.n().to_bytes_be().last().is_some_and(|b| b & 1 == 1);
+        let odd = self
+            .key
+            .n()
+            .to_bytes_be()
+            .last()
+            .is_some_and(|b| b & 1 == 1);
         if !odd {
             return None;
         }
@@ -97,8 +104,18 @@ impl RsaKey {
     pub(crate) fn encrypt_pkcs1(&self, from: &[u8], errs: &mut Errs) -> Option<Vec<u8>> {
         const RSA_OSSL: &str = "crypto/rsa/rsa_ossl.c";
         if let Err(r) = self.check() {
-            let line = if r == errstack::rsa::R_MODULUS_TOO_LARGE { 77 } else { 82 };
-            errs.put(LIB_RSA, errstack::rsa::F_RSA_OSSL_PUBLIC_ENCRYPT, r, RSA_OSSL, line);
+            let line = if r == errstack::rsa::R_MODULUS_TOO_LARGE {
+                77
+            } else {
+                82
+            };
+            errs.put(
+                LIB_RSA,
+                errstack::rsa::F_RSA_OSSL_PUBLIC_ENCRYPT,
+                r,
+                RSA_OSSL,
+                line,
+            );
             return None;
         }
         let num = self.size();
@@ -128,7 +145,13 @@ impl RsaKey {
         match self.public_op(&BigUint::from_bytes_be(&em)) {
             Some(c) => Some(c),
             None => {
-                errs.put(LIB_BN, errstack::bn::F_BN_MOD_INVERSE, errstack::bn::R_NO_INVERSE, "crypto/bn/bn_gcd.c", 532);
+                errs.put(
+                    LIB_BN,
+                    errstack::bn::F_BN_MOD_INVERSE,
+                    errstack::bn::R_NO_INVERSE,
+                    "crypto/bn/bn_gcd.c",
+                    532,
+                );
                 None
             }
         }
@@ -158,14 +181,20 @@ mod tests {
             "error:04068065:rsa routines:rsa_ossl_public_encrypt:bad e value"
         );
         let even = RsaKey::from_be_bytes(&[0xc0; 64], &[0x01, 0x00, 0x01]);
-        assert_eq!(error(&even, b"x"), "error:0306E06C:bignum routines:BN_mod_inverse:no inverse");
+        assert_eq!(
+            error(&even, b"x"),
+            "error:0306E06C:bignum routines:BN_mod_inverse:no inverse"
+        );
         // Too much data for the key.
         let k = RsaKey::from_be_bytes(&[0xc1; 50], &[0x03]);
         assert_eq!(
             error(&k, &[1; 40]),
             "error:0406D06E:rsa routines:RSA_padding_add_PKCS1_type_2:data too large for key size"
         );
-        assert_eq!(k.encrypt_pkcs1(&[1; 39], &mut Errs::new()).unwrap().len(), 50);
+        assert_eq!(
+            k.encrypt_pkcs1(&[1; 39], &mut Errs::new()).unwrap().len(),
+            50
+        );
         assert_eq!(k.size(), 50);
         assert_eq!(RsaKey::from_be_bytes(&[0, 0, 1, 0], &[3]).n(), [1, 0]);
     }
