@@ -12,14 +12,12 @@ use std::sync::{Mutex, RwLock};
 /// `enum ast_parked_call_event_type` value `PARKED_CALL`.
 pub const PARKED_CALL: i32 = sys::PARKED_CALL as i32;
 
-/// Receives a parked call message: the payload's `parker_dial_string`,
-/// `event_type`, and `parkingspace`.
+/// Receives a parked call message's payload fields.
 pub type ParkedCallFn = fn(parker_dial_string: &[u8], event_type: i32, parkingspace: u32);
 
 static PARKED_CALL_FN: RwLock<Option<ParkedCallFn>> = RwLock::new(None);
 
-/// The subscription: topic, forward, and router (raw pointers as
-/// addresses).
+/// The subscription (raw pointers as addresses).
 #[derive(Default)]
 struct Subscription {
     topic: usize,

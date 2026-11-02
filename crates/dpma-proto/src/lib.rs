@@ -1,8 +1,7 @@
 //! The Digium phone application-server protocol, independent of Asterisk.
 //!
 //! Everything here is pure Rust so it can be unit tested with `cargo test
-//! -p dpma-proto`.  The Asterisk side (ast_msg handling, sessions, dialplan
-//! routing) lives in `res_digium_phone`.
+//! -p dpma-proto`.  The Asterisk side lives in `res_dpma_rs`.
 //!
 //! Cryptography uses the RustCrypto crates, and certificates are decoded
 //! with `x509-cert` ([`cert`] documents what phone certificate
@@ -11,11 +10,10 @@
 //! statically (key checks, the error texts it logs), that behavior is
 //! reproduced here from 1.1.1t's source ([`crypto`], [`errstack`]).
 //!
-//! The official DPMA logs from inside several of the functions ported here
-//! (phone_crypto.c, reqresp_parser.c, `session_verify_cert`).  Those
-//! messages are passed, with the official DPMA's file, line, and function
-//! names, to a hook that the module installs with [`set_log_hook`]; without
-//! a hook (for example, in unit tests) they are dropped.
+//! The official DPMA logs from inside several of the functions ported here.
+//! Those messages are passed to a hook that the module installs with
+//! [`set_log_hook`]; without a hook (for example, in unit tests) they are
+//! dropped.
 
 pub mod cert;
 pub mod crypto;
@@ -36,7 +34,7 @@ use std::sync::RwLock;
 /// Errors from this crate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProtoError {
-    /// Invalid input (bad hex, bad base64, wrong length, ...).
+    /// Invalid input.
     Invalid(String),
     /// A cryptographic operation failed; the text is what the official DPMA
     /// logs (format string filled in, no trailing newline).

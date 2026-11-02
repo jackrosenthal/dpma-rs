@@ -1,13 +1,10 @@
 //! Thin, mostly safe Rust wrappers around the parts of the Asterisk C API
 //! used by dpma-rs.
 //!
-//! The raw declarations (functions, structures, and constants) come from
-//! the Asterisk and pjproject headers through `dpma-sys` (bindgen).  What
-//! the headers provide as macros or static inline functions (`ao2_ref`,
-//! `ast_free`, `ast_channel_lock`, `AST_MODULE_INFO`, ...) is reimplemented
-//! here in Rust, next to the wrappers that need it: the `asterisk_module!`
-//! macro in `module.rs`, the astobj2 macros in `ao2.rs`, the memory macros
-//! in `util.rs`, and so on.
+//! The raw declarations come from the Asterisk and pjproject headers
+//! through `dpma-sys` (bindgen).  What the headers provide as macros or
+//! static inline functions is reimplemented here in Rust, next to the
+//! wrappers that need it.
 //!
 //! Calls into C are `unsafe` at the boundary, each with the reason it is
 //! sound; callbacks from C are `extern "C"` functions that run their Rust

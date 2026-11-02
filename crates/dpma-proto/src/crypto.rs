@@ -42,8 +42,8 @@ pub const CIPHERTEXT_B64_BUF: usize = 0x515;
 /// Size of the buffer the RSA-encrypted common password is base64 encoded
 /// into (`phone_msg_set_common_password`).
 pub const COMMON_PASSWORD_B64_BUF: usize = 0x3ff;
-/// Size of the buffers incoming header fields (password, config password,
-/// config token) are decrypted into (`incoming_check_finalize`).
+/// Size of the buffers incoming header fields are decrypted into
+/// (`incoming_check_finalize`).
 pub const HEADER_FIELD_BUF: usize = 0x80;
 
 fn log_dpma(line: u32, func: &str, msg: &[u8]) {
@@ -507,10 +507,7 @@ mod tests {
 
     #[test]
     fn key_iv_matches_evp_bytes_to_key() {
-        // EVP_BytesToKey (1.1.1t crypto/evp/evp_key.c) with one round:
-        // D1 = SHA1(pw || salt), D2 = SHA1(D1 || pw || salt), key =
-        // D1[0..16], iv = D1[16..20] || D2[0..12].  Vectors computed
-        // independently with Python's hashlib.
+        // Vectors computed independently with Python's hashlib.
         let salt = [0xde, 0xad, 0xbe, 0xef, 0, 1, 2, 3];
         for (pw, key, iv) in [
             (
@@ -651,8 +648,7 @@ mod tests {
         let (r, logs) = testlog::capture(|| decrypt_field(PASS40, "0011223344556677889", "AAAA"));
         assert!(r.is_err());
         assert_eq!(logs, vec!["hex string is too long\n"]);
-        // Wrong key: bad padding at DecryptFinal (1.1.1t's error, printed
-        // by ERR_print_errors with the thread id, file, and line).
+        // Wrong key: bad padding at DecryptFinal (1.1.1t's error).
         let tid = unsafe { libc::pthread_self() } as u64;
         let b64 = encrypt_field(PASS40, &[1; 8], b"hello").unwrap();
         let (r, logs) = testlog::capture(|| decrypt_field(b"other", "0101010101010101", &b64));

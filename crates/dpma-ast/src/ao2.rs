@@ -1,6 +1,4 @@
-//! astobj2: the `ao2_*` macros of astobj2.h as functions (objects,
-//! references, locks, hash containers of named objects, iterators, and
-//! callbacks).
+//! astobj2: the `ao2_*` macros of astobj2.h as functions.
 //!
 //! Objects are raw pointers: their lifetime is governed by the ao2
 //! reference count.

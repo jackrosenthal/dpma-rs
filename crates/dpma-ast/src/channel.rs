@@ -1,6 +1,4 @@
-//! Channels: lookups by name and by technology call id, the name and
-//! unique id under the channel lock, the queue member call scan, channel
-//! variables, state, answering, and party information.
+//! Channels.
 
 use crate::here;
 use crate::sys;

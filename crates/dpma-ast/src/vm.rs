@@ -1,6 +1,6 @@
-//! Voicemail API (`ast_vm_*`): mailbox snapshots, move, remove, forward,
-//! playback, and folder names.  The calls go to whichever voicemail provider is
-//! registered (normally app_voicemail); without one they fail, as in C.
+//! Voicemail API (`ast_vm_*`).  The calls go to whichever voicemail
+//! provider is registered (normally app_voicemail); without one they fail,
+//! as in C.
 //!
 //! Strings are passed as bytes: the callers work on fixed-size C buffers
 //! and message ids that need not be UTF-8.  A string is cut at its first
