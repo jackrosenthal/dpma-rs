@@ -15,10 +15,8 @@
 //! certificate PEM the phone sent in its handshake.  Inactive sessions are
 //! not saved.
 //!
-//! The original's storage passphrase is embedded in its binary; dpma-rs
-//! uses its own (plan section 8, item 7), so sessions saved by the
-//! original module do not restore: those entries fail to decrypt, are
-//! deleted, and their phones handshake again.
+//! The storage passphrase is the one embedded in the original, so sessions
+//! saved by the original module restore here.
 //!
 //! Restoring verifies the stored certificate again exactly as a handshake
 //! does (both of the original's callers of `phone_msg_session_alloc` pass
@@ -34,9 +32,9 @@ use dpma_ast::{bformat, db, dpma_log};
 use dpma_proto::crypto;
 use std::sync::{Arc, Mutex};
 
-/// dpma-rs's storage passphrase for the common passwords in AstDB (its own,
-/// not the original's).
-const DB_PASSPHRASE: &[u8] = b"dpma-rs session store: 5f0c9e2a71b84d36aa";
+/// The original's storage passphrase for the common passwords in AstDB,
+/// embedded in its binary.
+const DB_PASSPHRASE: &[u8] = b"1sInnalILansfPOEIdi)0-294923kjashdkjwe][";
 
 /// `db_crypto_mutex`: serializes saving and restoring.
 static DB_CRYPTO: Mutex<()> = Mutex::new(());
@@ -137,9 +135,8 @@ fn restore_entry(key: &[u8], value: &[u8]) {
         let _db = DB_CRYPTO.lock().unwrap_or_else(|e| e.into_inner());
         crypto::decrypt_field_limited(DB_PASSPHRASE, ran, data, data.len() + 1)
     };
-    // A wrong passphrase (e.g., an entry saved by the original module)
-    // nearly always fails the padding check; the length check catches the
-    // rest.
+    // A corrupt entry nearly always fails the padding check; the length
+    // check catches the rest.
     let password = match password {
         Ok(p) if usize::try_from(data_len).is_ok_and(|n| n == p.len()) => p,
         _ => {

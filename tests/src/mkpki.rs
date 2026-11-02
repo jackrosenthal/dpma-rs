@@ -35,8 +35,7 @@
 //!
 //! [`install`] copies `root-ca.pem` to
 //! `<etc>/dpma/phone_ca.pem` and `appserver.pem` to
-//! `<etc>/dpma/appserver.pem` (the defaults of `phone_ca_file` and
-//! `appserver_certificate`).
+//! `<etc>/dpma/appserver.pem`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

@@ -6,13 +6,11 @@
 //! FUN_0014c310, `phone_msg_session_invalidate` FUN_0014c390, and the
 //! global auth flags FUN_00149f00).
 //!
-//! The original verifies phone certificates against three CA certificates
-//! embedded in the binary (`load_castore`); here they come from the
-//! user-supplied `phone_ca_file`, and the AppServer certificate sent in
-//! every HandshakeResponse from `appserver_certificate` (both read at load
-//! and again at reload).  Unlike the original, which fails to load when its
-//! CA store cannot be built, a missing or unreadable file is logged and the
-//! module loads; handshakes then fail.
+//! Phone certificates are verified against a CA store, and an AppServer
+//! certificate is sent in every HandshakeResponse.  Both default to the
+//! certificates embedded in the original; `phone_ca_file` and
+//! `appserver_certificate` override them with a file (read at load and
+//! reload).
 
 use super::{now, Session, DB_FAMILY};
 use crate::util::NamedMap;
@@ -52,31 +50,28 @@ pub(crate) fn with_trust<R>(f: impl FnOnce(Option<&Trust>) -> R) -> R {
     f(g.as_ref())
 }
 
-/// Read `phone_ca_file` and `appserver_certificate`.  Problems are logged;
-/// what could be read is kept.
-fn load_trust() -> Trust {
+/// Read `phone_ca_file` and `appserver_certificate`, or the embedded
+/// defaults when unset.  A configured file that cannot be read is an error.
+fn load_trust() -> Result<Trust, ()> {
     let g = crate::config::get();
-    let ca = match std::fs::read(crate::util::path(&g.phone_ca_file)) {
-        Ok(pem) => match CaStore::from_pem(&pem) {
-            Ok(s) => Some(s),
-            Err(e) => {
-                dpma_log!("Error creating castore from '{}': {}", g.phone_ca_file, e.message());
-                None
-            }
-        },
-        Err(e) => {
+    let ca_pem = if g.phone_ca_file.is_empty() {
+        crate::config::DEFAULT_PHONE_CA.to_vec()
+    } else {
+        std::fs::read(crate::util::path(&g.phone_ca_file)).map_err(|e| {
             dpma_log!("Error creating castore: cannot read phone_ca_file '{}': {}", g.phone_ca_file, e);
-            None
-        }
+        })?
     };
-    let appserver_pem = match std::fs::read(crate::util::path(&g.appserver_certificate)) {
-        Ok(pem) => pem,
-        Err(e) => {
+    let ca = CaStore::from_pem(&ca_pem).map_err(|e| {
+        dpma_log!("Error creating castore from '{}': {}", g.phone_ca_file, e.message());
+    })?;
+    let appserver_pem = if g.appserver_certificate.is_empty() {
+        crate::config::DEFAULT_APPSERVER_CERTIFICATE.to_vec()
+    } else {
+        std::fs::read(crate::util::path(&g.appserver_certificate)).map_err(|e| {
             dpma_log!("Cannot read appserver_certificate '{}': {}", g.appserver_certificate, e);
-            Vec::new()
-        }
+        })?
     };
-    Trust { ca, appserver_pem }
+    Ok(Trust { ca: Some(ca), appserver_pem })
 }
 
 /// `phone_msg_load` (FUN_00150440): load the CA store, create the
@@ -84,8 +79,7 @@ fn load_trust() -> Trust {
 /// sessions`, restore sessions from AstDB, then `transport::load()`.
 pub fn load(_config_file: &[u8]) -> Result<(), ()> {
     let g = crate::config::get();
-    crate::config::check_trust_material(&g);
-    *TRUST.write().unwrap_or_else(|e| e.into_inner()) = Some(load_trust());
+    *TRUST.write().unwrap_or_else(|e| e.into_inner()) = Some(load_trust()?);
     super::incoming::reset();
     *SESSIONS.lock().unwrap_or_else(|e| e.into_inner()) = Some(NamedMap::new(BUCKETS));
     set_global_auth_flags(g.auth_flags);
@@ -100,13 +94,10 @@ pub fn load(_config_file: &[u8]) -> Result<(), ()> {
 pub fn reload(_config_file: &[u8]) -> Result<(), ()> {
     set_global_auth_flags(crate::config::get().auth_flags);
     if TRUST.read().unwrap_or_else(|e| e.into_inner()).is_some() {
-        let new = load_trust();
-        let mut g = TRUST.write().unwrap_or_else(|e| e.into_inner());
-        if let Some(old) = g.as_mut() {
-            if new.ca.is_some() {
+        if let Ok(new) = load_trust() {
+            let mut g = TRUST.write().unwrap_or_else(|e| e.into_inner());
+            if let Some(old) = g.as_mut() {
                 old.ca = new.ca;
-            }
-            if !new.appserver_pem.is_empty() {
                 old.appserver_pem = new.appserver_pem;
             }
         }

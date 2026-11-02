@@ -1,9 +1,8 @@
 //! Phone certificate verification (`load_castore`, `session_verify_cert`,
 //! `session_load_rsa_key`).
 //!
-//! The CA store is built from the user-supplied `phone_ca_file` PEM bundle
-//! (the original embeds three CA certificates; they must never be copied
-//! into this project).
+//! The CA store is built from a PEM bundle of CA certificates: by default
+//! the three embedded in the original, or the `phone_ca_file` when set.
 
 use crate::{LogLevel, ProtoError, Result};
 use dpma_bytes::{bformat, ByteSlice};
