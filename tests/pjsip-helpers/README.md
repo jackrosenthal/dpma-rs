@@ -129,12 +129,14 @@ body and the supplement's debug log.  Checked against the decompile
   from the ringing channel's caller and `<remote>` from its connected
   line, with `sip:anonymous@anonymous.invalid` and display "anonymous" for
   a restricted number and name, and the local URI's domain otherwise.
-- Asterisk 22.11 and 23.5 (the new extension state API, before the fix
-  for Asterisk issue #2186 in 22.12.0, 23.6.0, and 24.0.0) leave the
-  device that caused an update, here the ringing one, out of the
-  extension state data, so the supplement finds no ringing channel
-  ("No Channel") and adds nothing, and the generator's early NOTIFY has
-  no `<remote>`.  On those releases `check.sh` expects exactly that.
+- Asterisk bug #2186 ("extstate: Include causing device channel details
+  in legacy callbacks"): the new extension state API of 22.11.0, 23.5.0,
+  and 24.0.0-rc1 leaves the device that caused an update, here the
+  ringing one, out of the extension state data, so the supplement finds
+  no ringing channel ("No Channel") and adds nothing, and the
+  generator's early NOTIFY has no `<remote>`.  Fixed in 22.12.0, 23.6.0,
+  and 24.0.0-rc2.  On releases with the bug (by release number)
+  `check.sh` expects exactly that.
 - "No domain in local uri" cannot happen with Asterisk 24 (a
   subscription's local URI is the Request-URI with the resource as its
   user), and the "Created dialog node" branch cannot either (the generator

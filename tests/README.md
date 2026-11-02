@@ -109,9 +109,14 @@ Build against the same version as the instance: `ast.sh install`
 copies whatever `target/debug` holds.
 
 On 22.11.0 and 23.5.0, `pjsip-helpers` expects no dialog-info
-supplement: those releases leave the ringing channel out of the
-extension state data (Asterisk issue #2186, fixed in 22.12.0, 23.6.0,
-and 24.0.0), so the supplement finds none, as the original's would.
+supplement and "Bail.  No Channel" in the supplement's log.  Those
+releases have Asterisk bug #2186 ("extstate: Include causing device
+channel details in legacy callbacks"): the new extension state API of
+22.11.0, 23.5.0, and 24.0.0-rc1 leaves the ringing channel out of the
+extension state data, so the supplement finds none, as the original's
+would.  It is fixed in 22.12.0, 23.6.0, and 24.0.0-rc2.  `check.sh`
+picks the expectation by the release number (`core show version`), so
+moving a pin to a fixed release brings back the full check.
 
 ### CI
 
