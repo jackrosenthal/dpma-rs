@@ -169,7 +169,8 @@ res_dpma_rs --features devtest`) and the suites' test binaries, then
 runs the suites in the order of the table (without a suite name: all of
 them up to `raw-bytes`; `all` adds `ami-expiry`; `parity` only when
 named).  It prints one line per suite (`ok` or `FAIL`, with its time in
-seconds) and keeps each suite's output in `$LOGDIR/<suite>.log`
+seconds; a suite whose test target does not exist fails without
+running) and keeps each suite's output in `$LOGDIR/<suite>.log`
 (default `$LOGDIR`: a new directory `$TMPDIR/dpma-tests.XXXXXX`, printed
 at the end).  At the end it stops Asterisk and puts the simulator setup
 back (fresh configuration, test PKI, and the simulator's test

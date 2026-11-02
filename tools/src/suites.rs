@@ -5,7 +5,8 @@
 //! dpma-tests --test <target> -- --ignored [OPTIONS]`; it prepares the
 //! instance itself (fresh configuration, its setup, the module installed,
 //! Asterisk restarted), so the suites do not see each other's
-//! configuration.  Before the suites the devtest module and the suites'
+//! configuration.  A suite whose test target does not exist fails
+//! without running.  Before the suites the devtest module and the suites'
 //! test binaries are built; afterwards Asterisk is stopped and the
 //! instance gets the simulator setup back (fresh configuration, test PKI,
 //! and the simulator's test configuration).
