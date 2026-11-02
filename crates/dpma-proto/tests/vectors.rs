@@ -6,13 +6,13 @@
 //! the file.  To rebuild the file (a new RSA test key is generated), run
 //! `cargo test -p dpma-proto --test vectors -- --ignored regenerate`.
 
-use dpma_proto::{crypto, errors, framing};
+use dpma_proto::{cert, crypto, errors, framing};
 use serde_json::{json, Value};
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/proto_vectors.json");
 
 /// A 40-byte printable password (the KDF vector was also computed with
-/// Python's hashlib and checked with `openssl enc -P`).
+/// Python's hashlib).
 const PASS_TEXT: &[u8] = b"test-common-password-0123456789abcdefghi";
 
 fn pass_binary() -> Vec<u8> {
@@ -135,11 +135,13 @@ fn build() -> Value {
     let incoming = json!([{"password_hex": h(PASS_TEXT), "salt_hex": crypto::salt_to_hex(&salts[1]),
                            "body": body, "chunk_len": 400, "parts": parts}]);
 
-    let key = openssl::pkey::PKey::from_rsa(openssl::rsa::Rsa::generate(1024).unwrap()).unwrap();
-    let public = openssl::pkey::PKey::public_key_from_pem(&key.public_key_to_pem().unwrap()).unwrap();
+    use rsa::pkcs8::EncodePrivateKey;
+    use rsa::traits::PublicKeyParts;
+    let key = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), 1024).unwrap();
+    let public = cert::PublicKey::Rsa(cert::RsaKey::from_be_bytes(&key.n().to_bytes_be(), &key.e().to_bytes_be()));
     let common = pass_binary();
     let rsa = json!({
-        "private_key_pem": String::from_utf8(key.private_key_to_pem_pkcs8().unwrap()).unwrap(),
+        "private_key_pem": key.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF).unwrap().to_string(),
         "common_password_hex": h(&common),
         "password_b64": crypto::encrypt_common_password(&public, &common).unwrap(),
     });
@@ -247,7 +249,7 @@ fn verify_fixture() {
     }
 
     let rsa = &v["rsa_common_password"];
-    let key = openssl::pkey::PKey::private_key_from_pem(s(&rsa["private_key_pem"]).as_bytes()).unwrap();
+    let key = <rsa::RsaPrivateKey as rsa::pkcs8::DecodePrivateKey>::from_pkcs8_pem(s(&rsa["private_key_pem"])).unwrap();
     assert_eq!(h(&crypto::decrypt_common_password(&key, s(&rsa["password_b64"])).unwrap()), s(&rsa["common_password_hex"]));
 
     for c in v["error_bodies"].as_array().unwrap() {

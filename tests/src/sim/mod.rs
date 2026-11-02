@@ -7,8 +7,10 @@
 //! It is written from the decompile of the original module (the phone
 //! side of `phone_message.c`, `phone_crypto.c`, and `phone_request.c`)
 //! and is deliberately independent of the module's own crates (no
-//! dpma-proto, no OpenSSL), so that it cross-checks them: see
-//! [`selftest`] and the vectors in `tests/data/vectors.json`.
+//! dpma-proto: its protocol code is its own, and it shares only the
+//! RustCrypto primitive crates, `aes`, `cbc`, `sha1`, and `rsa`), so that
+//! it cross-checks them: see [`selftest`] and the vectors in
+//! `tests/data/vectors.json`.
 //!
 //! ```no_run
 //! use dpma_tests::sim::{Options, Phone};

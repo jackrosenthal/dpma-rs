@@ -1,8 +1,13 @@
 //! The Digium phone application-server protocol, independent of Asterisk.
 //!
-//! Everything here is pure Rust (plus OpenSSL) so it can be unit tested
-//! with `cargo test -p dpma-proto`.  The Asterisk side (ast_msg handling,
-//! sessions, dialplan routing) lives in `res_digium_phone`.
+//! Everything here is pure Rust so it can be unit tested with `cargo test
+//! -p dpma-proto`.  The Asterisk side (ast_msg handling, sessions, dialplan
+//! routing) lives in `res_digium_phone`.
+//!
+//! Cryptography uses the RustCrypto crates.  Where the original depends on
+//! the behavior of the OpenSSL 1.1.1t it links statically (reading and
+//! verifying certificates, the error texts it logs), that behavior is
+//! reproduced here from 1.1.1t's source ([`cert`], [`x509`], [`errstack`]).
 //!
 //! The original logs from inside several of the functions ported here
 //! (phone_crypto.c, reqresp_parser.c, `session_verify_cert`).  Those
@@ -13,14 +18,17 @@
 pub mod cert;
 pub mod crypto;
 pub mod errors;
+pub mod errstack;
 pub mod framing;
 pub mod headers;
 pub mod json;
 pub mod types;
 pub mod uri;
+pub mod x509;
 pub mod xml;
 
 mod cbuf;
+mod rsakey;
 
 use std::sync::RwLock;
 
@@ -29,8 +37,8 @@ use std::sync::RwLock;
 pub enum ProtoError {
     /// Invalid input (bad hex, bad base64, wrong length, ...).
     Invalid(String),
-    /// An OpenSSL operation failed; the text is what the original logs
-    /// (format string filled in, no trailing newline).
+    /// A cryptographic operation failed; the text is what the original
+    /// logs (format string filled in, no trailing newline).
     Crypto(String),
 }
 
