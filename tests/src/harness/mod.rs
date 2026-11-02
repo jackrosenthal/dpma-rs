@@ -41,6 +41,6 @@ pub use check::{contains_bytes, regex_capture, regex_search, Checker};
 pub use cli::{filter_verbose, Cli};
 pub use conf::{ConfBackup, ConfFile};
 pub use expect::{AmiCheck, ExchangeCheck};
-pub use instance::{Instance, AMI_PORT, DIR, ORIGINAL_MODULES, SCRATCH_CONF, SIP_PORT};
+pub use instance::{Instance, AMI_PORT, DIR, SCRATCH_CONF, SIP_PORT};
 pub use log::{Log, LogMark};
-pub use suite::{option_value, Ctx, Suite};
+pub use suite::{Ctx, Suite};

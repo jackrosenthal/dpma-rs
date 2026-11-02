@@ -316,7 +316,19 @@ pub fn instance_label(fullname: &str, service_type: &str) -> String {
     }
 }
 
-/// Every live (TTL > 0) instance of `service_type`, by instance label.
+/// `f(a)` and `f(b)`, run at the same time (two queries wait for their
+/// replies together).
+fn both<T: Send>(f: impl Fn(u16) -> T + Sync, a: u16, b: u16) -> [T; 2] {
+    std::thread::scope(|s| {
+        let first = s.spawn(|| f(a));
+        let second = f(b);
+        [first.join().expect("query thread"), second]
+    })
+}
+
+/// Every live (TTL > 0) instance of `service_type`, by instance label
+/// (its PTR query, then its SRV and TXT queries together, then the
+/// target's A and AAAA queries together, each waiting `wait`).
 pub fn browse(
     service_type: &str,
     iface: Ipv4Addr,
@@ -332,8 +344,10 @@ pub fn browse(
             continue;
         }
         let mut inst = ServiceInstance::default();
-        let mut rs = query(full, rtype::SRV, iface, wait)?;
-        rs.extend(query(full, rtype::TXT, iface, wait)?);
+        let mut rs = Vec::new();
+        for r in both(|t| query(full, t, iface, wait), rtype::SRV, rtype::TXT) {
+            rs.extend(r?);
+        }
         for r in rs {
             if &r.name != full {
                 continue;
@@ -348,8 +362,12 @@ pub fn browse(
             }
         }
         if let Some(target) = inst.target.clone() {
-            for t in [rtype::A, rtype::AAAA] {
-                for r in query(&target, t, iface, wait)? {
+            for (t, rs) in [rtype::A, rtype::AAAA].into_iter().zip(both(
+                |t| query(&target, t, iface, wait),
+                rtype::A,
+                rtype::AAAA,
+            )) {
+                for r in rs? {
                     if r.rtype != t || !r.name.eq_ignore_ascii_case(&target) || r.ttl == 0 {
                         continue;
                     }

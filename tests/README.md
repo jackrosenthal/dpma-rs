@@ -24,7 +24,7 @@ image.
 
 | Command | What it does, and why it exists |
 |---|---|
-| `cargo xtask test [--asterisk VERSION] [--original DIR] [-j N] [SUITE...\|all]` | Runs suites, each in a fresh container of the release's test image (below; built first if the engine does not have it), several at a time.  This is how the suites run: they need the container's Asterisk. |
+| `cargo xtask test [--asterisk VERSION] [-j N] [SUITE...\|all]` | Runs suites, each in a fresh container of the release's test image (below; built first if the engine does not have it), several at a time.  This is how the suites run: they need the container's Asterisk. |
 | `cargo xtask ci [--asterisk VERSION] [-j N]` | The CI job of `.github/workflows/ci.yml`, in fresh containers of the release's image: `cargo build`, both clippy runs (`--all-targets`, and `-p res_dpma_rs --features devtest`) with warnings as errors, `cargo test --workspace --exclude res_dpma_rs`, every suite (`all`), and the module for publishing (below).  It exists so that CI is one command that also runs locally. |
 | `cargo xtask headers [--asterisk VERSION]` | Copies the configured Asterisk headers out of the release's image into `target/container/<release>/asterisk-headers` (once per image) and prints that directory.  It exists because `cargo build` on the host needs headers for bindgen (`ASTERISK_SOURCE_DIR`), and these match the images exactly. |
 | `cargo xtask majors` | Prints the pinned major versions as a JSON array.  It exists for the CI matrix. |
@@ -35,8 +35,7 @@ The options:
 |---|---|
 | `--asterisk VERSION` | Selects the release: a major version (`22`) or a release (`22.11.0`) pinned in `tools/asterisk-versions`; the default is the newest.  Each release has its own image. |
 | `-j N`, `--jobs N` | How many suites run at the same time, each in its own container (default: the number of CPUs).  It exists to limit the CPU, memory, and disk that parallel containers take (with podman's `vfs` storage, every container is a full copy of the image). |
-| `--original DIR` (`test`) | The official DPMA binaries (`res_digium_phone.so` and its two PJSIP helpers, 24.0_3.6.13), which `parity` compares with and which are not distributed with dpma-rs.  `DIR` is mounted read-only into the container. |
-| `SUITE...` or `all` (`test`) | The suites to run (below); without any, the default suites. |
+| `SUITE...` or `all` (`test`) | The suites to run (below); without any, or with `all`, every suite. |
 
 `$DPMA_ENGINE` names the container engine (a command name or path);
 without it the xtask uses `podman` when it is on the `PATH`, else
@@ -48,10 +47,9 @@ it to `docker`, whose image cache it keeps).  `cargo xtask <command>
 For example:
 
 ```
-cargo xtask test                     # the default suites against the newest release
-cargo xtask test --asterisk 22 all   # every suite against Asterisk 22
+cargo xtask test                     # every suite against the newest release
+cargo xtask test --asterisk 22 -j 2  # every suite against Asterisk 22, two at a time
 cargo xtask test session ami         # two suites
-cargo xtask test --asterisk 24 --original ../res_digium_phone-24.0_3.6.13-x86_64 parity
 ```
 
 Runs for different releases can run at the same time.
@@ -97,10 +95,10 @@ when it is done:
 - **Mounts:** the repository; `target/container/<release>/` for the
   Cargo target directory (`target/`), the suites' logs (`logs/`), the
   test PKI (`pki/`), and in CI the module for publishing;
-  `target/container/cargo/` as `CARGO_HOME`, the crates cache that the
-  releases share; and `--original DIR`, read-only.  The container has no
-  network, so the xtask fetches the crates into that cache on the host
-  first (`cargo fetch --locked`).
+  and `target/container/cargo/` as `CARGO_HOME`, the crates cache that
+  the releases share.  The container has no network, so the xtask
+  fetches the crates into that cache on the host first (`cargo fetch
+  --locked`).
 - **User:** the work runs as the container user that is you: the owner
   of `target/container/<release>/` as the container sees it.  That is
   root for a rootless engine and your own user and group IDs for a
@@ -143,8 +141,8 @@ supplement and "Bail.  No Channel" in the supplement's log.  Those
 releases have Asterisk bug #2186 ("extstate: Include causing device
 channel details in legacy callbacks"): the new extension state API of
 22.11.0, 23.5.0, and 24.0.0-rc1 leaves the ringing channel out of the
-extension state data, so the supplement finds none, as the official DPMA's
-would.  It is fixed in 22.12.0, 23.6.0, and 24.0.0-rc2.  The suite picks
+extension state data, so the supplement finds none, as the official
+DPMA's would.  It is fixed in 22.12.0, 23.6.0, and 24.0.0-rc2.  The suite picks
 the expectation by the release number (`core show version`), so moving
 a pin to a fixed release brings back the full check.
 
@@ -172,36 +170,40 @@ by its `X-Digium-User-Agent` header.  So each suite prepares the instance
 itself: it stops Asterisk, resets the configuration, installs its own
 setup and the debug build, and starts Asterisk.
 
-| Suite | Test target and options | Checks |
-|---|---|---|
-| `session` | `session` | Sessions, handshake, encryption, and framing with the phone simulator |
-| `config-xml` | `config-xml` | The configuration, contacts, and user list documents are produced and well formed |
-| `users-runtime` | `users-runtime` | Tokens, lookups, presence, and `show status` |
-| `methods-vm` | `methods-vm` | The voicemail methods |
-| `methods-vm-phone` | `methods-vm --via phone` | The voicemail methods called by the simulator (encrypted AsteriskRequests) |
-| `methods-calls` | `methods-calls` | The queue, parking, recording, phonebook, and echo methods |
-| `methods-calls-phone` | `methods-calls --via phone` | The call methods called by the simulator (AsteriskRequests) |
-| `methods-calls-http` | `methods-calls --via http` | The call methods called by the simulator (HTTPRequests) |
-| `pjsip-helpers` | `pjsip-helpers` | The module's PJSIP side (the official DPMA's two helper modules): the endpoint identifier against the expected transcript (the official DPMA helper's), the dialog-info supplement, and line locking |
-| `request-handlers` | `request-handlers` | Every request type in every authentication mode, FileRequest paths, AsteriskRequest and HTTPRequest, AMI-registered methods; then the phone users' runtime over real sessions (reconfigure, events, tokens, stale phones, restore after a restart) |
-| `ami` | `ami` | DPMAMessageRegister, DPMAMessageResponse, and DPMAMessageSend byte for byte, requests forwarded to AMI, reconfigure from the CLI, AMI, and reloads |
-| `apps-discovery` | `apps-discovery` | DigiumControlPlayback, DigiumVoicemailPlayback, `show settings`, the mDNS responder (on the container's `lo`), and unloading and loading the module |
-| `raw-bytes` | `raw-bytes` | Latin-1 (not UTF-8) text in the configuration, from the simulator, and in AMI headers comes out byte for byte in the configuration document, the user list, file requests, events, CLI and AMI output, AstDB, and the log; the JSON (jansson) and XML (libxml2) paths fail on it as in the official DPMA |
-| `ami-expiry` (only in `all`) | `ami --expiry` | The `ami` checks, then a forwarded request that nobody answers expires after 300 s (about six minutes in all) |
-| `parity` (only when named) | `parity --original /original` | Every CLI command and AMI action that needs no connected phone, from our module and from the official DPMA binaries (`--original DIR`; Asterisk 24 only; local testing only), compared byte for byte |
+| Suite | Checks |
+|---|---|
+| `session` | Sessions, handshake, encryption, framing, and what validation drops, with the phone simulator, over UDP and TCP |
+| `config-xml` | The configuration, contacts, and user list documents are produced and well formed |
+| `users-runtime` | Tokens, lookups, presence, `show status`, and auth incidents (ALERT, blocking, expiry) |
+| `methods-vm` | The voicemail methods, and a page of them through the simulator |
+| `methods-calls` | The queue, parking, recording, phonebook, and echo methods |
+| `pjsip-helpers` | The module's PJSIP side (the official DPMA's two helper modules): the endpoint identifier against the expected transcript (the official DPMA helper's), the dialog-info supplement, and line locking |
+| `request-handlers` | Every request type in every authentication mode, FileRequest paths, AsteriskRequest and HTTPRequest, AMI-registered methods; then the phone users' runtime over real sessions (reload, MAC mismatch, stale phones, URI changes, tokens, restore after a restart) |
+| `ami` | DPMAMessageRegister, DPMAMessageResponse, and DPMAMessageSend byte for byte, requests forwarded to AMI and their expiry, reconfigure from the CLI, AMI, and reloads |
+| `apps-discovery` | DigiumControlPlayback, DigiumVoicemailPlayback, `show settings`, the mDNS responder (on the container's `lo`), and unloading and loading the module |
+| `raw-bytes` | Latin-1 (not UTF-8) text in the configuration, from the simulator, and in AMI headers comes out byte for byte in the configuration document, the user list, file requests, events, CLI and AMI output, AstDB, and the log; the JSON (jansson) and XML (libxml2) paths fail on it as in the official DPMA |
 
-`cargo xtask test` runs the suites in the order of the table (without a
-suite name: all of them up to `raw-bytes`; `all` adds `ami-expiry`;
-`parity` only when named), each as `<test binary of the target>
---ignored [OPTIONS]`, several at a time.  It reports in that order, one
-line per suite (`ok` or `FAIL`, with its time in seconds; a suite whose
-test target does not exist fails without running), and keeps each
-suite's output in
-`target/container/<release>/logs/<suite>.log`, which each run replaces.
-The exit status is 0 when every suite passed (2 for an unknown suite
-name).  Each suite's rustdoc (at the top of its
+Each suite is the test target of its name.  `cargo xtask test` runs
+the suites in the order of the table (without a suite name, or with
+`all`, every one of them), each as `<test binary of the target>
+--ignored`, several at a time.  It reports in that order, one line per
+suite (`ok` or `FAIL`, with its time in seconds; a suite whose test
+target does not exist fails without running), and keeps each suite's
+output in `target/container/<release>/logs/<suite>.log`, which each run
+replaces.  The exit status is 0 when every suite passed (2 for an
+unknown suite name).  Each suite's rustdoc (at the top of its
 `tests/suites/<suite>/main.rs`) describes what it checks, its arguments,
 and what it needs.
+
+Timing that the official DPMA defines is tested with test-only knobs of
+the devtest build rather than by waiting: `dpmadev session idle`
+(session pruning), `dpmadev session txage` (incomplete transactions),
+`dpmadev auth age` (auth incidents), and `dpmadev ami expiry` (forwarded
+AMI requests).  Otherwise the suites wait for events (log lines, AMI
+events, SIP messages, CLI or AstDB state) rather than for fixed times;
+the exceptions are checks that nothing happens, `message_delay`, the
+SIP scenarios of `pjsip-helpers` and `apps-discovery`, and the stress
+phases.
 
 ## The module for publishing
 
@@ -233,8 +235,8 @@ dpma-tests has three binaries (`cargo run -p dpma-tests --bin <name> --
 Everything is written from the decompile of the official DPMA,
 independently of the module's crates (the simulator shares only the
 RustCrypto primitive crates with them), and nothing comes from the
-official DPMA binary: all certificates and keys are generated locally (real
-phones do not accept the test AppServer certificate).  The module
+official DPMA's binary: all certificates and keys are generated locally
+(real phones do not accept the test AppServer certificate).  The module
 defaults to the official DPMA's embedded trust material, so a setup that
 uses the test PKI points `phone_ca_file` and `appserver_certificate` at
 it (`dpma_tests::harness::fixtures::prepare` does this for the suites).

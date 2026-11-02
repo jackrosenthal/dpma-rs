@@ -69,11 +69,6 @@ path = "suites/pjsip-helpers/main.rs"
 harness = false
 
 [[test]]
-name = "parity"
-path = "suites/parity/main.rs"
-harness = false
-
-[[test]]
 name = "ami"
 path = "suites/ami/main.rs"
 harness = false

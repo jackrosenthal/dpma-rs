@@ -3,15 +3,13 @@
 //! `tests/methods-calls/run.py`, `phone.py`, and `setup.sh`).
 //!
 //! ```text
-//! cargo xtask test methods-calls methods-calls-phone methods-calls-http
+//! cargo xtask test methods-calls
 //! ```
 //!
-//! runs it (`methods-calls-phone` with `--via phone`, `methods-calls-http`
-//! with `--via http`) in the test container after building the devtest
-//! module, as
+//! runs it in the test container after building the devtest module, as
 //!
 //! ```text
-//! cargo test -p dpma-tests --test methods-calls -- --ignored [--via hook|phone|http] [PART...]
+//! cargo test -p dpma-tests --test methods-calls -- --ignored [PART...]
 //! ```
 //!
 //! The suite prepares the instance (fresh configuration; the snippets of
@@ -19,34 +17,25 @@
 //! `queues.conf`, `res_parking.conf`, `extensions.conf`, and
 //! `voicemail.conf`; `pjsip.conf` is changed so that AOR 1001 keeps one
 //! contact (`remove_existing`) and endpoint 1001's mailbox is
-//! `1001@p10vm`; the contacts files go into the file directory; with
-//! `--via phone` or `--via http` also the test PKI; then the debug build is
-//! installed and Asterisk restarted; `--no-prepare` skips this).  The
-//! instance's `pjsip.conf` must have the endpoints 1001 (auth
+//! `1001@p10vm`; the contacts files go into the file directory; then the
+//! debug build is installed and Asterisk restarted; `--no-prepare` skips
+//! this).  The instance's `pjsip.conf` must have the endpoints 1001 (auth
 //! 1001/secret1001) and 1002, as the scratch configuration has.
 //!
 //! The expected documents are the ones the original's
-//! `phone_method_internal_api.c` builds.  How the methods are called
-//! (`--via`):
-//!
-//! - `hook` (default): `dpmadev method call` (JSON) and `dpmadev calls
-//!   xml` (XML) through the CLI; return codes are checked too.
-//! - `phone` (package P12): encrypted AsteriskRequests from the phone
-//!   simulator, authenticated as the phone (the test phones have no pin).
-//! - `http`: HTTPRequests from the simulator.
-//!
-//! With `phone` and `http` the reply body must be the HTTP wrapper around
-//! the same document; return codes are not visible that way.  The
-//! simulator is identified by the module's PJSIP side (its
-//! `X-Digium-User-Agent` header), so its test configuration is not
-//! installed: its identify would also catch the test phone's REGISTER.
+//! `phone_method_internal_api.c` builds.  The methods are called with
+//! `dpmadev method call` (JSON) and `dpmadev calls xml` (XML) through the
+//! CLI, and their return codes are checked too.  (The method code does
+//! not depend on how a request arrives; the request-handlers suite checks
+//! the AsteriskRequest and HTTPRequest paths, with the same echo
+//! parameters.)
 //!
 //! Every part starts from a clean state (channels hung up, queue members
 //! and statistics reset, the contacts files restored).  The recording
 //! INFOs and the parked call MESSAGE are checked with a test phone (the
 //! `sipua` UAS) registered as endpoint 1001 with a Digium user agent,
 //! which needs the module's PJSIP side (`dpma_info_send` and
-//! `dpma_pjsip_endpoint_is_dphone`).  The parts (about 25 seconds in all):
+//! `dpma_pjsip_endpoint_is_dphone`).  The parts (a few seconds in all):
 //!
 //! | Part | Checks |
 //! |---|---|
@@ -66,23 +55,11 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use bstr::ByteSlice;
-use dpma_tests::harness::{fixtures, option_value, Checker, ConfFile, Ctx, Instance, Log, Suite};
-use dpma_tests::sim::Phone;
+use dpma_tests::harness::{fixtures, Checker, ConfFile, Ctx, Instance, Log, Suite};
 use dpma_tests::sipua::{UaEvent, Uas, UasConfig};
 use dpma_tests::util::{json_compact, json_python};
 use regex::Regex;
 use serde_json::{json, Value};
-
-/// How the methods are called.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Via {
-    /// `dpmadev method call` and `dpmadev calls xml`.
-    Hook,
-    /// AsteriskRequests from the phone simulator.
-    Phone,
-    /// HTTPRequests from the phone simulator.
-    Http,
-}
 
 /// The configuration snippets: the file that includes it, its name, and
 /// its contents.
@@ -177,26 +154,19 @@ fn edit_pjsip(conf: &ConfFile) -> Result<()> {
 }
 
 /// Installs the test setup into the instance (the suite's `setup`).
-fn setup(inst: &Instance, via: Via) -> Result<()> {
+fn setup(inst: &Instance) -> Result<()> {
     for (main, snippet, data) in SNIPPETS {
         ConfFile::new(&inst.conf(snippet)).write(data)?;
         ConfFile::new(&inst.conf(main)).add_include(snippet)?;
     }
     edit_pjsip(&ConfFile::new(&inst.conf("pjsip.conf")))?;
-    install_contacts(inst)?;
-    if via != Via::Hook {
-        fixtures::install_sim_pki(inst)?;
-    }
-    Ok(())
+    install_contacts(inst)
 }
 
 /// What the parts share.
 pub struct State {
-    via: Via,
-    /// Whether the hooks were found (and the simulator started).
+    /// Whether the hooks were found.
     ready: bool,
-    /// The simulated phone (`--via phone` and `--via http`).
-    phone: Option<Phone>,
 }
 
 /// A part's view of the suite.
@@ -205,7 +175,8 @@ pub struct T<'a> {
     st: RefMut<'a, State>,
 }
 
-/// A call's return code (`None` unless `--via hook`) and response.
+/// A call's return code (`None` when the hook's output has none) and
+/// response.
 pub type Got = (Option<i64>, String);
 
 impl<'a> T<'a> {
@@ -219,11 +190,6 @@ impl<'a> T<'a> {
     /// The checks.
     pub fn c(&mut self) -> &mut Checker {
         &mut self.ctx.c
-    }
-
-    /// How the methods are called.
-    pub fn via(&self) -> Via {
-        self.st.via
     }
 
     /// The instance.
@@ -241,9 +207,7 @@ impl<'a> T<'a> {
         self.ctx.log()
     }
 
-    /// Checks once that the hooks are there and, unless `--via hook`,
-    /// handshakes as p10phone and gets a token (an authenticated session
-    /// is never pruned).
+    /// Checks once that the hooks are there.
     fn ready(&mut self) -> Result<()> {
         if self.st.ready {
             return Ok(());
@@ -254,66 +218,17 @@ impl<'a> T<'a> {
         {
             bail!("dpmadev hooks not available (devtest build installed and Asterisk running?)");
         }
-        if self.st.via != Via::Hook {
-            let opts = self.ctx.sim_options().mac("000fd3000010");
-            let phone = fixtures::phone_with_token(opts, "p10phone", fixtures::GLOBALPIN)?;
-            self.st.phone = Some(phone);
-        }
         self.st.ready = true;
         Ok(())
     }
 
-    /// Return codes are only visible through the hooks.
+    /// Whether the return code is `want`.
     pub fn rc_ok(&self, rc: Option<i64>, want: i64) -> bool {
-        rc == Some(want) || self.st.via != Via::Hook
-    }
-
-    /// Sends a request document as `phone` (no pin).
-    fn call_phone(&mut self, phone: &str, doc: &str) -> Result<Got> {
-        let http = self.st.via == Via::Http;
-        let sim = self.st.phone.as_ref().expect("ready");
-        let req = if http {
-            sim.http(doc)
-        } else {
-            sim.asterisk(doc)
-        };
-        let ex = req
-            .auth(format!("{phone}:"))
-            .timeout(Duration::from_secs(10))
-            .send()?;
-        let want = if http {
-            "HTTPResponse"
-        } else {
-            "AsteriskResponse"
-        };
-        let r = match ex.reply() {
-            Some(r) if r.ok() && r.is_response(want) => r,
-            _ => {
-                let d = ex.describe(0).to_str_lossy().into_owned();
-                return Ok((None, format!("(no reply or a bad one: {d})")));
-            }
-        };
-        let body = &r.payload;
-        let pre = fixtures::HTTP_PREAMBLE;
-        if !body.starts_with(pre) || !body.ends_with(b"\r\n\r\n") {
-            return Ok((None, format!("(not wrapped: {body:?})")));
-        }
-        let end = body.len() - 4;
-        Ok((
-            None,
-            body.get(pre.len()..end)
-                .unwrap_or_default()
-                .to_str_lossy()
-                .into_owned(),
-        ))
+        rc == Some(want)
     }
 
     /// Calls a JSON method as `phone`.
     pub fn call(&mut self, phone: &str, method: &str, params: &Value) -> Result<Got> {
-        if self.st.via != Via::Hook {
-            let doc = json_python(&json!({"request": {"method": method, "parameters": params}}));
-            return self.call_phone(phone, &doc);
-        }
         let out = self.cli(&format!(
             "dpmadev method call {phone} {method} {}",
             fixtures::cli_quote(&json_python(params))
@@ -333,12 +248,6 @@ impl<'a> T<'a> {
 
     /// Calls an XML method as `phone` with a parameters element.
     pub fn call_xml(&mut self, phone: &str, method: &str, params: &str) -> Result<Got> {
-        if self.st.via != Via::Hook {
-            return self.call_phone(
-                phone,
-                &format!("<request method=\"{method}\">{params}</request>"),
-            );
-        }
         let out = self.cli(&format!(
             "dpmadev calls xml {phone} {method} {}",
             fixtures::cli_quote(params)
@@ -369,10 +278,18 @@ impl<'a> T<'a> {
         self.log().wait_for(mark, text, Duration::from_secs(3))
     }
 
-    /// Hangs up every channel, takes the dynamic queue members out, resets
-    /// the queue statistics, and restores the contacts files.
+    /// Hangs up every channel (waiting until they are gone), takes the
+    /// dynamic queue members out, resets the queue statistics, and
+    /// restores the contacts files.
     pub fn reset(&mut self) -> Result<()> {
         self.cli("channel request hangup all");
+        let gone = until(5.0, || {
+            self.cli("core show channels count")
+                .contains("0 active channels")
+        });
+        if !gone {
+            bail!("channels still up after hangup all");
+        }
         for (q, iface) in [
             ("p10sales", "Local/agent@p10test"),
             ("p10support", "Local/1001@p10test"),
@@ -380,10 +297,14 @@ impl<'a> T<'a> {
             self.cli(&format!("queue remove member {iface} from {q}"));
         }
         self.cli("queue reset stats");
-        install_contacts(self.inst())?;
-        fixtures::sleep(1.0);
-        Ok(())
+        install_contacts(self.inst())
     }
+}
+
+/// Polls `f` every 50 ms until it holds, for at most `secs` seconds;
+/// whether it did.
+pub fn until(secs: f64, f: impl FnMut() -> bool) -> bool {
+    dpma_tests::util::wait_until(Duration::from_secs_f64(secs), Duration::from_millis(50), f)
 }
 
 /// A successful response document.
@@ -482,20 +403,7 @@ impl PhoneLog {
 type PartFn = fn(&mut T) -> Result<()>;
 
 fn main() -> ExitCode {
-    let via = match option_value("--via").as_deref() {
-        None | Some("hook") => Via::Hook,
-        Some("phone") => Via::Phone,
-        Some("http") => Via::Http,
-        Some(v) => {
-            eprintln!("methods-calls: unknown --via {v} (hook, phone, or http)");
-            return ExitCode::from(2);
-        }
-    };
-    let state = Rc::new(RefCell::new(State {
-        via,
-        ready: false,
-        phone: None,
-    }));
+    let state = Rc::new(RefCell::new(State { ready: false }));
     let parts: [(&str, PartFn); 5] = [
         ("echo", calls::echo),
         ("queues", calls::queues),
@@ -503,9 +411,7 @@ fn main() -> ExitCode {
         ("parking", calls::parking),
         ("recording", calls::recording),
     ];
-    let mut suite = Suite::new("methods-calls")
-        .value_option("--via")
-        .prepare(move |inst| fixtures::prepare(inst, |i| setup(i, via)));
+    let mut suite = Suite::new("methods-calls").prepare(|inst| fixtures::prepare(inst, setup));
     for (name, f) in parts {
         let st = state.clone();
         suite = suite.part(name, move |ctx| {

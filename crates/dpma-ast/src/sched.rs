@@ -7,7 +7,7 @@
 //! [`Context::start_thread`], or explicit [`Context::runq`] calls.
 
 use crate::sys;
-use std::os::raw::{c_int, c_void};
+use std::os::raw::{c_int, c_long, c_void};
 
 pub type AstSchedContext = sys::ast_sched_context;
 
@@ -51,6 +51,12 @@ impl Context {
     /// ran.
     pub fn runq(&self) -> i32 {
         unsafe { sys::ast_sched_runq(self.0) }
+    }
+
+    /// `ast_sched_when`: the whole seconds until entry `id` runs, or -1
+    /// when there is no such entry.
+    pub fn when(&self, id: i32) -> c_long {
+        unsafe { sys::ast_sched_when(self.0, id) }
     }
 }
 

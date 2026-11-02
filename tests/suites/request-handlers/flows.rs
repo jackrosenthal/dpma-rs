@@ -1,19 +1,19 @@
 //! The phone users' runtime (package P8) over real sessions, with the
 //! request handlers (P12) in place (was
 //! `tests/request-handlers/users-flows.py`): reconfigure messages
-//! reaching the phone (CLI, AMI, reload, deleted phone, MAC mismatch, the
-//! delete-token form), events (including `digium.assignment.update`),
-//! sessions marked authenticated and inactive by token builds and
-//! lookups, orphaned and stale phones, the response URI following a phone
-//! that moves, and the phones' sessions restored after an Asterisk
-//! restart.
+//! reaching the phone (reload, deleted phone, MAC mismatch), sessions
+//! marked authenticated and inactive by token builds and lookups,
+//! orphaned and stale phones, the response URI following a phone that
+//! moves, and the phones' sessions restored after an Asterisk restart.
+//! (Reconfigure from the CLI and AMI, its delete-token form, and events
+//! are checked in the ami suite.)
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::Result;
 use bstr::{BString, ByteSlice};
-use dpma_tests::harness::{fixtures, Ctx};
+use dpma_tests::harness::Ctx;
 use dpma_tests::sim::{Phone, Reply};
 
 use crate::common::*;
@@ -22,9 +22,6 @@ use crate::common::*;
 const UPDATE: &str = "digium.config.update";
 /// The body of a reconfigure message.
 const PLAIN: &[u8] = b"<config></config>";
-/// The body of a reconfigure message that deletes the phone's token.
-const DELETE_TOKEN: &[u8] =
-    b"<config>\t<section id=\"all\"/>\t<option id=\"delete_token\" value=\"true\"/></config>";
 /// The phones whose AstDB entries are deleted first.
 const PHONES: [&str; 4] = ["p12a", "p12b", "p12c", "p12tmp"];
 
@@ -46,13 +43,12 @@ pub fn part(ctx: &mut Ctx, f: fn(&mut Ctx) -> Result<()>) -> Result<()> {
     f(ctx)
 }
 
-/// Stops and starts Asterisk, and waits two seconds.
+/// Stops and starts Asterisk (sessions and phone users are restored while
+/// the module loads, before Asterisk is fully booted).
 fn restart(ctx: &mut Ctx) -> Result<()> {
     ctx.drop_ami();
     ctx.inst.stop()?;
-    ctx.inst.start()?;
-    fixtures::sleep(2.0);
-    Ok(())
+    ctx.inst.start()
 }
 
 /// A TokenRequest for `user` with the global pin, checked.
@@ -140,92 +136,10 @@ fn edit_p12conf(ctx: &mut Ctx, extra: &str) -> Result<()> {
         format!("{P12_CONF}{extra}"),
     )?;
     cli(ctx, "module reload res_dpma_rs.so")?;
-    fixtures::sleep(0.5);
     Ok(())
 }
 
 // ---------------------------------------------------------------------------
-
-pub fn reconfigure(ctx: &mut Ctx) -> Result<()> {
-    let p = phone(ctx, MAC_A)?;
-    token_for(ctx, &p, "p12a")?;
-    let out = cli_text(ctx, "digium_phones reconfigure phone p12a")?;
-    ctx.c.same(
-        "CLI reconfigure output (full name)",
-        out.trim(),
-        "Phone 'P12 Phone A' will reconfigure shortly.",
-    );
-    expect_event(ctx, "CLI reconfigure reaches the phone", &p, PLAIN, UPDATE);
-    let out = cli_text(ctx, "digium_phones reconfigure phone p12c")?;
-    ctx.c.check(
-        "CLI reconfigure of a phone never seen",
-        out.starts_with("Phone 'p12c' has not contacted the server."),
-        &out,
-    );
-    let res = ctx
-        .ami()?
-        .action("DigiumPhoneReconfigure", [("PhoneName", "p12a")]);
-    let resp = res.response.as_ref();
-    ctx.c.same(
-        "AMI DigiumPhoneReconfigure",
-        (
-            resp.and_then(|r| field(r, "Response")),
-            resp.and_then(|r| field(r, "Message")),
-        ),
-        (
-            Some("Success".into()),
-            Some("Reconfigure message successfully sent".into()),
-        ),
-    );
-    expect_event(
-        ctx,
-        "AMI DigiumPhoneReconfigure reaches the phone",
-        &p,
-        PLAIN,
-        UPDATE,
-    );
-    let res = ctx
-        .ami()?
-        .action("DigiumPhoneReconfigure", [("PhoneName", "p12c")]);
-    ctx.c.same(
-        "AMI DigiumPhoneReconfigure of a phone never seen",
-        res.response.as_ref().and_then(|r| field(r, "Response")),
-        Some("Error".into()),
-    );
-    let res = ctx.ami()?.action(
-        "DigiumPhoneReconfigureAll",
-        std::iter::empty::<(&str, &str)>(),
-    );
-    ctx.c.same(
-        "AMI DigiumPhoneReconfigureAll",
-        res.response.as_ref().and_then(|r| field(r, "Response")),
-        Some("Success".into()),
-    );
-    expect_event(
-        ctx,
-        "AMI DigiumPhoneReconfigureAll reaches the phone",
-        &p,
-        PLAIN,
-        UPDATE,
-    );
-    no_event(ctx, "one reconfigure per phone", &p);
-    cli(
-        ctx,
-        &format!(
-            "dpmadev token reconfigure {} {} delete",
-            sid(&p),
-            uri_of(&p)
-        ),
-    )?;
-    expect_event(
-        ctx,
-        "reconfigure with delete_token",
-        &p,
-        DELETE_TOKEN,
-        UPDATE,
-    );
-    Ok(())
-}
 
 pub fn reload(ctx: &mut Ctx) -> Result<()> {
     let res = reload_checks(ctx);
@@ -473,56 +387,6 @@ pub fn uri(ctx: &mut Ctx) -> Result<()> {
     Ok(())
 }
 
-pub fn events(ctx: &mut Ctx) -> Result<()> {
-    let p = phone(ctx, MAC_A)?;
-    token_for(ctx, &p, "p12a")?;
-    let out = cli_text(
-        ctx,
-        "dpmadev token event p12a digium.p12.test hello <b>world</b>",
-    )?;
-    ctx.c
-        .same("send_event result", out.trim(), "send_event: Ok(())");
-    expect_event(
-        ctx,
-        "event reaches the phone",
-        &p,
-        b"hello <b>world</b>",
-        "digium.p12.test",
-    );
-    cli(
-        ctx,
-        "dpmadev token event p12a digium.assignment.update <assign/>",
-    )?;
-    let r = p.next_event(Duration::from_secs(5), None);
-    ctx.c.check("assignment update arrives", r.is_some(), "");
-    if let Some(r) = r {
-        ctx.c.same(
-            "assignment update: id",
-            r.id.clone(),
-            Some(BString::from("bootcReset")),
-        );
-        ctx.c
-            .same("assignment update: no event name", r.event.clone(), None);
-        ctx.c.same(
-            "assignment update: Error-ID",
-            r.error.clone(),
-            Some(BString::from("-398")),
-        );
-        ctx.c.same_bytes(
-            "assignment update: body",
-            &r.payload,
-            b"<assign/><error msg=\"Session Timeout\" />",
-        );
-    }
-    let out = cli_text(ctx, "dpmadev token event p12c digium.p12.test x")?;
-    ctx.c.same(
-        "event to a phone never seen",
-        out.trim(),
-        r#"send_event: Err("Phone has not contacted server")"#,
-    );
-    Ok(())
-}
-
 pub fn marks(ctx: &mut Ctx) -> Result<()> {
     let p = phone(ctx, MAC_A)?;
     let got = flags(ctx, &sid(&p))?;
@@ -634,9 +498,20 @@ pub fn restore(ctx: &mut Ctx) -> Result<()> {
     );
     cli(ctx, "digium_phones reconfigure phone p12a")?;
     expect_event(ctx, "restored session: reconfigure", &p, PLAIN, UPDATE);
-    ctx.c
-        .note("(waiting 65 s: the idle pruning removes inactive sessions after 59 s)");
-    fixtures::sleep(65.0);
+    // Idle for 65 s (inactive sessions are pruned after 59 s); an Echo
+    // starts the read cycle that prunes, and the ping comes after it.
+    cli(ctx, &format!("dpmadev session idle {rsid} 65"))?;
+    let ex = p.echo("cycle").send()?;
+    ctx.c.check("echo after 65 s idle", ex.ok(), ex.describe(0));
+    let ex = p.ping().send()?;
+    expect(
+        ctx,
+        "restored session: ping after 65 s idle",
+        &ex,
+        "PingResponse",
+        None,
+        Body::Is(b"empty body"),
+    );
     let got = flags(ctx, &rsid)?;
     ctx.c.same(
         "restored session survives the idle pruning",

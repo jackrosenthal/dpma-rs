@@ -3,14 +3,13 @@
 //! simulator (the Rust form of the former `tests/ami/run.py`).
 //!
 //! ```text
-//! cargo xtask test ami ami-expiry
+//! cargo xtask test ami
 //! ```
 //!
-//! runs it (`ami-expiry` with `--expiry`) in the test container after
-//! building the devtest module, as
+//! runs it in the test container after building the devtest module, as
 //!
 //! ```text
-//! cargo test -p dpma-tests --test ami -- --ignored [--no-prepare] [-v] [--expiry] [--via phone|hook] [PART...]
+//! cargo test -p dpma-tests --test ami -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
 //! Prerequisites: the test instance and a devtest build of the module.
@@ -27,22 +26,20 @@
 //! | Part | Checks |
 //! |---|---|
 //! | `actions` | DPMAMessageRegister, DPMAMessageResponse, and DPMAMessageSend: privileges, responses byte for byte (an ActionID of 243 characters fits; one of 244 loses its line ending), failures and what they log |
-//! | `forwarding` | AsteriskRequests for AMI-registered methods: the DPMAMessage event, the queue and its scheduler, JSON and XML results and errors, other formats, two requests answered out of order, a long (chunked) result, and an answer after the phone gave up waiting |
+//! | `forwarding` | AsteriskRequests for AMI-registered methods: the DPMAMessage event, the queue and its scheduler (an expiry 300 s out), JSON and XML results and errors, other formats, two requests answered out of order, a long (chunked) result, and an answer after the phone gave up waiting |
 //! | `send` | DPMAMessageSend events as the phone decrypts them: an empty body, `digium.assignment.update` (sent as `bootcReset` with -398), and event names case sensitive |
-//! | `reconfigure` | `digium_phones reconfigure` from the CLI and DigiumPhoneReconfigure(All) from AMI: texts, errors, and the `digium.config.update` events; both bodies of the reconfigure message |
+//! | `reconfigure` | `digium_phones reconfigure` from the CLI and DigiumPhoneReconfigure(All) from AMI: texts, errors, and the `digium.config.update` events (one per phone); both bodies of the reconfigure message |
 //! | `reload` | A module reload that changes a phone's lines or removes a phone reconfigures only that phone |
 //! | `session-gone` | A queued request and an event for a phone whose session a new handshake replaced |
-//! | `expiry` | Only with `--expiry` (about six minutes): the AMI scheduler drops a request nobody answers after 300 s (port plan section 8, item 13; the original never runs its scheduler, so its requests never expire) |
+//! | `expiry` | The AMI scheduler drops a request nobody answers when its expiry runs (port plan section 8, item 13; the original never runs its scheduler, so its requests never expire): with the delay shortened to 2 s (`dpmadev ami expiry`), the request is still queued after 1 s, then dropped and logged, a later answer fails, and nothing reaches the phone |
 //!
 //! AMI responses and events are compared byte for byte with what the
 //! original's `phone_ami.c` and `phone_request.c` write; replies and
 //! events are checked as the simulated phone decrypts them.
 //!
-//! By default (`--via phone`) everything is driven from the simulator:
-//! the TokenRequest records where the phone is, and an AsteriskRequest for
-//! an AMI-registered method is forwarded to AMI by the request handler.
-//! `--via hook` replaces those two steps with the devtest commands
-//! `dpmadev token build` and `dpmadev ami forward`.
+//! Everything is driven from the simulator: the TokenRequest records where
+//! the phone is, and an AsteriskRequest for an AMI-registered method is
+//! forwarded to AMI by the request handler.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -51,7 +48,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Result};
 use bstr::{BStr, BString, ByteSlice};
 use dpma_tests::ami::{AmiClient, Match};
-use dpma_tests::harness::{fixtures, option_value, Checker, ConfFile, Ctx, Instance, Suite};
+use dpma_tests::harness::{fixtures, Checker, ConfFile, Ctx, Instance, Log, LogMark, Suite};
 use dpma_tests::sim::proto::{method_request_json, method_request_xml};
 use dpma_tests::sim::{Exchange, Phone, Reply};
 use dpma_tests::util::{json_compact, secs};
@@ -64,39 +61,15 @@ const CONF_TEXT: &str = include_str!("../../data/ami/res_digium_phone_p13.conf")
 const DELETE_TOKEN_BODY: &[u8] =
     b"<config>\t<section id=\"all\"/>\t<option id=\"delete_token\" value=\"true\"/></config>";
 
-/// How requests reach AMI.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Via {
-    Phone,
-    Hook,
-}
-
-impl Via {
-    fn name(self) -> &'static str {
-        match self {
-            Via::Phone => "phone",
-            Via::Hook => "hook",
-        }
-    }
-}
-
-/// The suite's own options.
-#[derive(Clone, Copy)]
-struct Opts {
-    via: Via,
-    expiry: bool,
-}
-
-fn parse_opts() -> Result<Opts, String> {
-    let via = match option_value("--via").as_deref() {
-        None | Some("phone") => Via::Phone,
-        Some("hook") => Via::Hook,
-        Some(v) => return Err(format!("unknown --via {v} (phone or hook)")),
-    };
-    Ok(Opts {
-        via,
-        expiry: std::env::args().skip(1).any(|a| a == "--expiry"),
-    })
+/// Waits up to two seconds until every one of `texts` was logged since
+/// `mark`; whether they were, and the log since `mark`.
+fn logged(log: &Log, mark: LogMark, texts: &[&str]) -> (bool, BString) {
+    let ok =
+        dpma_tests::util::wait_until(Duration::from_secs(2), Duration::from_millis(20), || {
+            let text = log.since(mark);
+            texts.iter().all(|t| text.contains_str(t))
+        });
+    (ok, log.since(mark))
 }
 
 /// The simulator setup plus the P13 phones.
@@ -181,23 +154,14 @@ fn new_phone(ctx: &Ctx, mac: &str) -> Result<Phone> {
     fixtures::phone(ctx.sim_options().mac(mac))
 }
 
-/// Records where the phone is (TokenRequest, or the token hook).
-fn authenticate(ctx: &Ctx, via: Via, phone: &Phone, name: &str) -> Result<(bool, String)> {
-    if via == Via::Phone {
-        let ex = phone
-            .get_token()
-            .user(name)
-            .config_password(fixtures::GLOBALPIN)
-            .send()?;
-        return Ok((ex.ok(), ex.describe(0).to_str_lossy().into_owned()));
-    }
-    let out = ctx.cli_text(&format!(
-        "dpmadev token build {name} {} {} {}",
-        phone.mac(),
-        phone.session().unwrap_or_default(),
-        phone.response_uri()
-    ));
-    Ok((out.starts_with(&format!("token: {name}/")), out))
+/// Records where the phone is (TokenRequest).
+fn authenticate(phone: &Phone, name: &str) -> Result<(bool, String)> {
+    let ex = phone
+        .get_token()
+        .user(name)
+        .config_password(fixtures::GLOBALPIN)
+        .send()?;
+    Ok((ex.ok(), ex.describe(0).to_str_lossy().into_owned()))
 }
 
 /// Drops whatever the phone receives until it is quiet for 0.2 s.
@@ -212,13 +176,6 @@ enum Params<'a> {
 }
 
 impl Params<'_> {
-    fn format(&self) -> &'static str {
-        match self {
-            Params::Json(_) => "JSON",
-            Params::Xml(_) => "XML",
-        }
-    }
-
     /// What the DPMAMessage event carries as Parameters: the compact JSON
     /// of the parameters, or the text content of the `<parameters>`
     /// element.
@@ -261,36 +218,13 @@ struct Forwarded {
 }
 
 /// A request for an AMI-registered method (not waited for).
-fn forward(
-    ctx: &Ctx,
-    via: Via,
-    phone: &Phone,
-    method: &str,
-    params: Params,
-    auth: &str,
-) -> Result<Forwarded> {
+fn forward(phone: &Phone, method: &str, params: Params, auth: &str) -> Result<Forwarded> {
     let ptext = params.text();
-    let ex = if via == Via::Phone {
-        phone
-            .asterisk(params.document(method))
-            .auth(auth)
-            .no_wait()
-            .send()?
-    } else {
-        let txid = phone.new_id();
-        let ex = phone.expect_reply("AsteriskRequest", &txid);
-        let out = ctx.cli_text(&format!(
-            "dpmadev ami forward {} {} {txid} {} {method} {}",
-            phone.session().unwrap_or_default(),
-            phone.response_uri(),
-            params.format(),
-            fixtures::cli_quote(&ptext)
-        ));
-        if !out.starts_with("Queued") {
-            ctx.c.note(format!("dpmadev ami forward: {}", out.trim()));
-        }
-        ex
-    };
+    let ex = phone
+        .asterisk(params.document(method))
+        .auth(auth)
+        .no_wait()
+        .send()?;
     let key = format!("{}-{}", ex.id, phone.mac());
     Ok(Forwarded { ex, key, ptext })
 }
@@ -321,12 +255,17 @@ fn dpma_message(
     );
 }
 
-/// The queued AMI requests (`dpmadev ami queue`): RequestID, Method,
-/// Session, and SchedID.
-fn queued(ctx: &Ctx) -> Vec<(String, String, String, String)> {
+/// A queued AMI request: RequestID, Method, Session, SchedID, and the
+/// seconds until its expiry runs.
+type Queued = (String, String, String, String, i64);
+
+/// The queued AMI requests (`dpmadev ami queue`).
+fn queued(ctx: &Ctx) -> Vec<Queued> {
     let out = ctx.cli_text("dpmadev ami queue");
-    let re = Regex::new(r"(?m)^RequestID: (\S+)  Method: (\S*)  Session: (\S*)  SchedID: (-?\d+)")
-        .expect("valid");
+    let re = Regex::new(
+        r"(?m)^RequestID: (\S+)  Method: (\S*)  Session: (\S*)  SchedID: (-?\d+)  Expires: (-?\d+) s",
+    )
+    .expect("valid");
     re.captures_iter(&out)
         .map(|m| {
             (
@@ -334,6 +273,7 @@ fn queued(ctx: &Ctx) -> Vec<(String, String, String, String)> {
                 m[2].to_string(),
                 m[3].to_string(),
                 m[4].to_string(),
+                m[5].parse().unwrap_or(-1),
             )
         })
         .collect()
@@ -407,7 +347,7 @@ fn preamble(doc: &[u8]) -> Vec<u8> {
 
 /// Answers requests an earlier run left queued, starts the two phones,
 /// and records where they are.
-fn init(ctx: &mut Ctx, o: Opts) -> Result<State> {
+fn init(ctx: &mut Ctx) -> Result<State> {
     if !ctx
         .cli_text("core show help dpmadev ami")
         .contains("dpmadev ami queue")
@@ -418,8 +358,8 @@ fn init(ctx: &mut Ctx, o: Opts) -> Result<State> {
         );
     }
     let ami = ctx.inst.ami()?;
-    // Requests left queued by an earlier run expire only after 300 s;
-    // answer them.
+    // Requests left queued by an earlier run (with --no-prepare) expire
+    // only after 300 s; answer them.
     for key in queued_keys(ctx) {
         raw(
             &ami,
@@ -431,9 +371,8 @@ fn init(ctx: &mut Ctx, o: Opts) -> Result<State> {
     let a = new_phone(ctx, "000fd3001301")?;
     let b = new_phone(ctx, "000fd3001302")?;
     for (phone, name) in [(&a, "p13phone"), (&b, "p13phone2")] {
-        let (ok, detail) = authenticate(ctx, o.via, phone, name)?;
-        ctx.c
-            .check(format!("{name} located ({})", o.via.name()), ok, detail);
+        let (ok, detail) = authenticate(phone, name)?;
+        ctx.c.check(format!("{name} located"), ok, detail);
     }
     Ok(State { ami, a, b })
 }
@@ -579,25 +518,26 @@ fn actions(ctx: &mut Ctx, st: &State) -> Result<()> {
         send("s4", &[("PhoneName", b"p13phone3"), ("Method", b"e")]),
         &resp("Failure", Some("s4")),
     );
-    fixtures::sleep(0.3);
-    let text = log.since(pos);
-    c.check(
-        "Send: logs",
-        text.contains_str("Phone 'nobody' could not be found.")
-            && text.contains_str("Phone '' could not be found.")
-            && text.contains_str("Message not supplied."),
-        text.to_str_lossy(),
+    let (ok, text) = logged(
+        &log,
+        pos,
+        &[
+            "Phone 'nobody' could not be found.",
+            "Phone '' could not be found.",
+            "Message not supplied.",
+        ],
     );
-    c.check(
-        "Send: no uri logged",
-        log.since(pos2)
-            .contains_str("Unable to send event to 'p13phone3' with no uri"),
-        "",
+    c.check("Send: logs", ok, text.to_str_lossy());
+    let (ok, _) = logged(
+        &log,
+        pos2,
+        &["Unable to send event to 'p13phone3' with no uri"],
     );
+    c.check("Send: no uri logged", ok, "");
     Ok(())
 }
 
-fn forwarding(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
+fn forwarding(ctx: &mut Ctx, st: &State) -> Result<()> {
     let (ami, a) = (&st.ami, &st.a);
     let s = a.session().unwrap_or_default();
     let auth = "p13phone:1313";
@@ -606,8 +546,6 @@ fn forwarding(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
 
     // JSON request answered with a JSON result.
     let mut f = forward(
-        ctx,
-        o.via,
         a,
         hello,
         Params::Json(json!({"a": 1, "b": "two words"})),
@@ -616,8 +554,13 @@ fn forwarding(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
     dpma_message(&mut ctx.c, ami, &f, hello, "JSON", "JSON request");
     let q = queued(ctx);
     ctx.c.check(
-        "JSON request: queued with an expiry",
-        q.len() == 1 && q[0].0 == f.key && q[0].1 == hello && q[0].2 == s && q[0].3 != "-1",
+        "JSON request: queued with an expiry 300 s out",
+        q.len() == 1
+            && q[0].0 == f.key
+            && q[0].1 == hello
+            && q[0].2 == s
+            && q[0].3 != "-1"
+            && (295..=300).contains(&q[0].4),
         format!("{q:?}"),
     );
     let out = ctx.cli_text("dpmadev ami runq");
@@ -671,14 +614,7 @@ fn forwarding(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
     );
 
     // JSON error; RequestID and Format ignore case.
-    let mut f = forward(
-        ctx,
-        o.via,
-        a,
-        hello,
-        Params::Json(json!({"x": [1, 2]})),
-        auth,
-    )?;
+    let mut f = forward(a, hello, Params::Json(json!({"x": [1, 2]})), auth)?;
     dpma_message(&mut ctx.c, ami, &f, hello, "JSON", "JSON error");
     let upper = f.key.to_uppercase();
     same_raw(
@@ -707,7 +643,7 @@ fn forwarding(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
     );
 
     // JSON with neither a result nor a whole error: Failure, still queued.
-    let mut f = forward(ctx, o.via, a, other, Params::Json(json!({})), auth)?;
+    let mut f = forward(a, other, Params::Json(json!({})), auth)?;
     dpma_message(&mut ctx.c, ami, &f, other, "JSON", "JSON incomplete");
     let k = f.key.clone();
     same_raw(
@@ -763,7 +699,7 @@ fn forwarding(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
     // XML request answered with an XML result (not escaped), then an
     // error.
     let xml_params = "<id>17</id><name>x &amp; y</name>";
-    let mut f = forward(ctx, o.via, a, hello, Params::Xml(xml_params), auth)?;
+    let mut f = forward(a, hello, Params::Xml(xml_params), auth)?;
     dpma_message(&mut ctx.c, ami, &f, hello, "XML", "XML request");
     let k = f.key.clone();
     same_raw(
@@ -792,7 +728,7 @@ fn forwarding(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
         ),
         &s,
     );
-    let mut f = forward(ctx, o.via, a, hello, Params::Xml("<z/>"), auth)?;
+    let mut f = forward(a, hello, Params::Xml("<z/>"), auth)?;
     dpma_message(&mut ctx.c, ami, &f, hello, "XML", "XML error");
     let k = f.key.clone();
     same_raw(
@@ -822,7 +758,7 @@ fn forwarding(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
     );
 
     // Any other Format: only the preamble.
-    let mut f = forward(ctx, o.via, a, hello, Params::Json(json!({"f": null})), auth)?;
+    let mut f = forward(a, hello, Params::Json(json!({"f": null})), auth)?;
     dpma_message(&mut ctx.c, ami, &f, hello, "JSON", "other format");
     let k = f.key.clone();
     same_raw(
@@ -850,8 +786,8 @@ fn forwarding(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
 
     // Two queued at once, answered out of order; a long result is
     // chunked.
-    let mut f1 = forward(ctx, o.via, a, hello, Params::Json(json!({"n": 1})), auth)?;
-    let mut f2 = forward(ctx, o.via, a, other, Params::Json(json!({"n": 2})), auth)?;
+    let mut f1 = forward(a, hello, Params::Json(json!({"n": 1})), auth)?;
+    let mut f2 = forward(a, other, Params::Json(json!({"n": 2})), auth)?;
     dpma_message(&mut ctx.c, ami, &f1, hello, "JSON", "first of two");
     dpma_message(&mut ctx.c, ami, &f2, other, "JSON", "second of two");
     let mut keys = queued_keys(ctx);
@@ -918,14 +854,7 @@ fn forwarding(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
     );
 
     // The phone gives up waiting; the answer still arrives later.
-    let mut f = forward(
-        ctx,
-        o.via,
-        a,
-        hello,
-        Params::Json(json!({"late": true})),
-        auth,
-    )?;
+    let mut f = forward(a, hello, Params::Json(json!({"late": true})), auth)?;
     dpma_message(&mut ctx.c, ami, &f, hello, "JSON", "late answer");
     let r = reply_of(a, &mut f.ex, 1.5);
     ctx.c.check(
@@ -1152,6 +1081,16 @@ fn reconfigure(ctx: &mut Ctx, st: &State) -> Result<()> {
         "AMI DigiumPhoneReconfigureAll (p13phone2)",
         PLAIN_BODY,
     );
+    // (The second phone's events arrive while the first one waits.)
+    let more = [a.next_event(secs(1.0), None), b.next_event(secs(0.1), None)];
+    c.check(
+        "AMI DigiumPhoneReconfigureAll: one reconfigure per phone",
+        more.iter().all(Option::is_none),
+        more.iter()
+            .map(|r| describe(r.as_ref()))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
 
     // The two bodies of phone_user_send_reconfigure (the delete-token one
     // has no caller in the original).
@@ -1190,15 +1129,17 @@ fn reload(ctx: &mut Ctx, st: &State) -> Result<()> {
         std::fs::write(&path, &lines_changed)?;
         ctx.cli_text("module reload res_dpma_rs.so");
         expect_reconfigure(&mut ctx.c, a, "reload, lines changed", PLAIN_BODY);
-        fixtures::sleep(0.3);
-        let text = log.since(pos);
-        let tail = &text[text.len().saturating_sub(2000)..];
-        ctx.c.check(
-            "reload, lines changed: logs",
-            text.contains_str("Phone user 'p13phone' setting reconfigure due to change in lines")
-                && text.contains_str("Sending reconfigure to user p13phone"),
-            tail.to_str_lossy(),
+        let (ok, text) = logged(
+            &log,
+            pos,
+            &[
+                "Phone user 'p13phone' setting reconfigure due to change in lines",
+                "Sending reconfigure to user p13phone",
+            ],
         );
+        let tail = &text[text.len().saturating_sub(2000)..];
+        ctx.c
+            .check("reload, lines changed: logs", ok, tail.to_str_lossy());
         let r = b.next_event(secs(1.0), None);
         ctx.c.check(
             "reload, lines changed: other phones untouched",
@@ -1232,13 +1173,11 @@ fn reload(ctx: &mut Ctx, st: &State) -> Result<()> {
 
 /// A queued request and an event for a phone whose session was replaced
 /// by a new handshake from the same MAC.
-fn session_gone(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
+fn session_gone(ctx: &mut Ctx, st: &State) -> Result<()> {
     let (ami, b) = (&st.ami, &st.b);
-    let (ok, detail) = authenticate(ctx, o.via, b, "p13phone2")?;
+    let (ok, detail) = authenticate(b, "p13phone2")?;
     ctx.c.check("p13phone2 located again", ok, detail);
     let mut f = forward(
-        ctx,
-        o.via,
         b,
         "com.p13.hello",
         Params::Json(json!({"gone": 1})),
@@ -1284,23 +1223,34 @@ fn session_gone(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
         ),
         &resp("Failure", None),
     );
-    fixtures::sleep(0.3);
-    let text = log.since(pos);
-    ctx.c.check(
-        "Send: session gone logged",
-        text.contains_str("Unable to send event to 'p13phone2' without session"),
-        text.to_str_lossy(),
+    let (ok, text) = logged(
+        &log,
+        pos,
+        &["Unable to send event to 'p13phone2' without session"],
     );
+    ctx.c
+        .check("Send: session gone logged", ok, text.to_str_lossy());
     Ok(())
 }
 
-fn expiry(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
+/// The expiry of a request nobody answers, with the delay shortened to
+/// 2 s (the 300 s default is checked in `forwarding`); the delay is put
+/// back afterwards.
+fn expiry(ctx: &mut Ctx, st: &State) -> Result<()> {
+    let out = ctx.cli_text("dpmadev ami expiry 2000");
+    let res = ctx
+        .c
+        .require("expiry shortened to 2 s", out.contains("2000 ms"), &out)
+        .and_then(|()| expiry_checks(ctx, st));
+    ctx.cli_text("dpmadev ami expiry default");
+    res
+}
+
+fn expiry_checks(ctx: &mut Ctx, st: &State) -> Result<()> {
     let (ami, a) = (&st.ami, &st.a);
     let log = ctx.log();
     let pos = log.mark();
     let mut f = forward(
-        ctx,
-        o.via,
         a,
         "com.p13.hello",
         Params::Json(json!({"expire": 1})),
@@ -1308,36 +1258,30 @@ fn expiry(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
     )?;
     let t0 = Instant::now();
     dpma_message(&mut ctx.c, ami, &f, "com.p13.hello", "JSON", "expiry");
-    ctx.c.note("waiting about 300 s for the expiry ...");
-    while t0.elapsed() < secs(290.0) {
-        fixtures::sleep(5.0);
-        // Keep the session active.
-        let _ = a.ping().send();
-    }
+    let q = queued(ctx);
+    ctx.c.check(
+        "expiry: queued with an expiry 2 s out",
+        q.len() == 1 && q[0].0 == f.key && (1..=2).contains(&q[0].4),
+        format!("{q:?}"),
+    );
+    std::thread::sleep(secs(1.0).saturating_sub(t0.elapsed()));
     let keys = queued_keys(ctx);
     ctx.c.check(
-        "expiry: still queued after 290 s",
+        "expiry: still queued after 1 s",
         keys == [f.key.clone()],
         format!("{:?}", queued(ctx)),
     );
-    while t0.elapsed() < secs(320.0) && !queued(ctx).is_empty() {
-        fixtures::sleep(1.0);
-    }
+    let line = format!("No response to request ({}), expired.", f.key);
+    let (ok, text) = logged(&log, pos, &[&line]);
     let elapsed = t0.elapsed().as_secs_f64();
+    ctx.c.check("expiry: logged", ok, text.to_str_lossy());
+    ctx.c.check(
+        "expiry: expired after 2 s",
+        (1.9..3.5).contains(&elapsed),
+        format!("{elapsed:.2} s"),
+    );
     let q = queued(ctx);
     ctx.c.same("expiry: no longer queued", q, vec![]);
-    ctx.c.check(
-        "expiry: expired after 300 s",
-        (295.0..320.0).contains(&elapsed),
-        format!("{elapsed:.1} s"),
-    );
-    fixtures::sleep(0.3);
-    let text = log.since(pos);
-    ctx.c.check(
-        "expiry: logged",
-        text.contains_str(format!("No response to request ({}), expired.", f.key)),
-        text.to_str_lossy(),
-    );
     same_raw(
         &mut ctx.c,
         "expiry: later response fails",
@@ -1366,44 +1310,30 @@ fn expiry(ctx: &mut Ctx, o: Opts, st: &State) -> Result<()> {
 /// A part that uses the shared state (made by the first part that runs).
 fn part(
     shared: &Shared,
-    o: Opts,
-    f: impl Fn(&mut Ctx, Opts, &State) -> Result<()> + 'static,
+    f: impl Fn(&mut Ctx, &State) -> Result<()> + 'static,
 ) -> impl Fn(&mut Ctx) -> Result<()> + 'static {
     let shared = shared.clone();
     move |ctx| {
         let mut slot = shared.borrow_mut();
         if slot.is_none() {
-            *slot = Some(init(ctx, o)?);
+            *slot = Some(init(ctx)?);
         }
-        f(ctx, o, slot.as_ref().expect("initialized"))
+        f(ctx, slot.as_ref().expect("initialized"))
     }
 }
 
 fn main() -> std::process::ExitCode {
-    let o = match parse_opts() {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("suite ami: {e}");
-            return std::process::ExitCode::FAILURE;
-        }
-    };
     let shared: Shared = Rc::new(RefCell::new(None));
-    let mut suite = Suite::new("ami")
-        .value_option("--via")
+    let code = Suite::new("ami")
         .prepare(|inst| fixtures::prepare(inst, setup))
-        .part("actions", part(&shared, o, |ctx, _, st| actions(ctx, st)))
-        .part("forwarding", part(&shared, o, forwarding))
-        .part("send", part(&shared, o, |ctx, _, st| send(ctx, st)))
-        .part(
-            "reconfigure",
-            part(&shared, o, |ctx, _, st| reconfigure(ctx, st)),
-        )
-        .part("reload", part(&shared, o, |ctx, _, st| reload(ctx, st)))
-        .part("session-gone", part(&shared, o, session_gone));
-    if o.expiry {
-        suite = suite.part("expiry", part(&shared, o, expiry));
-    }
-    let code = suite.main();
+        .part("actions", part(&shared, actions))
+        .part("forwarding", part(&shared, forwarding))
+        .part("send", part(&shared, send))
+        .part("reconfigure", part(&shared, reconfigure))
+        .part("reload", part(&shared, reload))
+        .part("session-gone", part(&shared, session_gone))
+        .part("expiry", part(&shared, expiry))
+        .main();
     // Close the phones and the AMI connection.
     shared.borrow_mut().take();
     code

@@ -19,8 +19,8 @@
 //! configuration; the P12 test phones of
 //! `tests/data/request-handlers/res_digium_phone_p12.conf` included from
 //! `res_digium_phone.conf`; the debug build installed; Asterisk
-//! restarted; `--no-prepare` skips this).  It takes about two minutes,
-//! more than one of them in `flows-restore`.
+//! restarted; `--no-prepare` skips this).  It takes about twenty
+//! seconds.
 //!
 //! The request handler parts rewrite `[general]` of the instance's
 //! `res_digium_phone.conf` for each authentication mode (and a test
@@ -37,7 +37,7 @@
 //! | `file` | FileRequest: the contacts documents, small and multi-chunk files, `file://` inside a body, missing files, subdirectories, absolute names, and names outside `file_directory` (refused, logged) |
 //! | `asterisk` | AsteriskRequest and HTTPRequest with JSON documents: the HTTP wrapper, credentials (phone and pin, line and secret, blanks, before or after the document, bad ones logged), JSON request errors, an empty method response, a multi-chunk request and reply |
 //! | `xml` | AsteriskRequest with XML documents: an XML method (and the debug log), XML request errors, text before the request, a built-in XML method, a JSON-only method |
-//! | `ami` | Methods registered by AMI: the DPMAMessage event (RequestID, Method, Format, Parameters, Privilege), the answer through DPMAMessageResponse, scalar parameters, a built-in method shadowing an AMI registration |
+//! | `ami` | Methods registered by AMI (the ami suite checks the rest byte for byte): the DPMAMessage event's Method (as requested) and Parameters, scalar parameters (queued without an event), a built-in method shadowing an AMI registration |
 //! | `handshake` | A handshake without a User-Agent: no reply, the log, the auth incident |
 //!
 //! The users' flow parts start (before the first of them) by deleting the
@@ -46,14 +46,12 @@
 //!
 //! | Part | Checks |
 //! |---|---|
-//! | `flows-reconfigure` | Reconfigure from the CLI and AMI (`DigiumPhoneReconfigure`, `DigiumPhoneReconfigureAll`) reaching the phone once, the delete-token form |
 //! | `flows-reload` | Reconfigure on reload: changed lines, a deleted phone (its AstDB entry and session) |
 //! | `flows-mismatch` | A MAC mismatch reconfiguring the old location, an orphaned phone forgetting its location |
 //! | `flows-stale` | A stale phone at the same address |
 //! | `flows-uri` | The session and the reconfigure messages following a phone that moves |
-//! | `flows-events` | Events, including `digium.assignment.update` |
 //! | `flows-marks` | Sessions marked authenticated by token builds and lookups, the old session pruned on a new handshake |
-//! | `flows-restore` | Sessions restored after an Asterisk restart (authenticated and active, the last-seen information, ping, config, reconfigure) and surviving the idle pruning (waits 65 s) |
+//! | `flows-restore` | Sessions restored after an Asterisk restart (authenticated and active, the last-seen information, ping, config, reconfigure) and surviving the idle pruning (65 s idle, through `dpmadev session idle`) |
 
 mod common;
 mod flows;
@@ -88,13 +86,11 @@ fn main() -> ExitCode {
     for (name, f) in handler_parts {
         suite = suite.part(name, move |ctx| handlers::part(ctx, f));
     }
-    let flow_parts: [(&str, fn(&mut _) -> _); 8] = [
-        ("flows-reconfigure", flows::reconfigure),
+    let flow_parts: [(&str, fn(&mut _) -> _); 6] = [
         ("flows-reload", flows::reload),
         ("flows-mismatch", flows::mismatch),
         ("flows-stale", flows::stale),
         ("flows-uri", flows::uri),
-        ("flows-events", flows::events),
         ("flows-marks", flows::marks),
         ("flows-restore", flows::restore),
     ];

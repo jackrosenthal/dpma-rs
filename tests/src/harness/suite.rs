@@ -18,10 +18,7 @@
 //! | `--no-prepare` | Do not prepare the instance (it already is) |
 //! | `-v`, `--verbose` | Print details of passing checks and the simulator's diagnostics |
 //!
-//! A suite's own options that take a value (declared with
-//! [`Suite::value_option`], read with [`option_value`]) are given as
-//! `--name VALUE` or `--name=VALUE`.  Other unknown arguments
-//! (`--nocapture`, `--test-threads=1`, ...) are ignored.  The parts run
+//! Other arguments starting with `-` (`--nocapture`, `--test-threads=1`, ...) are ignored.  The parts run
 //! in the order they were added; each gets its own [`Checker`]; an error
 //! returned by a part ends that part and counts as a failure.  The exit
 //! status is 0 when every check passed.
@@ -110,7 +107,6 @@ pub struct Suite {
     name: String,
     prepare: Option<PrepareFn>,
     parts: Vec<(String, PartFn)>,
-    value_options: Vec<String>,
 }
 
 struct Args {
@@ -122,7 +118,7 @@ struct Args {
     filters: Vec<String>,
 }
 
-fn parse_args(args: impl IntoIterator<Item = String>, value_options: &[String]) -> Args {
+fn parse_args(args: impl IntoIterator<Item = String>) -> Args {
     let mut a = Args {
         run: false,
         list: false,
@@ -131,17 +127,13 @@ fn parse_args(args: impl IntoIterator<Item = String>, value_options: &[String]) 
         verbose: false,
         filters: Vec::new(),
     };
-    let mut args = args.into_iter();
-    while let Some(arg) = args.next() {
+    for arg in args {
         match arg.as_str() {
             "--ignored" | "--include-ignored" => a.run = true,
             "--list" => a.list = true,
             "--exact" => a.exact = true,
             "--no-prepare" => a.prepare = false,
             "-v" | "--verbose" => a.verbose = true,
-            s if value_options.iter().any(|o| o == s) => {
-                args.next();
-            }
             s if s.starts_with('-') => {}
             s => a.filters.push(s.to_string()),
         }
@@ -156,16 +148,7 @@ impl Suite {
             name: name.into(),
             prepare: None,
             parts: Vec::new(),
-            value_options: Vec::new(),
         }
-    }
-
-    /// Declares an option of the suite that takes a value (`--via
-    /// phone`), so that the value is not taken for a filter.  The suite
-    /// reads it with [`option_value`].
-    pub fn value_option(mut self, name: &str) -> Self {
-        self.value_options.push(name.into());
-        self
     }
 
     /// How to prepare the instance before the parts run (skipped with
@@ -190,14 +173,7 @@ impl Suite {
     /// Runs the suite as the `main` of a test target (see the module
     /// documentation).
     pub fn main(self) -> ExitCode {
-        self.main_with_args(std::env::args().skip(1))
-    }
-
-    /// [`Suite::main`] with the arguments given (without the program
-    /// name): for a suite that takes options of its own and passes the
-    /// rest on.
-    pub fn main_with_args(self, args: impl IntoIterator<Item = String>) -> ExitCode {
-        let args = parse_args(args, &self.value_options);
+        let args = parse_args(std::env::args().skip(1));
         let selected: Vec<&(String, PartFn)> = self
             .parts
             .iter()
@@ -280,26 +256,6 @@ impl Suite {
     }
 }
 
-/// The value of the option `name` (e.g., `--via`) in the command line,
-/// given as `name VALUE` or `name=VALUE` (the last one counts); see
-/// [`Suite::value_option`].
-pub fn option_value(name: &str) -> Option<String> {
-    option_value_in(std::env::args().skip(1), name)
-}
-
-fn option_value_in(args: impl IntoIterator<Item = String>, name: &str) -> Option<String> {
-    let mut args = args.into_iter();
-    let mut value = None;
-    while let Some(arg) = args.next() {
-        if arg == name {
-            value = args.next();
-        } else if let Some(v) = arg.strip_prefix(name).and_then(|r| r.strip_prefix('=')) {
-            value = Some(v.to_string());
-        }
-    }
-    value
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,24 +265,9 @@ mod tests {
     }
 
     #[test]
-    fn value_options() {
-        let a = parse_args(
-            args("--ignored --via phone get --no-prepare"),
-            &["--via".into()],
-        );
+    fn arguments() {
+        let a = parse_args(args("--ignored get --no-prepare --nocapture"));
         assert!(a.run && !a.prepare);
         assert_eq!(a.filters, ["get"]);
-        let a = parse_args(args("--via=http list"), &["--via".into()]);
-        assert_eq!(a.filters, ["list"]);
-        assert_eq!(
-            option_value_in(args("x --via phone y"), "--via").as_deref(),
-            Some("phone")
-        );
-        assert_eq!(
-            option_value_in(args("--via=http"), "--via").as_deref(),
-            Some("http")
-        );
-        assert_eq!(option_value_in(args("--viaduct x"), "--via"), None);
-        assert_eq!(option_value_in(args("--via"), "--via"), None);
     }
 }

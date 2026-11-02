@@ -66,6 +66,18 @@ pub(crate) fn force_prune() {
     LAST_PRUNE.store(0, Ordering::SeqCst);
 }
 
+/// Make every incomplete transaction `secs` older and the next
+/// [`next_transaction`] prune (test hooks); how many there are.
+#[cfg(feature = "devtest")]
+pub(crate) fn backdate_pending(secs: i64) -> usize {
+    let mut g = PENDING.lock().unwrap_or_else(|e| e.into_inner());
+    for p in g.iter_mut() {
+        p.updated -= secs;
+    }
+    force_prune();
+    g.len()
+}
+
 /// `prune_inactive`: invalidate idle sessions (unauthenticated ones after
 /// 119 s, authenticated but inactive ones after 59 s; authenticated active
 /// sessions are kept) and drop transactions not updated for 40 s.  Runs

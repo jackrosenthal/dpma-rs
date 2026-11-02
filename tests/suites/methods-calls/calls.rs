@@ -7,7 +7,7 @@ use dpma_tests::harness::fixtures::sleep;
 use regex::Regex;
 use serde_json::{json, Map, Value};
 
-use crate::{err, files_dir, ok, xml_err, xml_ok, PhoneLog, Via, T};
+use crate::{err, files_dir, ok, until, xml_err, xml_ok, PhoneLog, T};
 
 const Q: &str = "switchvox.users.callQueues.";
 
@@ -139,21 +139,23 @@ pub fn queues(t: &mut T) -> Result<()> {
         &json!({"account_id": "1001", "call_queue_account_id": "ALL"}),
     )?;
     t.expect("login all", got, 0, &ok(&m, success()));
-    sleep(1.0);
-    let log = t.log().since(mark);
-    t.c().contains(
-        "login: failure only logged",
-        &log,
-        &["Failed to add queue member Local/ghost@p10test to queue p10ghost"],
+    let logged = t.logged(
+        mark,
+        "Failed to add queue member Local/ghost@p10test to queue p10ghost",
     );
-    let show = t.cli("queue show");
+    t.c().check("login: failure only logged", logged, "");
     let re = Regex::new(r"Alice P10 \(Local/agent@p10test\).*\(dynamic\)").expect("regex");
+    let support = |show: &str| {
+        show.split_once("p10support")
+            .is_some_and(|(_, rest)| rest.contains("Local/1001@p10test"))
+    };
+    // (The login extension runs on a channel of its own.)
+    until(5.0, || support(&t.cli("queue show")));
+    let show = t.cli("queue show");
     let found = re.is_match(&show);
     t.c()
         .check("login: QueueAdd with member name", found, &show);
-    let found = show
-        .split_once("p10support")
-        .is_some_and(|(_, rest)| rest.contains("Local/1001@p10test"));
+    let found = support(&show);
     t.c().check("login: login_exten dialed", found, &show);
 
     let m = format!("{Q}pause");
@@ -199,17 +201,22 @@ pub fn queues(t: &mut T) -> Result<()> {
     let show = t.cli("queue show p10sales");
     t.c().lacks("resume: unpaused", &show, &["paused"]);
 
-    // One caller connected to the agent, one waiting.
-    t.cli("channel originate Local/caller@p10test application Wait 100");
-    sleep(2.0);
-    t.cli("channel originate Local/caller2@p10test application Wait 100");
-    sleep(2.0);
+    // One caller connected to the agent, one waiting (for at least a
+    // second each: the durations are whole seconds).
     let m = format!("{Q}getTodaysStatus");
-    let (rc, body) = t.call(
-        "p10phone",
-        &m,
-        &json!({"account_id": "1001", "call_queue_account_id": "P10SALES"}),
-    )?;
+    let status = json!({"account_id": "1001", "call_queue_account_id": "P10SALES"});
+    t.cli("channel originate Local/caller@p10test application Wait 100");
+    until(5.0, || {
+        t.call("p10phone", &m, &status)
+            .is_ok_and(|(_, b)| b.contains(r#""members_on_call":"1""#))
+    });
+    t.cli("channel originate Local/caller2@p10test application Wait 100");
+    let mut got = (None, String::new());
+    until(10.0, || {
+        got = t.call("p10phone", &m, &status).unwrap_or_default();
+        todays_status_ok(t, got.0, &got.1)
+    });
+    let (rc, body) = got;
     let good = todays_status_ok(t, rc, &body);
     t.c().check(
         "getTodaysStatus: details with a call and a waiting caller",
@@ -233,13 +240,9 @@ pub fn queues(t: &mut T) -> Result<()> {
                 "longest_queue_length": "0", "avg_entry_position": "0"}, "my_status": {"login_status": ""}}}),
         ),
     );
-    // No answer at all; a phone gets the request handler's error for an
-    // empty answer instead.
-    let none = if t.via() == Via::Hook {
-        String::new()
-    } else {
-        err(&m, 10002, "Error parsing request: empty response body ")
-    };
+    // No answer at all (a phone gets the request handler's error for an
+    // empty answer instead; see the request-handlers suite).
+    let none = String::new();
     let got = t.call(
         "p10phone",
         &m,
@@ -278,19 +281,21 @@ pub fn queues(t: &mut T) -> Result<()> {
             t.cli(&format!("channel request hangup {chan}"));
         }
     }
-    sleep(1.0);
+    let p10sales = json!({"account_id": "1001", "call_queue_account_id": "p10sales"});
+    let abandoned = r#""abandoned_calls":"1""#;
+    until(5.0, || {
+        t.call("p10phone", &m, &p10sales)
+            .is_ok_and(|(_, b)| b.contains(abandoned))
+    });
     t.cli("channel request hangup all");
-    sleep(1.0);
-    let (_, body) = t.call(
-        "p10phone",
-        &m,
-        &json!({"account_id": "1001", "call_queue_account_id": "p10sales"}),
-    )?;
-    t.c().contains(
-        "getTodaysStatus: completed and abandoned",
-        &body,
-        &[r#""total_calls":"2","completed_calls_today":"1","abandoned_calls":"1""#],
-    );
+    let done = r#""total_calls":"2","completed_calls_today":"1","abandoned_calls":"1""#;
+    let mut body = String::new();
+    until(5.0, || {
+        body = t.call("p10phone", &m, &p10sales).unwrap_or_default().1;
+        body.contains(done)
+    });
+    t.c()
+        .contains("getTodaysStatus: completed and abandoned", &body, &[done]);
 
     let m = format!("{Q}logout");
     let got = t.call(
@@ -308,7 +313,8 @@ pub fn queues(t: &mut T) -> Result<()> {
         &json!({"account_id": "1001", "call_queue_account_id": "all"}),
     )?;
     t.expect("logout all", got, 0, &ok(&m, success()));
-    sleep(1.0);
+    // (The logout extension runs on a channel of its own.)
+    until(5.0, || !t.cli("queue show").contains("Local/1001@p10test"));
     let show = t.cli("queue show");
     t.c().lacks(
         "logout: QueueRemove and logout_exten",
@@ -438,7 +444,12 @@ pub fn parking(t: &mut T) -> Result<()> {
     t.expect("parkingLots.getList: empty lots", got, 0, &ok(m, lots));
     t.cli("channel originate Local/parklot@p10test application Wait 100");
     t.cli("channel originate Local/park@p10test application Wait 100");
-    sleep(3.0);
+    // Parked: 801 for p10phone's lot, and 701 when its event arrives.
+    until(5.0, || {
+        t.call("p10phone", m, &json!({}))
+            .is_ok_and(|(_, b)| b.contains(r#""lotnum":"801""#))
+    });
+    until(5.0, || phone.text().contains("digium.parkingLot.parked"));
     let (rc, body) = t.call("p10phone", m, &json!({}))?;
     let good = serde_json::from_str::<Value>(&body).is_ok_and(|doc| {
         let got = &doc["response"]["result"]["parking_lots"]["parking_lot"];
@@ -504,7 +515,7 @@ fn record(t: &mut T) -> Result<()> {
         return Ok(());
     };
     t.cli("channel originate PJSIP/1001 application Wait 30");
-    sleep(2.0);
+    until(5.0, || phone.text().contains("INVITE call-id="));
     let re = Regex::new(r"INVITE call-id=(\S+)").expect("regex");
     let log = phone.text();
     let Some(cid) = re.captures_iter(&log).last().map(|c| c[1].to_string()) else {
@@ -578,7 +589,8 @@ fn record(t: &mut T) -> Result<()> {
     });
     t.c()
         .check("startRecording: MixMonitor running", running, &chans);
-    sleep(1.0);
+    let started = "X-Event-Type: digium.startRecording.success";
+    until(5.0, || phone.text().contains(started));
     let log = t.log().since(mark);
     t.c().lacks(
         "startRecording: no failure logged",
@@ -595,7 +607,11 @@ fn record(t: &mut T) -> Result<()> {
     );
     let got = t.call("p10phone", s, &p)?;
     t.expect("stopRecording", got, 0, &ok(s, success()));
-    sleep(1.0);
+    until(5.0, || {
+        phone
+            .text()
+            .contains("X-Event-Type: digium.stopRecording.success")
+    });
     let plog = phone.text();
     t.c().contains(
         "stopRecording: INFO sent",
@@ -607,7 +623,7 @@ fn record(t: &mut T) -> Result<()> {
     );
     let got = t.call_xml("p10phone", m, &x)?;
     t.expect("startRecording (XML)", got, 0, &xml_ok(m));
-    sleep(1.0);
+    until(5.0, || phone.text().matches(started).count() == 2);
     let plog = phone.text();
     t.c().check(
         "startRecording (XML): INFO sent",

@@ -11,7 +11,7 @@
 //! Restarts Asterisk twice.
 
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use dpma_tests::harness::{contains_bytes, fixtures, regex_search, ConfFile, Ctx};
@@ -53,8 +53,9 @@ fn timed_cli(ctx: &Ctx, command: &str) -> u128 {
     t.elapsed().as_millis()
 }
 
-/// Starts Asterisk again and waits two seconds, as the script did.
-fn restart(ctx: &mut Ctx, label: &str) -> Result<()> {
+/// Starts Asterisk again (the module restores the sessions while it
+/// loads, before Asterisk is fully booted).
+fn restart(ctx: &mut Ctx, label: &str) {
     ctx.drop_ami();
     let res = ctx.inst.start();
     ctx.c.check(
@@ -62,8 +63,6 @@ fn restart(ctx: &mut Ctx, label: &str) -> Result<()> {
         res.is_ok(),
         res.err().map(|e| format!("{e:#}")).unwrap_or_default(),
     );
-    std::thread::sleep(Duration::from_secs(2));
-    Ok(())
 }
 
 pub fn run(ctx: &mut Ctx) -> Result<()> {
@@ -100,7 +99,7 @@ pub fn run(ctx: &mut Ctx) -> Result<()> {
         "A".repeat(64)
     ));
 
-    restart(ctx, "restart")?;
+    restart(ctx, "restart");
     let pattern =
         format!("^SessionID:{sid} .* Auth:Yes Inactive:Yes Configured: Yes MAC:000fd3000001$");
     let ok = has_line(ctx, "digium_phones show sessions", &pattern);
@@ -151,7 +150,7 @@ pub fn run(ctx: &mut Ctx) -> Result<()> {
         "database show DigiumPhoneSessions",
         &format!("/DigiumPhoneSessions/{sid} "),
     );
-    restart(ctx, "second restart")?;
+    restart(ctx, "second restart");
     let pattern = format!("^SessionID:{sid} .* Auth:Yes Inactive:Yes");
     let ok = has_line(ctx, "digium_phones show sessions", &pattern);
     ctx.c
@@ -199,7 +198,6 @@ pub fn run(ctx: &mut Ctx) -> Result<()> {
     let backup = conf.backup()?;
     conf.set_options("general", &[("message_delay", Some(b"300"))])?;
     ctx.cli("module reload res_dpma_rs.so");
-    std::thread::sleep(Duration::from_secs(1));
     let slow = timed_cli(ctx, &event);
     backup.restore()?;
     ctx.cli("module reload res_dpma_rs.so");

@@ -20,8 +20,6 @@ pub use dpma_tests::harness::fixtures::{
 pub const MAC_A: &str = "000fd3001201";
 /// A MAC no phone has.
 pub const MAC_BAD: &str = "000fd30012ff";
-/// The wrapper of AsteriskResponse and HTTPResponse documents.
-pub const HTTP: &[u8] = fixtures::HTTP_PREAMBLE;
 
 /// The P12 test phones (`res_digium_phone_p12.conf`).
 pub const P12_CONF: &str = include_str!("../../data/request-handlers/res_digium_phone_p12.conf");
@@ -75,8 +73,9 @@ pub fn cli_text(ctx: &mut Ctx, cmd: &str) -> Result<String> {
 }
 
 /// Rewrites `[general]` of `res_digium_phone.conf` with `options` (`None`
-/// removes a key) and reloads the module.  Sessions keep the flags they
-/// were created with, so callers handshake again afterwards.
+/// removes a key) and reloads the module (the reload is done when the
+/// command returns).  Sessions keep the flags they were created with, so
+/// callers handshake again afterwards.
 pub fn set_general(ctx: &mut Ctx, options: &[(&str, Option<&str>)]) -> Result<()> {
     let opts: Vec<(&str, Option<&[u8]>)> = options
         .iter()
@@ -84,7 +83,6 @@ pub fn set_general(ctx: &mut Ctx, options: &[(&str, Option<&str>)]) -> Result<()
         .collect();
     ConfFile::new(&ctx.inst.conf("res_digium_phone.conf")).set_options("general", &opts)?;
     cli(ctx, "module reload res_dpma_rs.so")?;
-    fixtures::sleep(0.5);
     Ok(())
 }
 

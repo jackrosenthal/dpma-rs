@@ -167,6 +167,52 @@ exten=1001\nrdnis=unknown\npriority=1\ncallerchan=Local/1001@dpma-vm-leave-0;2\n
         std::fs::write(&path, txt).with_context(|| path.display().to_string())
     }
 
+    /// Writes message `msgNNNN` into a folder of a mailbox as a copy of
+    /// message `src` of mailbox `src_mbox` (its sound, and its
+    /// `msgNNNN.txt` with the values of `fields` replaced).
+    pub fn copy_msg(
+        &self,
+        src_mbox: &str,
+        src: &Msg,
+        mbox: &str,
+        folder: &str,
+        num: u32,
+        fields: &[(&str, &[u8])],
+    ) -> Result<()> {
+        let from = self
+            .dir
+            .join(src_mbox)
+            .join(&src.folder)
+            .join(format!("msg{:04}", src.number));
+        let d = self.dir.join(mbox).join(folder);
+        std::fs::create_dir_all(&d)?;
+        let to = d.join(format!("msg{num:04}"));
+        std::fs::copy(from.with_extension("wav"), to.with_extension("wav"))?;
+        let txt = std::fs::read(from.with_extension("txt"))?;
+        let mut out = Vec::new();
+        let mut done = Vec::new();
+        for line in txt.lines_with_terminator() {
+            let field = fields.iter().find(|(k, _)| {
+                line.strip_prefix(k.as_bytes())
+                    .is_some_and(|rest| rest.starts_with(b"="))
+            });
+            match field {
+                Some((k, v)) => {
+                    out.extend_from_slice(format!("{k}=").as_bytes());
+                    out.extend_from_slice(v);
+                    out.push(b'\n');
+                    done.push(*k);
+                }
+                None => out.extend_from_slice(line),
+            }
+        }
+        if let Some((k, _)) = fields.iter().find(|(k, _)| !done.contains(k)) {
+            return Err(anyhow!("no {k} in {}", from.display()));
+        }
+        let path = to.with_extension("txt");
+        std::fs::write(&path, out).with_context(|| path.display().to_string())
+    }
+
     /// The first `msg*.wav` of a mailbox (by path).
     fn first_wav(&self, mbox: &str) -> Result<PathBuf> {
         let mut wavs = Vec::new();

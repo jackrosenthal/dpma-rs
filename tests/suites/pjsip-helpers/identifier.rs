@@ -6,9 +6,13 @@
 //! and, last, an AOR update while a line has no endpoint (which crashes
 //! the original).  Its transcript must be the expected one byte for byte.
 
+use std::time::Duration;
+
 use anyhow::Result;
 use dpma_tests::diff;
-use dpma_tests::harness::{fixtures, Ctx};
+use dpma_tests::harness::Ctx;
+use dpma_tests::sipua::UaEvent;
+use dpma_tests::util::wait_until;
 
 use crate::{restart, transcript_dir, Scenario, DIGIUM_UA, DPMA};
 
@@ -65,7 +69,7 @@ fn scenario(s: &mut Scenario) -> Result<()> {
     )?;
     s.edit(conf, "password=pw2001\n", "password=pw2001b\n")?;
     s.ast("module reload res_pjsip.so", false);
-    fixtures::sleep(2.0);
+    settle_all(s);
     s.log_show();
     s.line_settings(&["2001"]);
     s.edit(
@@ -75,7 +79,7 @@ fn scenario(s: &mut Scenario) -> Result<()> {
     )?;
     s.edit(conf, "password=pw2001b\n", "password=pw2001\n")?;
     s.ast("module reload res_pjsip.so", false);
-    fixtures::sleep(2.0);
+    settle_all(s);
     s.log_show();
     s.line_settings(&["2001"]);
 
@@ -123,7 +127,7 @@ fn scenario(s: &mut Scenario) -> Result<()> {
     s.ast("dpmadev pjsip lastinfo clear", true);
     s.register("2001", "pw2001", DIGIUM_UA)?;
     s.register("2002", "pw2002", "Acme Phone 1.0")?;
-    fixtures::sleep(1.0);
+    s.settle("contact");
     s.log_show();
     s.ast("dpmadev pjsip lastinfo", false);
     for e in ["2001", "2002", "2003", "2004", "nonexistent"] {
@@ -133,17 +137,26 @@ fn scenario(s: &mut Scenario) -> Result<()> {
     // a Sangoma contact as well.
     s.register("2001", "pw2001", "Sangoma P370 2.0")?;
     s.register("2002", "pw2002", "Sangoma P330 1.0")?;
-    fixtures::sleep(1.0);
+    s.settle("contact");
     s.log_show();
     s.ast("dpmadev pjsip lastinfo", false);
     s.ast("dpmadev pjsip isdphone 2002", false);
     s.ast("core set debug 0 res_dpma_rs", true);
 
     s.step("SIP INFO");
-    let uas = s.uas("2001", "pw2001", DIGIUM_UA, 8.0, &[1])?;
-    fixtures::sleep(1.5);
+    let mut uas = s.uas("2001", "pw2001", DIGIUM_UA, 8.0, &[1])?;
+    let secs = Duration::from_secs(5);
+    uas.wait_for(secs, UaEvent::is_registered);
+    s.settle("contact");
     s.ast("channel originate PJSIP/2001 application Wait 5", false);
-    fixtures::sleep(1.0);
+    uas.wait_for(secs, |e| matches!(e, UaEvent::Invite(_, _, "answered")));
+    let up = |s: &Scenario| {
+        s.inst
+            .cli_text("core show channels concise")
+            .lines()
+            .any(|l| l.starts_with("PJSIP/2001-") && l.contains("!Up!"))
+    };
+    wait_until(secs, Duration::from_millis(20), || up(s));
     let chan = s.channel("PJSIP/2001-");
     let shown = crate::norm(chan.as_deref().unwrap_or("None"));
     s.out(format!("  channel: {shown}"));
@@ -158,11 +171,17 @@ fn scenario(s: &mut Scenario) -> Result<()> {
         "channel originate Local/2002@p11-phones application Wait 2",
         false,
     );
-    fixtures::sleep(0.5);
+    wait_until(secs, Duration::from_millis(20), || {
+        s.channel("Local/2002@p11-phones-").is_some()
+    });
     if let Some(local) = s.channel("Local/2002@p11-phones-") {
         s.ast(&format!("dpmadev pjsip info {local} {{}}"), false);
     }
-    s.collect_uas(uas, "2001", "uas");
+    // The two INFOs on the PJSIP channel (the Local one has none).
+    for _ in 0..2 {
+        uas.wait_for(secs, |e| matches!(e, UaEvent::Info(_)));
+    }
+    s.collect_uas(uas.stop(), "2001", "uas");
     s.ast("hangup request all", true);
 
     s.step("MESSAGE identification and pjsip_message_context");
@@ -171,16 +190,15 @@ fn scenario(s: &mut Scenario) -> Result<()> {
         s.message(exten, None)?;
     }
     s.log_show();
+    // (The config hook applies the context during the reload.)
     s.set_message_context(Some("dpma-p11-test"))?;
     s.ast(&format!("module reload {DPMA}"), false);
-    fixtures::sleep(1.0);
     for exten in ["proxy", "probe"] {
         s.message(exten, Some(DIGIUM_UA))?;
     }
     s.log_show();
     s.set_message_context(None)?;
     s.ast(&format!("module reload {DPMA}"), false);
-    fixtures::sleep(1.0);
     s.message("probe", Some(DIGIUM_UA))?;
     s.log_show();
 
@@ -205,7 +223,6 @@ fn scenario(s: &mut Scenario) -> Result<()> {
         ],
     );
     s.ari("PUT", "aor/2005", &[("mailboxes", "2005@other")]);
-    fixtures::sleep(1.0);
     let alive = s.alive();
     s.out(format!(
         "  asterisk running: {}",
@@ -218,4 +235,12 @@ fn scenario(s: &mut Scenario) -> Result<()> {
         s.ari("DELETE", "endpoint/2005", &[]);
     }
     Ok(())
+}
+
+/// Waits until the observers of every object type the PJSIP side
+/// watches have handled a res_pjsip reload.
+fn settle_all(s: &Scenario) {
+    for t in ["endpoint", "auth", "aor", "contact"] {
+        s.settle(t);
+    }
 }

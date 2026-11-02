@@ -136,7 +136,7 @@ fn scenario(s: &mut Scenario) -> Result<()> {
     for (label, h) in subs {
         s.collect_subscriber(h, label);
     }
-    s.collect_uas(uas, "2002", "uas");
+    s.collect_uas(uas.join(), "2002", "uas");
     s.log_show();
     s.ast("core set debug 0 res_dpma_rs", true);
     Ok(())
