@@ -1,14 +1,17 @@
 //! The apps-discovery suite: the dialplan applications
 //! DigiumControlPlayback and DigiumVoicemailPlayback, `digium_phones show
 //! settings`, and the mDNS announcement (package P14; the Rust form of
-//! `tests/apps-discovery/run.sh`, `run.py`, `netns.sh`, and
+//! the former `tests/apps-discovery/run.sh`, `run.py`, `netns.sh`, and
 //! `mdns_probe.py`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/24.0.0-rc4/src
+//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/<release>/src
 //! cargo build -p res_dpma_rs --features devtest
 //! cargo test -p dpma-tests --test apps-discovery -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
+//!
+//! (or `cargo xtask test apps-discovery`, which builds the devtest module
+//! first).
 //!
 //! Prerequisites: a private instance (`DPMA_SLOT`), a devtest build of the
 //! module, unprivileged user namespaces (`unshare -rn`), and `ip` and `ss`
@@ -18,8 +21,8 @@
 //! ([`dpma_tests::netns`]) whose only interface is `lo`, so that the mDNS
 //! announcements never reach a real network, and runs Asterisk there:
 //! inside, it prepares the instance (fresh configuration, the voicemail
-//! setup of the methods-vm suite, this suite's dialplan
-//! `extensions_dpma_apps.conf`, a 3 second test tone
+//! setup of the methods-vm suite from `tests/data/methods-vm`, this
+//! suite's dialplan `extensions_dpma_apps.conf`, a 3 second test tone
 //! `<astvarlibdir>/sounds/dpma-apps-tone.wav`, the debug build installed,
 //! Asterisk restarted; with `--no-prepare`, Asterisk is only restarted,
 //! since it must run inside the namespace), runs the parts, and stops
@@ -47,9 +50,9 @@ use bstr::BString;
 use dpma_tests::harness::{fixtures, ConfFile, Ctx, Instance, Suite};
 use dpma_tests::netns;
 
-const VM_PHONE_CONF: &str = include_str!("../../data/apps-discovery/res_digium_phone.conf");
-const VM_VOICEMAIL_CONF: &str = include_str!("../../data/apps-discovery/voicemail.conf");
-const VM_DIALPLAN: &str = include_str!("../../data/apps-discovery/extensions_dpma_vm.conf");
+const VM_PHONE_CONF: &str = include_str!("../../data/methods-vm/res_digium_phone.conf");
+const VM_VOICEMAIL_CONF: &str = include_str!("../../data/methods-vm/voicemail.conf");
+const VM_DIALPLAN: &str = include_str!("../../data/methods-vm/extensions_dpma_vm.conf");
 const APPS_DIALPLAN: &str = include_str!("../../data/apps-discovery/extensions_dpma_apps.conf");
 
 /// The test tone (in the sounds directory).

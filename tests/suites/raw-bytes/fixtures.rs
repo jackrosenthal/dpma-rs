@@ -1,6 +1,6 @@
 //! The raw-bytes test configuration: text in Latin-1 (bytes that are not
 //! UTF-8) in every kind of user-visible field, plus a phone whose texts
-//! are UTF-8 with non-ASCII characters (the Rust form of
+//! are UTF-8 with non-ASCII characters (the Rust form of the former
 //! `tests/raw-bytes/fixtures.py`).
 
 use std::ffi::OsStr;

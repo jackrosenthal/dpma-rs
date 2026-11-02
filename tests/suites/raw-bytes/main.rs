@@ -1,11 +1,15 @@
 //! The raw-bytes suite: text that is not UTF-8 passes through unchanged
-//! (port plan section 13; the Rust form of `tests/raw-bytes/run.py`).
+//! (port plan section 13; the Rust form of the former
+//! `tests/raw-bytes/run.py`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/24.0.0-rc4/src
+//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/<release>/src
 //! cargo build -p res_dpma_rs --features devtest
 //! cargo test -p dpma-tests --test raw-bytes -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
+//!
+//! (or `cargo xtask test raw-bytes`, which builds the devtest module
+//! first).
 //!
 //! Prerequisites: a private instance (`DPMA_SLOT`) and a devtest build of
 //! the module.  The suite prepares the instance (fresh configuration, the

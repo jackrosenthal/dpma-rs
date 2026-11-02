@@ -1,12 +1,15 @@
 //! The ami suite: AMI messages to and from phones (package P13) and the
 //! phone users runtime's messages to phones, end to end with the phone
-//! simulator (the Rust form of `tests/ami/run.py`).
+//! simulator (the Rust form of the former `tests/ami/run.py`).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/24.0.0-rc4/src
+//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/<release>/src
 //! cargo build -p res_dpma_rs --features devtest
-//! cargo test -p dpma-tests --test ami -- --ignored [--no-prepare] [-v] [--expiry] [--via=hook] [PART...]
+//! cargo test -p dpma-tests --test ami -- --ignored [--no-prepare] [-v] [--expiry] [--via phone|hook] [PART...]
 //! ```
+//!
+//! (or `cargo xtask test ami`, and `cargo xtask test ami-expiry` for
+//! `--expiry`; the runner builds the devtest module first).
 //!
 //! Prerequisites: a private instance (`DPMA_SLOT`) and a devtest build of
 //! the module.  The suite prepares the instance (fresh configuration, the
@@ -33,10 +36,10 @@
 //! original's `phone_ami.c` and `phone_request.c` write; replies and
 //! events are checked as the simulated phone decrypts them.
 //!
-//! By default (`--via=phone`) everything is driven from the simulator:
+//! By default (`--via phone`) everything is driven from the simulator:
 //! the TokenRequest records where the phone is, and an AsteriskRequest for
 //! an AMI-registered method is forwarded to AMI by the request handler.
-//! `--via=hook` replaces those two steps with the devtest commands
+//! `--via hook` replaces those two steps with the devtest commands
 //! `dpmadev token build` and `dpmadev ami forward`.
 
 use std::cell::RefCell;
@@ -46,7 +49,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Result};
 use bstr::{BStr, BString, ByteSlice};
 use dpma_tests::ami::{AmiClient, Match};
-use dpma_tests::harness::{fixtures, Checker, ConfFile, Ctx, Instance, Suite};
+use dpma_tests::harness::{fixtures, option_value, Checker, ConfFile, Ctx, Instance, Suite};
 use dpma_tests::sim::proto::{method_request_json, method_request_xml};
 use dpma_tests::sim::{Exchange, Phone, Reply};
 use dpma_tests::util::{json_compact, secs};
@@ -83,22 +86,15 @@ struct Opts {
 }
 
 fn parse_opts() -> Result<Opts, String> {
-    let mut o = Opts {
-        via: Via::Phone,
-        expiry: false,
+    let via = match option_value("--via").as_deref() {
+        None | Some("phone") => Via::Phone,
+        Some("hook") => Via::Hook,
+        Some(v) => return Err(format!("unknown --via {v} (phone or hook)")),
     };
-    for a in std::env::args().skip(1) {
-        match a.as_str() {
-            "--expiry" => o.expiry = true,
-            "--via=phone" => o.via = Via::Phone,
-            "--via=hook" => o.via = Via::Hook,
-            s if s.starts_with("--via") => {
-                return Err(format!("{s}: use --via=phone or --via=hook"))
-            }
-            _ => {}
-        }
-    }
-    Ok(o)
+    Ok(Opts {
+        via,
+        expiry: std::env::args().skip(1).any(|a| a == "--expiry"),
+    })
 }
 
 /// The simulator setup plus the P13 phones.
@@ -1392,6 +1388,7 @@ fn main() -> std::process::ExitCode {
     };
     let shared: Shared = Rc::new(RefCell::new(None));
     let mut suite = Suite::new("ami")
+        .value_option("--via")
         .prepare(|inst| fixtures::prepare(inst, setup))
         .part("actions", part(&shared, o, |ctx, _, st| actions(ctx, st)))
         .part("forwarding", part(&shared, o, forwarding))
