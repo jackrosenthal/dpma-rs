@@ -8,14 +8,14 @@
 //! and 24.0.0-rc1 leaves the ringing channel out of the extension state
 //! data, so the supplement finds none ("Bail.  No Channel") and adds
 //! nothing.  It is fixed in 22.12.0, 23.6.0, and 24.0.0-rc2.  On releases
-//! with the bug (detected by the release number, from `core show
-//! version`) the checks expect exactly that; on the others, the
-//! supplement for the Digium subscriber only.
+//! with the bug (detected by the release number, from `asterisk -V`) the
+//! checks expect exactly that; on the others, the supplement for the
+//! Digium subscriber only.
 
 use anyhow::Result;
 use dpma_tests::harness::{fixtures, Ctx};
 
-use crate::{asterisk_version, restart, transcript_dir, Scenario, DIGIUM_UA};
+use crate::{restart, transcript_dir, Scenario, DIGIUM_UA};
 
 /// What the supplement adds for the restricted caller.
 const ANON: &str = "<remote><target uri=\"sip:anonymous@anonymous.invalid\" />";
@@ -28,7 +28,7 @@ pub fn has_bug_2186(release: &str) -> bool {
 
 pub fn run(ctx: &mut Ctx) -> Result<()> {
     restart(ctx)?;
-    let version = asterisk_version(&ctx.inst);
+    let version = ctx.inst.release()?;
     let mut s = Scenario::new(&ctx.inst, ctx.verbose);
     let res = scenario(&mut s);
     let path = transcript_dir(&ctx.inst)?.join("dialog-info.txt");

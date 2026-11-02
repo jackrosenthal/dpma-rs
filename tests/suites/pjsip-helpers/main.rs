@@ -179,7 +179,7 @@
 //!   adds nothing, and the generator's early NOTIFY has no `<remote>`.
 //!   Fixed in 22.12.0, 23.6.0, and 24.0.0-rc2.  On releases with the bug
 //!   (22.11.x, 23.5.x, and 24.0.0-rc1, detected by the release number
-//!   from `core show version`) the `dialog-info` part expects exactly
+//!   from `asterisk -V`) the `dialog-info` part expects exactly
 //!   that; on the others, the supplement.  So moving a pin to a fixed
 //!   release brings back the full check.
 //! - "No domain in local uri" cannot happen with Asterisk 24 (a
@@ -283,19 +283,6 @@ fn install_conf(inst: &Instance) -> Result<()> {
 pub fn restart(ctx: &mut Ctx) -> Result<()> {
     ctx.drop_ami();
     ctx.inst.start()
-}
-
-/// The release of the running Asterisk, from `core show version`
-/// (`Asterisk <release> built by ...`).
-pub fn asterisk_version(inst: &Instance) -> String {
-    inst.cli_text("core show version")
-        .lines()
-        .find_map(|l| {
-            let rest = l.strip_prefix("Asterisk ")?;
-            let (v, _) = rest.split_once(' ')?;
-            Some(v.to_string())
-        })
-        .unwrap_or_default()
 }
 
 /// The directory for the transcripts: `<instance>/pjsip-helpers`.

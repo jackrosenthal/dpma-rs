@@ -143,7 +143,7 @@ channel details in legacy callbacks"): the new extension state API of
 22.11.0, 23.5.0, and 24.0.0-rc1 leaves the ringing channel out of the
 extension state data, so the supplement finds none, as the official
 DPMA's would.  It is fixed in 22.12.0, 23.6.0, and 24.0.0-rc2.  The suite picks
-the expectation by the release number (`core show version`), so moving
+the expectation by the release number (`asterisk -V`), so moving
 a pin to a fixed release brings back the full check.
 
 ## The test instance

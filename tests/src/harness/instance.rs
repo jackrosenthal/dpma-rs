@@ -218,6 +218,41 @@ impl Instance {
         text.trim().parse().ok()
     }
 
+    /// The instance's `asterisk` binary.
+    fn binary(&self) -> PathBuf {
+        self.dir.join("sbin").join("asterisk")
+    }
+
+    /// A command running the instance's `asterisk`, with `<dir>/lib` first
+    /// in `LD_LIBRARY_PATH`.
+    fn command(&self) -> Command {
+        let mut ld = self.dir.join("lib").into_os_string();
+        if let Some(old) = std::env::var_os("LD_LIBRARY_PATH").filter(|v| !v.is_empty()) {
+            ld.push(":");
+            ld.push(old);
+        }
+        let mut c = Command::new(self.binary());
+        c.env("LD_LIBRARY_PATH", ld);
+        c
+    }
+
+    /// The Asterisk release, e.g., `22.11.0` (`asterisk -V`, which needs no
+    /// running Asterisk).
+    pub fn release(&self) -> Result<String> {
+        let out = self
+            .command()
+            .arg("-V")
+            .stdin(Stdio::null())
+            .output()
+            .with_context(|| format!("running {} -V", self.binary().display()))?;
+        let text = out.stdout.to_str_lossy();
+        text.trim()
+            .strip_prefix("Asterisk ")
+            .filter(|v| !v.is_empty() && !v.contains(char::is_whitespace))
+            .map(str::to_string)
+            .with_context(|| format!("unexpected `asterisk -V` output: {:?}", text))
+    }
+
     /// (Re)starts Asterisk in the background (`asterisk -g -f -n`, its
     /// console output in [`Instance::console_log`], in a process group of
     /// its own) and waits until it is fully booted.
@@ -233,17 +268,12 @@ impl Instance {
         }
         let log_path = self.console_log();
         let log = File::create(&log_path).with_context(|| log_path.display().to_string())?;
-        let mut ld = self.dir.join("lib").into_os_string();
-        if let Some(old) = std::env::var_os("LD_LIBRARY_PATH").filter(|v| !v.is_empty()) {
-            ld.push(":");
-            ld.push(old);
-        }
-        let binary = self.dir.join("sbin").join("asterisk");
-        let mut child = Command::new(&binary)
+        let binary = self.binary();
+        let mut child = self
+            .command()
             .arg("-C")
             .arg(&conf)
             .args(["-g", "-f", "-n"])
-            .env("LD_LIBRARY_PATH", ld)
             .stdin(Stdio::null())
             .stdout(log.try_clone()?)
             .stderr(log)
