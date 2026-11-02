@@ -1,0 +1,37 @@
+[package]
+name = "dpma-tests"
+description = "Test support for dpma-rs: the phone simulator, test PKI, AMI and SIP clients, mDNS browser, harness, and the test suites"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+aes = "0.8"
+anyhow = "1"
+base64.workspace = true
+bstr.workspace = true
+cbc = { version = "0.1", features = ["alloc", "block-padding"] }
+clap = { version = "4", features = ["derive"] }
+hex.workspace = true
+libloading = "0.8"
+md-5 = "0.10"
+rand = "0.8"
+regex = "1"
+rsa = { version = "0.9", features = ["sha1", "sha2", "pem"] }
+serde_json.workspace = true
+sha1 = { version = "0.10", features = ["oid"] }
+sha2 = { version = "0.10", features = ["oid"] }
+socket2 = { version = "0.5", features = ["all"] }
+x509-cert = { version = "0.2", features = ["builder", "hazmat", "pem"] }
+
+[lib]
+path = "src/lib.rs"
+
+# The test suites run against a private Asterisk instance; they are
+# skipped unless run with `-- --ignored` (see the dpma_tests::harness
+# documentation).
+[[test]]
+name = "session"
+path = "suites/session/main.rs"
+harness = false

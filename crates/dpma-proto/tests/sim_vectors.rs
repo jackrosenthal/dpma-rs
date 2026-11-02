@@ -1,14 +1,15 @@
-//! Cross-check against the phone simulator's vectors (`dev/sim/vectors.json`,
-//! written by `dev/sim/dpma_sim.py selftest --vectors`, an independent
-//! Python implementation from the decompile): key and IV derivation, a
-//! body, a header field, and the server's framing of an encrypted event
-//! over UDP.  The simulator checks the other direction against
-//! `tests/fixtures/proto_vectors.json` in its self-test.
+//! Cross-check against the phone simulator's vectors (`tests/data/vectors.json`,
+//! written by `dpma-sim vectors` from the `dpma-tests` crate, an independent
+//! implementation from the decompile that uses RustCrypto instead of
+//! OpenSSL): key and IV derivation, a body, a header field, and the
+//! server's framing of an encrypted event over UDP.  The simulator checks
+//! the other direction against `tests/fixtures/proto_vectors.json` in its
+//! self-test.
 
 use dpma_proto::{crypto, framing};
 use serde_json::Value;
 
-const SIM_VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/sim/vectors.json");
+const SIM_VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/data/vectors.json");
 
 fn s(v: &Value) -> &str {
     v.as_str().unwrap()
@@ -16,10 +17,7 @@ fn s(v: &Value) -> &str {
 
 #[test]
 fn simulator_vectors() {
-    let Ok(text) = std::fs::read_to_string(SIM_VECTORS) else {
-        eprintln!("skipped: {} not found", SIM_VECTORS);
-        return;
-    };
+    let text = std::fs::read_to_string(SIM_VECTORS).unwrap_or_else(|e| panic!("{SIM_VECTORS}: {e}"));
     let v: Value = serde_json::from_str(&text).unwrap();
     let password = hex::decode(s(&v["password_hex"])).unwrap();
     let salt = crypto::salt_from_hex(s(&v["salt_hex"])).unwrap();

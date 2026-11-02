@@ -6,6 +6,7 @@ members = [
     "crates/dpma-proto",
     "crates/dpma-sys",
     "crates/res_dpma_rs",
+    "tests",
 ]
 
 [workspace.package]
@@ -31,6 +32,13 @@ base64 = "0.22"
 foreign-types = "0.3"
 hex = "0.4"
 openssl-sys = "0.9"
+
+# RSA key generation for the test PKI (dpma-tests) is very slow unoptimized.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
+[profile.dev.package.rsa]
+opt-level = 3
 
 [profile.release]
 debug = 1

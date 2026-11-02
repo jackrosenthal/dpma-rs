@@ -262,3 +262,16 @@ The development notes and tools live under `dev/`:
 
 Building with `--features devtest` adds `dpmadev ...` CLI commands that
 the test suites use; never enable it in production builds.
+
+The test tooling is moving to Rust: the crate `dpma-tests` in `tests/`
+has the phone simulator (`dpma-sim`), the test PKI (`dpma-mkpki`), the
+AMI client (`dpma-ami`), the other test clients, the harness, and the
+suites ported so far (`cargo doc -p dpma-tests --open` documents them).
+Run a suite against a private instance with a devtest build, for
+example:
+
+```
+export DPMA_SLOT=<n> ASTERISK_INCLUDE_DIR=$PWD/dev/asterisk-24/include
+cargo build -p res_dpma_rs --features devtest
+cargo test -p dpma-tests --test session -- --ignored
+```
