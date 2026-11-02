@@ -219,7 +219,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use bstr::ByteSlice;
 use dpma_tests::ari::Ari;
-use dpma_tests::harness::{fixtures, ConfFile, Ctx, Instance, Suite};
+use dpma_tests::harness::{fixtures, setup, ConfFile, Ctx, Instance, Suite};
 use dpma_tests::sipua::{self, SipUa, UaEvent, Uas, UasConfig};
 use regex::Regex;
 
@@ -269,13 +269,9 @@ pub fn http_port(slot: u32) -> u16 {
 /// `#include` lines, and an `http.conf` that enables the HTTP server on
 /// 127.0.0.1:15088+100·slot.  Asterisk must be restarted afterwards
 /// (`sorcery.conf` is read at startup only).
-fn setup(inst: &Instance) -> Result<()> {
+fn install_conf(inst: &Instance) -> Result<()> {
     for (main, snippet, text) in CONF {
-        let dest = inst.conf(snippet);
-        let tmp = inst.conf(&format!("{snippet}.new"));
-        std::fs::write(&tmp, text)?;
-        std::fs::rename(&tmp, &dest).with_context(|| dest.display().to_string())?;
-        ConfFile::new(&inst.conf(main)).add_include(snippet)?;
+        setup::install_snippet(inst, snippet, main, text.as_bytes())?;
     }
     let port = http_port(inst.slot);
     ConfFile::new(&inst.conf("http.conf")).write(format!(
@@ -639,7 +635,7 @@ impl Scenario {
 
 fn main() -> std::process::ExitCode {
     Suite::new("pjsip-helpers")
-        .prepare(|inst| fixtures::prepare(inst, setup))
+        .prepare(|inst| fixtures::prepare(inst, install_conf))
         .part("identifier", identifier::run)
         .part("dialog-info", dialog_info::run)
         .part("stress", |ctx| stress::run(ctx, 15.0))

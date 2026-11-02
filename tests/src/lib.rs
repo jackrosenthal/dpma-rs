@@ -16,6 +16,7 @@
 //! | [`util`] | JSON text as the test documents write it, waiting with timeouts. |
 //! | [`ari`] | An ARI (Asterisk REST Interface) HTTP client, for push configuration. |
 //! | [`diff`] | Unified line diffs for check details. |
+//! | [`xml`] | XML well-formedness. |
 //!
 //! # Binaries
 //!
@@ -61,3 +62,4 @@ pub mod sim;
 pub mod sip;
 pub mod sipua;
 pub mod util;
+pub mod xml;

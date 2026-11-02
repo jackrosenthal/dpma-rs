@@ -48,9 +48,8 @@
 //! The config-xml suite's test configuration (phones, lines, external
 //! lines, networks, applications, alerts, ringtones, firmware profiles,
 //! multicast pages, and a firmware package file;
-//! `tests/data/parity/res_digium_phone.conf.in` and
-//! `tests/data/parity/digium_phones/`, copies of config-xml's) plus two
-//! translation tables.
+//! [`dpma_tests::harness::setup::config_xml`], from
+//! `tests/data/config-xml/`) plus two translation tables.
 //!
 //! # The items
 //!
@@ -103,7 +102,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use bstr::ByteSlice;
-use dpma_tests::harness::{fixtures, Checker, Instance, Suite};
+use dpma_tests::harness::{fixtures, setup, Checker, ConfFile, Instance, Suite};
 use dpma_tests::{diff, sim};
 use regex::bytes::Regex;
 
@@ -117,33 +116,8 @@ const MODULES: [&str; 3] = [
 /// Our module.
 const OURS: &str = "res_dpma_rs.so";
 
-/// The config-xml test configuration (`@SLOT@` is the instance
-/// directory).
-const CONF_IN: &str = include_str!("../../data/parity/res_digium_phone.conf.in");
-/// The files it refers to, for `<astvarlibdir>/digium_phones/`.
-const FILES: [(&str, &[u8]); 5] = [
-    (
-        "cfgphone.xml",
-        include_bytes!("../../data/parity/digium_phones/cfgphone.xml"),
-    ),
-    (
-        "contacts-local.xml",
-        include_bytes!("../../data/parity/digium_phones/contacts-local.xml"),
-    ),
-    (
-        "d65_logo.png",
-        include_bytes!("../../data/parity/digium_phones/d65_logo.png"),
-    ),
-    (
-        "firmware/digium_phones_firmware.conf",
-        include_bytes!("../../data/parity/digium_phones/firmware/digium_phones_firmware.conf"),
-    ),
-    (
-        "rules.xml",
-        include_bytes!("../../data/parity/digium_phones/rules.xml"),
-    ),
-];
-/// Two translation tables, appended to the configuration.
+/// Two translation tables, appended to the config-xml test
+/// configuration.
 const TRANSLATIONS: &str = "
 [p15-trans]
 type=translation
@@ -302,18 +276,12 @@ fn cli(inst: &Instance, cmd: &str) -> Vec<u8> {
 fn install_config(inst: &Instance) -> Result<()> {
     inst.stop()?;
     inst.reset_conf()?;
-    let dir = inst.dir.to_string_lossy().into_owned();
-    let conf = CONF_IN.replace("@SLOT@", &dir) + TRANSLATIONS;
-    std::fs::write(inst.conf("res_digium_phone.conf"), conf)?;
-    let files = inst.var_lib().join("digium_phones");
-    for (name, data) in FILES {
-        let path = files.join(name);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(&path, data).with_context(|| path.display().to_string())?;
-    }
-    Ok(())
+    setup::config_xml(inst)?;
+    let path = inst.conf("res_digium_phone.conf");
+    let conf = ConfFile::new(&path);
+    let mut data = conf.read()?;
+    data.extend_from_slice(TRANSLATIONS.as_bytes());
+    conf.write(data)
 }
 
 /// The release of the running Asterisk (`core show version`).
