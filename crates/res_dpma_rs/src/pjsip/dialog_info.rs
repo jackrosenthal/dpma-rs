@@ -6,9 +6,8 @@
 //! A body supplement for `application/dialog-info+xml` NOTIFYs: when the
 //! subscriber is a Digium or Sangoma phone and a channel is ringing the
 //! watched extension, the `<dialog>` element gets `<local>` and `<remote>`
-//! elements (unless they are there already) describing the ringing call:
-//! `<target uri=...>` and `<identity display=...>` from the channel's
-//! caller and connected line, so the phone can show who is calling.
+//! elements describing the ringing call, so the phone can show who is
+//! calling.
 //!
 //! The official DPMA refuses to load unless res_digium_phone reports a
 //! valid license (`get_license_status`); this rewrite has no license

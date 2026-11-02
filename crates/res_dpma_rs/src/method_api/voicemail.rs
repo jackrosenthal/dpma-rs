@@ -1,6 +1,5 @@
 //! Voicemail methods and the voicemail message trackers
-//! (phone_method_internal_api.c: `vm_*`, `handle_request_json_vm_*`,
-//! `mark_read_unread_helper_json`, `dial_phone_event_app`).
+//! (phone_method_internal_api.c).
 //!
 //! Message ids.  A phone addresses a message as `<folder>-<msg_id>`, where
 //! `msg_id` is app_voicemail's message id (`<time>-<counter>`) and
@@ -8,14 +7,13 @@
 //! are shown in INBOX, so their ids start with `INBOX-`.  getList builds
 //! these ids; the other methods split them at the first `-`.
 //!
-//! Message trackers.  Each phone has a user tracker (keyed by the phone's
-//! name) holding message trackers: (id as the phone knows it, the folder
-//! the message is really in).  getList replaces a phone's trackers with
-//! the messages of the page it returns; the other methods look an id up
-//! there and, when it is missing, find the message in a snapshot of the
-//! folder the id names.  markRead/markUnread update the tracker of a
-//! message they move; move, remove, and forward do not.  A user tracker is
-//! dropped when its phone goes away (`remove_user_tracker`).
+//! Message trackers.  Each phone has a user tracker holding message
+//! trackers.  getList replaces a phone's trackers with the messages of the
+//! page it returns; the other methods look an id up there and, when it is
+//! missing, find the message in a snapshot of the folder the id names.
+//! markRead/markUnread update the tracker of a message they move; move,
+//! remove, and forward do not.  A user tracker is dropped when its phone
+//! goes away (`remove_user_tracker`).
 //!
 //! Every handler answers with `{"response":{"method":M,"result":...}}`
 //! appended to `out` and returns 0, or replaces `out` with an error
@@ -23,8 +21,7 @@
 //! official DPMA does (its caller ignores the value).
 //!
 //! The official DPMA works on fixed-size C buffers; the same truncations
-//! are applied here (message ids 127 bytes, mailboxes 1023, caller ids
-//! 255).
+//! are applied here.
 
 use crate::method::MethodCall;
 use crate::request::error_response_json;
@@ -111,8 +108,7 @@ fn user_tracker_find_or_create(name: &[u8]) -> Arc<UserTracker> {
 }
 
 /// `vm_phone_user_tracker_remove` (FUN_0017b390): drop a phone's
-/// trackers.  Called when the phone is destroyed and when its session
-/// changes (`phone_user_token_set_last_info`).
+/// trackers.
 pub fn remove_user_tracker(name: &[u8]) {
     if let Some(map) = USER_TRACKERS.lock().unwrap().as_mut() {
         map.remove(name);
@@ -419,8 +415,7 @@ fn split_id(buf: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
 }
 
 /// The message ids of `message_ids` grouped by the folder their trackers
-/// say they are in (the 12-folder tables of remove, forward, and move).
-/// On error, `out` holds the error document.
+/// say they are in.  On error, `out` holds the error document.
 struct Grouped {
     ids: [Vec<Vec<u8>>; 12],
     /// The id buffer as the last parsed id left it (move reuses it).
@@ -435,10 +430,7 @@ enum GroupError {
     NotFound,
 }
 
-/// The loop shared by remove, forward, and move: every string element is
-/// copied (0x80 bytes), split, its folder part mapped from "Recordings",
-/// and its tracker found (or made) with `mailbox`.  Non-strings and
-/// messages in unknown folders are skipped.
+/// The loop shared by remove, forward, and move.
 fn group_messages(ut: &UserTracker, ids: &[Value], mailbox: &[u8]) -> Result<Grouped, GroupError> {
     let mut g = Grouped {
         ids: Default::default(),

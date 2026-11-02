@@ -1,15 +1,4 @@
-//! Test hooks for the PJSIP side (feature "devtest"):
-//!
-//! * `dpmadev pjsip line <name>`: look the line object up by name (as the
-//!   PJSIP side does) and print every setting, its cached `pjsip_auth`,
-//!   the phone it belongs to, and the object's reference count.
-//! * `dpmadev pjsip objects`: list the line and phone containers.
-//! * `dpmadev pjsip isdphone <endpoint>`: `endpoint_is_dphone`.
-//! * `dpmadev pjsip info <channel> [<body>]`: `info_send` with an
-//!   `X-Event-Name: digium.test` header (and a JSON body if given).
-//! * `dpmadev pjsip lastinfo [clear]`: the last URIs recorded for phones
-//!   so far (by the contact observer when a phone registers), oldest
-//!   first.
+//! Test hooks for the PJSIP side (feature "devtest").
 
 use crate::users::objects::{self, LineObj, UserObj};
 use dpma_ast::bformat;

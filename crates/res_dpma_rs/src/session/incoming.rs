@@ -78,10 +78,8 @@ pub(crate) fn backdate_pending(secs: i64) -> usize {
     g.len()
 }
 
-/// `prune_inactive`: invalidate idle sessions (unauthenticated ones after
-/// 119 s, authenticated but inactive ones after 59 s; authenticated active
-/// sessions are kept) and drop transactions not updated for 40 s.  Runs
-/// at most every 5 s.
+/// `prune_inactive`: invalidate idle sessions (authenticated active
+/// sessions are kept) and drop stale transactions.
 fn prune_inactive() {
     let t = now();
     if t - LAST_PRUNE.load(Ordering::SeqCst) <= PRUNE_INTERVAL {
@@ -431,7 +429,7 @@ fn build(m: Msg) -> Option<Transaction> {
 }
 
 /// `incoming_build_transaction` (FUN_0014f280): prune idle sessions and
-/// transactions (at most every 5 s), expire auth incidents, then read
+/// transactions, expire auth incidents, then read
 /// messages (each read waiting up to `timeout_ms`) until one completes a
 /// transaction.  Returns None as soon as a read returns nothing (a timeout
 /// or a wake from `transport::wake_reader`).
