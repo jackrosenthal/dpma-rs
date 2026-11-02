@@ -20,6 +20,17 @@ permissions:
   contents: read
 
 jobs:
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust 1.99
+        run: rustup toolchain install 1.99 --profile minimal --component rustfmt && rustup default 1.99
+
+      - run: cargo fmt --all --check
+
   versions:
     name: Pinned Asterisk versions
     runs-on: ubuntu-24.04
@@ -112,7 +123,7 @@ jobs:
 
   release:
     name: GitHub Release
-    needs: test
+    needs: [fmt, test]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:
