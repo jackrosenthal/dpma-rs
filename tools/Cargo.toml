@@ -1,0 +1,15 @@
+[package]
+name = "xtask"
+description = "Development tasks for dpma-rs: Asterisk builds, private instances, the test suites, and CI (cargo xtask)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+dpma-tests = { path = "../tests" }
+libc.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"

@@ -7,6 +7,7 @@ members = [
     "crates/dpma-sys",
     "crates/res_dpma_rs",
     "tests",
+    "tools",
 ]
 
 [workspace.package]

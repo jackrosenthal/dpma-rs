@@ -370,6 +370,7 @@ dependencies = [
  "cbc",
  "clap",
  "hex",
+ "libc",
  "libloading",
  "md-5",
  "rand",
@@ -1286,6 +1287,18 @@ dependencies = [
  "signature",
  "spki",
  "tls_codec",
+]
+
+[[package]]
+name = "xtask"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dpma-tests",
+ "libc",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

@@ -24,9 +24,9 @@
 //! ```
 //!
 //! Instance management (start, stop, install, resetting the
-//! configuration) goes through the instance manager script and only
-//! through [`AstTool`]; the CLI goes through the control socket
-//! ([`Cli`]).
+//! configuration) goes through the instance manager,
+//! [`crate::asterisk::Slot`], which [`Instance`] and [`AstTool`] wrap;
+//! the CLI goes through the control socket ([`Cli`]).
 
 mod check;
 mod cli;

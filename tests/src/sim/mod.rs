@@ -26,6 +26,67 @@
 //! Text is bytes from end to end: bodies, header values, the user agent,
 //! user names, and passwords go on the wire exactly as given, and replies
 //! keep the bytes they arrived with.
+//!
+//! Against an instance, the simulator needs the test PKI's trust material
+//! and the simulator's test configuration in it
+//! ([`crate::harness::fixtures::sim_setup`]; see
+//! [`crate::harness::fixtures::SIM_CONF`] for the test phones).
+//!
+//! # Protocol details
+//!
+//! The simulator sends every request to `sip:proxy@<server>:<port>`
+//! (what real phones use as `config_server_url`) from one socket, and
+//! answers every MESSAGE it receives with 200 OK.  The server replies to
+//! the address the request came from (`PJSIP_RECVADDR`), so replies
+//! arrive on the same socket; over TCP they come back on the same
+//! connection (see [`transport`] for the "Session Timeout" reply).
+//!
+//! Phone to server:
+//!
+//! - Every chunk carries `RequestType`, `ID` (a counter starting at a
+//!   random value, so that a restarted simulator does not collide with an
+//!   incomplete transaction the server keeps for 40 s under
+//!   `"<ID>-<MAC>"`), `MACAddress`, `Session` (except for Handshake, Echo,
+//!   and Preconfig), `Message-Sequence` (0, 1, ...), and on the last chunk
+//!   `Message-Finished: 1`; and always `Content-Type: text/plain`
+//!   (res_pjsip_messaging refuses a MESSAGE without it, even with an empty
+//!   body).
+//! - After the handshake everything but Echo is encrypted: a new 8-byte
+//!   salt per request (`Message-Salt`, 16 uppercase hex digits); key and
+//!   IV from `EVP_BytesToKey(aes-128-cbc, SHA-1, salt, common password,
+//!   1)`; `Password`, `ConfigPassword`, and `Config-Token` each encrypted
+//!   as their own CBC stream with that key and IV.
+//! - Encrypted bodies ([`ChunkStyle::Split`], the default): the whole body
+//!   is encrypted and base64 encoded, and the text is split into chunks.
+//!   The server concatenates the chunk bodies and decodes them once with
+//!   `ast_base64decode`, which stops at the first `=`, so this is the form
+//!   it can reassemble.  [`ChunkStyle::Stream`] sends the way the server
+//!   itself sends.
+//! - Plaintext chunks never end in CR or LF (except the last one, and
+//!   with `pem_cuts`): res_pjsip_messaging strips trailing CR and LF from
+//!   every MESSAGE body, so a line break at a chunk boundary would be
+//!   lost.  It also keeps at most 1023 bytes of a body, so keep the chunk
+//!   size (default 600 bytes over UDP, 900 over TCP) at or below 1022
+//!   bytes of wire body.
+//!
+//! Server to phone ([`Reassembler`], [`Reply`]):
+//!
+//! - Chunks are grouped by transaction id, salt, and type (events carry
+//!   no `X-Digium-AppServer-ID`), ordered by `Message-Sequence`, and
+//!   complete when the chunk with `Message-Finished` is in and none is
+//!   missing, or at once when a chunk has no sequence (a single-chunk
+//!   HandshakeResponse).
+//! - Encrypted replies: each chunk's body is base64 decoded on its own,
+//!   the ciphertexts are concatenated and decrypted as one stream, and
+//!   `Password` and `Config-Token` are decrypted with the same salt.
+//! - HandshakeResponse: unencrypted; `X-Digium-AppServer-Password` is the
+//!   40-byte common password, RSA PKCS#1 v1.5 encrypted to the key of the
+//!   last certificate of the handshake body; the body is the AppServer
+//!   certificate, which the simulator checks against the test AppServer
+//!   CA.
+//! - Events and error replies have `Command: ` at the start of every
+//!   chunk's plaintext (inside the encryption); a reply's payload has
+//!   them removed.
 
 pub mod crypto;
 pub mod framing;
@@ -138,9 +199,7 @@ pub fn repo_root() -> PathBuf {
 }
 
 /// The default test PKI directory: `$DPMA_PKI` if set, else
-/// `dev/sim/pki` in the repository (generated, not committed), the
-/// default of the Python tools (`tests/sim/mkpki.py`, `dpma_sim.py`) too,
-/// so that both share one PKI.
+/// `dev/sim/pki` in the repository (generated, not committed).
 pub fn default_pki_dir() -> PathBuf {
     match std::env::var_os("DPMA_PKI") {
         Some(p) => PathBuf::from(p),

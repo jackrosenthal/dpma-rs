@@ -162,9 +162,9 @@ authentication incident (`DPMAShowIncidents`).  Both files are read again
 on `module reload res_dpma_rs.so`; a file that cannot be read keeps
 its previous contents.
 
-For testing without phones, `tests/sim/mkpki.py` generates a self-made PKI
-and installs it under these names; real phones do not accept its AppServer
-certificate.
+For testing without phones, `dpma-mkpki` (in `tests/`) generates a
+self-made PKI and installs it under these names; real phones do not accept
+its AppServer certificate.
 
 ## Differences from the original
 
@@ -256,30 +256,35 @@ dpma-rs is licensed under the GNU General Public License, version 2 or
 
 ## Development
 
-- `tests/`: the test suites, run against private Asterisk instances
-  (`tests/README.md`), and `tests/sim/`, the phone simulator, test PKI,
-  and AMI client used to test without phones (`tests/sim/README.md`).
-- `tools/`: `ast.sh` (private Asterisk instances), `asterisk-versions`
-  (the pinned Asterisk releases), `asterisk-build.sh` (downloads,
-  verifies, builds, and installs a pinned release), `asterisk-conf/` (its
-  test configuration), and `ci-setup.sh` and `ci-job.sh` (the CI job of
-  `.github/workflows/ci.yml`, which also runs locally).
+dpma-rs is Rust throughout, its test tooling included:
+
+- `tests/`: the crate `dpma-tests`, with the phone simulator
+  (`dpma-sim`), the test PKI (`dpma-mkpki`), an AMI client
+  (`dpma-ami`), the other test clients, the harness, and the test
+  suites, which run against private Asterisk instances
+  (`cargo doc -p dpma-tests --open` documents them).
+- `tools/`: the crate `xtask`, run as `cargo xtask`: it downloads,
+  verifies, builds, and installs the pinned Asterisk releases
+  (`tools/asterisk-versions`, with the test configuration of
+  `tools/asterisk-conf/`), manages the private instances, runs the
+  suites, and is the CI job of `.github/workflows/ci.yml`, which also
+  runs locally.
 - Runtime state stays in the ignored `dev/`: Asterisk builds
-  (`dev/asterisk-builds/`), instances (`dev/run/`), logs, and the
-  simulator's generated PKI.
+  (`dev/asterisk-builds/`), instances (`dev/run/`), and the simulator's
+  generated PKI (`dev/sim/pki/`).
+
+`tests/README.md` describes the tooling.  For example, to build against
+Asterisk 24 and run every suite in the private instance of slot `<n>`:
+
+```
+export DPMA_SLOT=<n> CARGO_INCREMENTAL=0
+cargo xtask asterisk build --install 24
+eval "$(cargo xtask asterisk info 24)" && export ASTERISK_SOURCE_DIR=$src
+cargo xtask instance init <n> 24
+cargo build && cargo test --workspace --exclude res_dpma_rs
+cargo xtask test all
+```
 
 Building with `--features devtest` adds `dpmadev ...` CLI commands that
-the test suites use; never enable it in production builds.
-
-The test tooling is moving to Rust: the crate `dpma-tests` in `tests/`
-has the phone simulator (`dpma-sim`), the test PKI (`dpma-mkpki`), the
-AMI client (`dpma-ami`), the other test clients, the harness, and the
-suites ported so far (`cargo doc -p dpma-tests --open` documents them).
-Run a suite against a private instance with a devtest build, for
-example:
-
-```
-export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-24-src
-cargo build -p res_dpma_rs --features devtest
-cargo test -p dpma-tests --test session -- --ignored
-```
+the test suites use (`cargo xtask test` builds it); never enable it in
+production builds.

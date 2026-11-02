@@ -1,12 +1,14 @@
 //! The session suite: sessions, handshake, encryption, and framing with
-//! the phone simulator (package P7; the Rust form of
-//! `tests/sim/scripts/session-all.sh` and the scripts it runs).
+//! the phone simulator (package P7; the Rust form of the former
+//! `tests/sim/scripts/session-all.sh` and the scripts it ran).
 //!
 //! ```text
-//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-24-src
+//! export DPMA_SLOT=<n> ASTERISK_SOURCE_DIR=$PWD/dev/asterisk-builds/<release>/src
 //! cargo build -p res_dpma_rs --features devtest
 //! cargo test -p dpma-tests --test session -- --ignored [PART...]
 //! ```
+//!
+//! (or `cargo xtask test session`, which builds the devtest module first).
 //!
 //! The suite prepares the instance (fresh configuration, the test PKI and
 //! the simulator's test configuration, the debug build installed,
