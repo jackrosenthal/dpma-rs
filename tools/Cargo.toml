@@ -2,6 +2,7 @@
 name = "xtask"
 description = "Development tasks for dpma-rs: Asterisk builds, private instances, the test suites, and CI (cargo xtask)"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 publish = false
 

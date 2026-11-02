@@ -2,6 +2,7 @@
 name = "dpma-sys"
 description = "Raw bindings to the Asterisk and pjproject headers, generated with bindgen"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 build = "build.rs"
 

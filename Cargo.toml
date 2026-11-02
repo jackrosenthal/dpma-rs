@@ -12,8 +12,9 @@ members = [
 
 [workspace.package]
 version = "0.1.0"
+license = "GPL-2.0-or-later"
 edition = "2021"
-repository = "https://example.invalid/dpma-rs"
+repository = "https://github.com/jackrosenthal/dpma-rs"
 rust-version = "1.99"
 
 [workspace.dependencies]

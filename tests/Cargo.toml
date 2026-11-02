@@ -2,6 +2,7 @@
 name = "dpma-tests"
 description = "Test support for dpma-rs: the phone simulator, test PKI, AMI and SIP clients, mDNS browser, harness, and the test suites"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 publish = false
 
