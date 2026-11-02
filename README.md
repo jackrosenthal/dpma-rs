@@ -228,9 +228,10 @@ deliberate exceptions:
     So `module show`, `module load`, `module unload`, `module reload`, and
     `core set debug` name `res_dpma_rs` (whose debug level also governs
     the debug messages that the PJSIP helpers logged under their own
-    names), and `config reload res_digium_phone.conf` reloads
-    `res_dpma_rs`.  The module's use count does not include the helper
-    modules that use the original.
+    names), and `config list` shows `res_dpma_rs` as the module that
+    loaded `res_digium_phone.conf` (so `config reload` of that file
+    reloads `res_dpma_rs`).  The module's use count does not include the
+    helper modules that use the original.
 17. No C API for other modules.  The original exports functions
     (`dpma_config_*`, `dpma_register_*_handler`, `phone_users_*`,
     `phone_utils_*`, and others) that its helper modules use; dpma-rs
