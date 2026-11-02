@@ -317,7 +317,7 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         vec![n63.clone()],
     );
     // A name that is not valid UTF-8 (Latin-1 "Café") is not announced;
-    // an error is logged instead (README, difference 8).
+    // an error is logged instead (`mdns-sd` takes UTF-8 names only).
     let mark = log.mark();
     set_general(
         ctx,

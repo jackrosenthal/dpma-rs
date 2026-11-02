@@ -35,7 +35,7 @@ The options:
 |---|---|
 | `--asterisk VERSION` | Selects the release: a major version (`22`) or a release (`22.11.0`) pinned in `tools/asterisk-versions`; the default is the newest.  Each release has its own image. |
 | `-j N`, `--jobs N` | How many suites run at the same time, each in its own container (default: the number of CPUs).  It exists to limit the CPU, memory, and disk that parallel containers take (with podman's `vfs` storage, every container is a full copy of the image). |
-| `--original DIR` (`test`) | The original binaries (`res_digium_phone.so` and its two PJSIP helpers, 24.0_3.6.13), which `parity` compares with and which are not distributed with dpma-rs.  `DIR` is mounted read-only into the container. |
+| `--original DIR` (`test`) | The official DPMA binaries (`res_digium_phone.so` and its two PJSIP helpers, 24.0_3.6.13), which `parity` compares with and which are not distributed with dpma-rs.  `DIR` is mounted read-only into the container. |
 | `SUITE...` or `all` (`test`) | The suites to run (below); without any, the default suites. |
 
 `$DPMA_ENGINE` names the container engine (a command name or path);
@@ -136,14 +136,14 @@ the file.
 
 bindgen generates the same bindings from the headers of all three
 pinned releases.  The module carries no build options checksum, as the
-original does not, so Asterisk loads it whatever its build options.
+official DPMA does not, so Asterisk loads it whatever its build options.
 
 On 22.11.0 and 23.5.0, `pjsip-helpers` expects no dialog-info
 supplement and "Bail.  No Channel" in the supplement's log.  Those
 releases have Asterisk bug #2186 ("extstate: Include causing device
 channel details in legacy callbacks"): the new extension state API of
 22.11.0, 23.5.0, and 24.0.0-rc1 leaves the ringing channel out of the
-extension state data, so the supplement finds none, as the original's
+extension state data, so the supplement finds none, as the official DPMA's
 would.  It is fixed in 22.12.0, 23.6.0, and 24.0.0-rc2.  The suite picks
 the expectation by the release number (`core show version`), so moving
 a pin to a fixed release brings back the full check.
@@ -167,7 +167,7 @@ simulator's test identify (`match=127.0.0.1`, which catches every SIP
 request from 127.0.0.1, REGISTERs included) breaks the parking,
 recording, and voicemail play checks and must not be there for
 `pjsip-helpers`.  Where the simulator runs without it, the module's PJSIP
-side (the original's endpoint identifier helper) identifies the simulator
+side (the official DPMA's endpoint identifier helper) identifies the simulator
 by its `X-Digium-User-Agent` header.  So each suite prepares the instance
 itself: it stops Asterisk, resets the configuration, installs its own
 setup and the debug build, and starts Asterisk.
@@ -182,13 +182,13 @@ setup and the debug build, and starts Asterisk.
 | `methods-calls` | `methods-calls` | The queue, parking, recording, phonebook, and echo methods |
 | `methods-calls-phone` | `methods-calls --via phone` | The call methods called by the simulator (AsteriskRequests) |
 | `methods-calls-http` | `methods-calls --via http` | The call methods called by the simulator (HTTPRequests) |
-| `pjsip-helpers` | `pjsip-helpers` | The module's PJSIP side (the original's two helper modules): the endpoint identifier against the expected transcript (the original helper's), the dialog-info supplement, and line locking |
+| `pjsip-helpers` | `pjsip-helpers` | The module's PJSIP side (the official DPMA's two helper modules): the endpoint identifier against the expected transcript (the official DPMA helper's), the dialog-info supplement, and line locking |
 | `request-handlers` | `request-handlers` | Every request type in every authentication mode, FileRequest paths, AsteriskRequest and HTTPRequest, AMI-registered methods; then the phone users' runtime over real sessions (reconfigure, events, tokens, stale phones, restore after a restart) |
 | `ami` | `ami` | DPMAMessageRegister, DPMAMessageResponse, and DPMAMessageSend byte for byte, requests forwarded to AMI, reconfigure from the CLI, AMI, and reloads |
 | `apps-discovery` | `apps-discovery` | DigiumControlPlayback, DigiumVoicemailPlayback, `show settings`, the mDNS responder (on the container's `lo`), and unloading and loading the module |
-| `raw-bytes` | `raw-bytes` | Latin-1 (not UTF-8) text in the configuration, from the simulator, and in AMI headers comes out byte for byte in the configuration document, the user list, file requests, events, CLI and AMI output, AstDB, and the log; the JSON (jansson) and XML (libxml2) paths fail on it as in the original |
+| `raw-bytes` | `raw-bytes` | Latin-1 (not UTF-8) text in the configuration, from the simulator, and in AMI headers comes out byte for byte in the configuration document, the user list, file requests, events, CLI and AMI output, AstDB, and the log; the JSON (jansson) and XML (libxml2) paths fail on it as in the official DPMA |
 | `ami-expiry` (only in `all`) | `ami --expiry` | The `ami` checks, then a forwarded request that nobody answers expires after 300 s (about six minutes in all) |
-| `parity` (only when named) | `parity --original /original` | Every CLI command and AMI action that needs no connected phone, from our module and from the original binaries (`--original DIR`; Asterisk 24 only; local testing only), compared byte for byte |
+| `parity` (only when named) | `parity --original /original` | Every CLI command and AMI action that needs no connected phone, from our module and from the official DPMA binaries (`--original DIR`; Asterisk 24 only; local testing only), compared byte for byte |
 
 `cargo xtask test` runs the suites in the order of the table (without a
 suite name: all of them up to `raw-bytes`; `all` adds `ami-expiry`;
@@ -230,12 +230,12 @@ dpma-tests has three binaries (`cargo run -p dpma-tests --bin <name> --
 | `dpma-mkpki` | Makes the test PKI in `dev/sim/pki` (`$DPMA_PKI`; existing files are kept, `--force` regenerates them) and installs its trust material into an instance (`--instance DIR`, default the test instance): `root-ca.pem` as `etc/asterisk/dpma/phone_ca.pem` and `appserver.pem` as `etc/asterisk/dpma/appserver.pem`.  `--check` checks that every certificate verifies, or is rejected, as the module's rules expect, with the simulator's own X.509 code (issuer names, signatures, CA flags, validity periods) (`dpma_tests::mkpki`). |
 | `dpma-ami` | Sends an AMI action and prints the response and the events that follow it, or listens for events (`dpma_tests::ami`) |
 
-Everything is written from the decompile of the original module,
+Everything is written from the decompile of the official DPMA,
 independently of the module's crates (the simulator shares only the
 RustCrypto primitive crates with them), and nothing comes from the
-original binary: all certificates and keys are generated locally (real
+official DPMA binary: all certificates and keys are generated locally (real
 phones do not accept the test AppServer certificate).  The module
-defaults to the original's embedded trust material, so a setup that
+defaults to the official DPMA's embedded trust material, so a setup that
 uses the test PKI points `phone_ca_file` and `appserver_certificate` at
 it (`dpma_tests::harness::fixtures::prepare` does this for the suites).
 
