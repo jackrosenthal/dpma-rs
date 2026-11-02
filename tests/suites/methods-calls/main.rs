@@ -1,6 +1,5 @@
-//! The methods-calls suite: the call methods of package P10 (queues,
-//! parking, recording, phonebook, echo; the Rust form of
-//! `tests/methods-calls/run.py`, `phone.py`, and `setup.sh`).
+//! The methods-calls suite: the call methods (queues, parking, recording,
+//! phonebook, and echo).
 //!
 //! ```text
 //! cargo xtask test methods-calls
@@ -12,38 +11,21 @@
 //! cargo test -p dpma-tests --test methods-calls -- --ignored [PART...]
 //! ```
 //!
-//! The suite prepares the instance (fresh configuration; the snippets of
-//! `tests/data/methods-calls` are included from `res_digium_phone.conf`,
-//! `queues.conf`, `res_parking.conf`, `extensions.conf`, and
-//! `voicemail.conf`; `pjsip.conf` is changed so that AOR 1001 keeps one
-//! contact (`remove_existing`) and endpoint 1001's mailbox is
-//! `1001@p10vm`; the contacts files go into the file directory; then the
-//! debug build is installed and Asterisk restarted; `--no-prepare` skips
-//! this).  The instance's `pjsip.conf` must have the endpoints 1001 (auth
+//! The suite prepares the instance (`--no-prepare` skips this).  The
+//! instance's `pjsip.conf` must have the endpoints 1001 (auth
 //! 1001/secret1001) and 1002, as the scratch configuration has.
 //!
-//! The expected documents are the ones the official DPMA's
-//! `phone_method_internal_api.c` builds.  The methods are called with
-//! `dpmadev method call` (JSON) and `dpmadev calls xml` (XML) through the
-//! CLI, and their return codes are checked too.  (The method code does
-//! not depend on how a request arrives; the request-handlers suite checks
-//! the AsteriskRequest and HTTPRequest paths, with the same echo
-//! parameters.)
+//! The expected documents are the ones the official DPMA builds.  The
+//! methods are called with `dpmadev method call` (JSON) and `dpmadev calls
+//! xml` (XML) through the CLI, and their return codes are checked too.
+//! (The method code does not depend on how a request arrives; the
+//! request-handlers suite checks the AsteriskRequest and HTTPRequest
+//! paths.)
 //!
-//! Every part starts from a clean state (channels hung up, queue members
-//! and statistics reset, the contacts files restored).  The recording
-//! INFOs and the parked call MESSAGE are checked with a test phone (the
-//! `sipua` UAS) registered as endpoint 1001 with a Digium user agent,
-//! which needs the module's PJSIP side (`dpma_info_send` and
-//! `dpma_pjsip_endpoint_is_dphone`).  The parts (a few seconds in all):
-//!
-//! | Part | Checks |
-//! |---|---|
-//! | `echo` | `test.dpma.api.echo` returns its parameters |
-//! | `queues` | `switchvox.users.callQueues.*`: getList, login and logout (all queues, login and logout extensions, static members), pause and resume, getTodaysStatus with a call and a waiting caller, completed and abandoned calls, failures only logged |
-//! | `phonebook` | `switchvox.users.phonebooks.entries.add`: required parameters, existing entries, empty lists, a second file, an unwritable file, the contact written |
-//! | `parking` | `switchvox.users.parkingLots.getList` with parked calls, per parking application; the parked call event sent to the parker's phone, only for PARKED_CALL and PJSIP |
-//! | `recording` | `switchvox.users.currentCalls.startRecording` and `stopRecording` (JSON and XML): MixMonitor, the INFOs sent to the phone, the errors |
+//! Every part starts from a clean state.  The recording INFOs and the
+//! parked call MESSAGE are checked with a test phone registered as
+//! endpoint 1001 with a Digium user agent, which needs the module's PJSIP
+//! side.
 
 mod calls;
 
@@ -334,7 +316,7 @@ pub fn xml_ok(method: &str) -> String {
 }
 
 /// The test phone: endpoint 1001 with a Digium user agent, answering
-/// every call, and its transcript as `phone.py` wrote it.
+/// every call, and its transcript.
 pub struct PhoneLog {
     uas: Option<Uas>,
     text: String,

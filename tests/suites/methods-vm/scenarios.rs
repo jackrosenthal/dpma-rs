@@ -1,4 +1,4 @@
-//! The scenarios of `run.py`, one per part, in order.
+//! The scenarios, one per part, in order.
 
 use std::time::Duration;
 
@@ -34,12 +34,10 @@ fn first<T: Clone>(v: &[T], what: &str) -> Result<T> {
 /// in, the flag, and the caller id.
 type MsgCopy<'a> = (&'a str, &'a str, u32, &'a str, &'a str, &'a str, &'a [u8]);
 
-/// Empties the test mailboxes and leaves the messages: four for 1001 (one
-/// urgent), one for 1002, one for 2001@other, and hand-made ones with
-/// unusual caller ids.  The first is left through `VoiceMail()`; the
-/// others are copies of it, with the fields that `VoiceMail()` would have
-/// written for them (`flag=Urgent` in the Urgent folder for the urgent
-/// one), each a second later than the one before.
+/// Empties the test mailboxes and leaves the messages.  The first is left
+/// through `VoiceMail()`; the others are copies of it, with the fields
+/// that `VoiceMail()` would have written for them, each a second later
+/// than the one before.
 pub fn messages(vm: &mut Vm) -> Result<()> {
     for b in ["default/1001", "default/1002", "default/1003", "other/2001"] {
         vm.spool.remove(b);
@@ -1083,8 +1081,7 @@ pub fn remove(vm: &mut Vm) -> Result<()> {
 }
 
 /// Starts the test phone (endpoint 1001) for `secs` seconds and waits for
-/// its registration; returns it and its first event as `vm_uas.py`
-/// printed it (`registered`).
+/// its registration; returns it and its first event (`registered`).
 fn run_uas(vm: &Vm, secs: u64, answer: Answer, dtmf: &str) -> Result<(Uas, String)> {
     let mut cfg = UasConfig::new("1001", "secret1001", Duration::from_secs(secs));
     cfg.answer = answer;
@@ -1098,7 +1095,7 @@ fn run_uas(vm: &Vm, secs: u64, answer: Answer, dtmf: &str) -> Result<(Uas, Strin
     Ok((uas, first))
 }
 
-/// The lines `vm_uas.py` printed for DTMF keys sent and INFOs received.
+/// The lines for DTMF keys sent and INFOs received.
 fn key_lines(events: &[UaEvent]) -> Vec<String> {
     events
         .iter()
@@ -1160,7 +1157,7 @@ pub fn play(vm: &mut Vm) -> Result<()> {
     );
     let playing = format!("Playing '{}/default/1001/INBOX/msg", vm.spool.dir.display());
     let log = vm.log_since(mark, &playing);
-    // DigiumVoicemailPlayback (P14) plays the message with # and * as fast
+    // DigiumVoicemailPlayback plays the message with # and * as fast
     // forward and rewind, and reports each new position with an INFO.
     vm.c().lacks(
         "play: DigiumVoicemailPlayback runs on answer",
@@ -1301,7 +1298,7 @@ pub fn tracker_lifecycle(vm: &mut Vm) -> Result<()> {
     vm.cli("dpmadev vm forget vmphone")?;
     let tr = vm.trackers("vmphone")?;
     vm.c().same("dpmadev vm forget", tr, None);
-    // A new session for the phone (P8's phone_user_token_set_last_info,
+    // A new session for the phone (phone_user_token_set_last_info,
     // through a TokenRequest after a new handshake) drops its trackers.
     vm.start_phone()?;
     vm.call(

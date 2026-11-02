@@ -1,11 +1,5 @@
-//! The identifier scenario (`scenario.py identifier`, the endpoint
-//! identifier side): lines filled from `pjsip.conf`, res_pjsip reloads,
-//! ARI-driven endpoint, auth, and AOR observers, REGISTER handling, the
-//! endpoint-is-dphone function, SIP INFO, MESSAGE identification and
-//! `pjsip_message_context` changes (config hook), unload/load cycles,
-//! and, last, an AOR update while a line has no endpoint (which crashes
-//! the official DPMA).  Its transcript must be the expected one byte for
-//! byte.
+//! The identifier scenario (the endpoint identifier side).  Its transcript
+//! must be the expected one byte for byte.
 
 use std::time::Duration;
 

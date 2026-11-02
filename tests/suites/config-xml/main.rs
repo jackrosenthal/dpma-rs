@@ -1,5 +1,5 @@
 //! The config-xml suite: smoke checks of the documents the configuration
-//! builds (package P4; was `tests/config-xml/check.py`).
+//! builds.
 //!
 //! ```text
 //! cargo xtask test config-xml
@@ -11,23 +11,13 @@
 //! cargo test -p dpma-tests --test config-xml -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
-//! Prerequisites: the test instance and the devtest build of the module,
-//! whose `dpmadev` CLI commands print the documents.  The suite prepares
-//! the instance (fresh configuration, the configuration document test
-//! setup of [`dpma_tests::harness::setup::config_xml`], the debug build
-//! installed, Asterisk restarted; `--no-prepare` skips this).  `-v`
-//! prints the documents.  It takes a few seconds.
+//! The suite prepares the instance with the setup of
+//! [`dpma_tests::harness::setup::config_xml`] (`--no-prepare` skips this).
+//! `-v` prints the documents.
 //!
-//! No expected documents are recorded (P4 compared them with the
+//! No expected documents are recorded (they were compared with the
 //! decompile by hand); the suite checks that every document the setup
-//! describes is produced and well formed (with roxmltree, see
-//! [`dpma_tests::xml`]):
-//!
-//! | Part | Checks |
-//! |---|---|
-//! | `config` | The configuration documents of fullphone, minphone, altphone, and nolinephone (the official DPMA does not escape network aliases or `idle_company_text`, and the setup has markup in network2's alias and fullphone's `idle_company_text`: those values are checked unescaped and escaped before the well-formedness check); altphone's with the merged display rules (an XML declaration); cfgphone's from its `config_file` |
-//! | `contacts` | The contacts document |
-//! | `userlist` | The user list without and with the global pin |
+//! describes is produced and well formed.
 
 use std::process::ExitCode;
 

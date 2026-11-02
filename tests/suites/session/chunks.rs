@@ -1,4 +1,4 @@
-//! Multi-chunk messages in both directions (`session-chunks.sim`).
+//! Multi-chunk messages in both directions.
 //! `event_chunks` is the number of chunks of a 2000-byte event: 5 over
 //! UDP (0x1a4 bytes of plaintext per chunk), 3 over TCP (0x384).  Over
 //! TCP only the replies are checked: reassembling a request and the

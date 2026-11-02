@@ -1,7 +1,6 @@
 //! The request-handlers suite: the phone request handlers end to end
-//! with the phone simulator (package P12, `phone_request.c`; was
-//! `tests/request-handlers/run.py`), then the phone users' runtime over
-//! real sessions (package P8; was `tests/request-handlers/users-flows.py`).
+//! with the phone simulator, then the phone users' runtime over real
+//! sessions.
 //!
 //! ```text
 //! cargo xtask test request-handlers
@@ -13,45 +12,12 @@
 //! cargo test -p dpma-tests --test request-handlers -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
-//! Prerequisites: the test instance and the devtest build of the module
-//! (the checks use its `dpmadev` CLI commands).  The suite prepares the
-//! instance (fresh configuration; the simulator's test PKI and
-//! configuration; the P12 test phones of
-//! `tests/data/request-handlers/res_digium_phone_p12.conf` included from
-//! `res_digium_phone.conf`; the debug build installed; Asterisk
-//! restarted; `--no-prepare` skips this).  It takes about twenty
-//! seconds.
+//! The suite prepares the instance (`--no-prepare` skips this).
 //!
 //! The request handler parts rewrite `[general]` of the instance's
-//! `res_digium_phone.conf` for each authentication mode (and a test
-//! `file_directory`, `<instance>/var/lib/asterisk/p12_files`, with the
-//! test files), reload the module, and put the file back at the end of
-//! the part.  Replies are compared byte for byte with what the decompile
-//! builds.
-//!
-//! | Part | Checks |
-//! |---|---|
-//! | `token` | TokenRequest in every `config_auth` mode with good and bad MACs, pins, and configuration passwords; the token; selecting the phone by line name, extension, and MAC; the session's Configured flag; the last-seen information in AstDB; unknown users and MACs |
-//! | `config` | ConfigRequest and VerifyRequest with and without (good, bad, `-` form) tokens, the Configured flag, the document (`dpmadev config`), a `config_file` from `file_directory` |
-//! | `userlist` | UserlistRequest with `userlist_auth` disabled and globalpin: the document (`dpmadev userlist`), group pins, invalid configuration passwords (the log and the auth incident) |
-//! | `file` | FileRequest: the contacts documents, small and multi-chunk files, `file://` inside a body, missing files, subdirectories, absolute names, and names outside `file_directory` (refused, logged) |
-//! | `asterisk` | AsteriskRequest and HTTPRequest with JSON documents: the HTTP wrapper, credentials (phone and pin, line and secret, blanks, before or after the document, bad ones logged), JSON request errors, an empty method response, a multi-chunk request and reply |
-//! | `xml` | AsteriskRequest with XML documents: an XML method (and the debug log), XML request errors, text before the request, a built-in XML method, a JSON-only method |
-//! | `ami` | Methods registered by AMI (the ami suite checks the rest byte for byte): the DPMAMessage event's Method (as requested) and Parameters, scalar parameters (queued without an event), a built-in method shadowing an AMI registration |
-//! | `handshake` | A handshake without a User-Agent: no reply, the log, the auth incident |
-//!
-//! The users' flow parts start (before the first of them) by deleting the
-//! test phones' AstDB entries, setting `config_auth=mac_globalpin`, and
-//! restarting Asterisk, so that the runtime state starts out empty:
-//!
-//! | Part | Checks |
-//! |---|---|
-//! | `flows-reload` | Reconfigure on reload: changed lines, a deleted phone (its AstDB entry and session) |
-//! | `flows-mismatch` | A MAC mismatch reconfiguring the old location, an orphaned phone forgetting its location |
-//! | `flows-stale` | A stale phone at the same address |
-//! | `flows-uri` | The session and the reconfigure messages following a phone that moves |
-//! | `flows-marks` | Sessions marked authenticated by token builds and lookups, the old session pruned on a new handshake |
-//! | `flows-restore` | Sessions restored after an Asterisk restart (authenticated and active, the last-seen information, ping, config, reconfigure) and surviving the idle pruning (65 s idle, through `dpmadev session idle`) |
+//! `res_digium_phone.conf` for each authentication mode, reload the
+//! module, and put the file back at the end of the part.  Replies are
+//! compared byte for byte with what the decompile builds.
 
 mod common;
 mod flows;

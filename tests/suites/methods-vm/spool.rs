@@ -8,11 +8,10 @@ use anyhow::{anyhow, Context, Result};
 use bstr::ByteSlice;
 use regex::Regex;
 
-/// One message: its spool folder, its number, and the fields of its
-/// `msgNNNN.txt`.
+/// One message in the spool.
 #[derive(Clone, Debug)]
 pub struct Msg {
-    /// The folder it is in (`INBOX`, `Old`, `Urgent`, ...).
+    /// The folder it is in.
     pub folder: String,
     /// Its number (`msg0003` is 3).
     pub number: u32,

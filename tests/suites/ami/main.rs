@@ -1,6 +1,5 @@
-//! The ami suite: AMI messages to and from phones (package P13) and the
-//! phone users runtime's messages to phones, end to end with the phone
-//! simulator (the Rust form of the former `tests/ami/run.py`).
+//! The ami suite: AMI messages to and from phones and the phone users
+//! runtime's messages to phones, end to end with the phone simulator.
 //!
 //! ```text
 //! cargo xtask test ami
@@ -12,30 +11,11 @@
 //! cargo test -p dpma-tests --test ami -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
-//! Prerequisites: the test instance and a devtest build of the module.
-//! The suite prepares the instance (fresh configuration, the
-//! simulator's test PKI and configuration, the P13 test phones of
-//! `tests/data/ami/res_digium_phone_p13.conf` included from
-//! `res_digium_phone.conf`, the debug build installed, Asterisk
-//! restarted; `--no-prepare` skips this).
-//!
-//! The first part that runs answers requests an earlier run left queued,
-//! starts two simulated phones (p13phone and p13phone2), and records
-//! where they are (a TokenRequest each).  The parts:
-//!
-//! | Part | Checks |
-//! |---|---|
-//! | `actions` | DPMAMessageRegister, DPMAMessageResponse, and DPMAMessageSend: privileges, responses byte for byte (an ActionID of 243 characters fits; one of 244 loses its line ending), failures and what they log |
-//! | `forwarding` | AsteriskRequests for AMI-registered methods: the DPMAMessage event, the queue and its scheduler (an expiry 300 s out), JSON and XML results and errors, other formats, two requests answered out of order, a long (chunked) result, and an answer after the phone gave up waiting |
-//! | `send` | DPMAMessageSend events as the phone decrypts them: an empty body, `digium.assignment.update` (sent as `bootcReset` with -398), and event names case sensitive |
-//! | `reconfigure` | `digium_phones reconfigure` from the CLI and DigiumPhoneReconfigure(All) from AMI: texts, errors, and the `digium.config.update` events (one per phone); both bodies of the reconfigure message |
-//! | `reload` | A module reload that changes a phone's lines or removes a phone reconfigures only that phone |
-//! | `session-gone` | A queued request and an event for a phone whose session a new handshake replaced |
-//! | `expiry` | The AMI scheduler drops a request nobody answers when its expiry runs (port plan section 8, item 13; the official DPMA never runs its scheduler, so its requests never expire): with the delay shortened to 2 s (`dpmadev ami expiry`), the request is still queued after 1 s, then dropped and logged, a later answer fails, and nothing reaches the phone |
+//! The suite prepares the instance (`--no-prepare` skips this).
 //!
 //! AMI responses and events are compared byte for byte with what the
-//! official DPMA's `phone_ami.c` and `phone_request.c` write; replies and
-//! events are checked as the simulated phone decrypts them.
+//! official DPMA writes; replies and events are checked as the simulated
+//! phone decrypts them.
 //!
 //! Everything is driven from the simulator: the TokenRequest records where
 //! the phone is, and an AsteriskRequest for an AMI-registered method is
@@ -79,7 +59,7 @@ fn setup(inst: &Instance) -> Result<()> {
     ConfFile::new(&inst.conf("res_digium_phone.conf")).add_include(CONF)
 }
 
-/// What the parts share: an AMI connection and the two located phones.
+/// What the parts share: an AMI connection and the located phones.
 struct State {
     ami: AmiClient,
     a: Phone,
@@ -1233,9 +1213,8 @@ fn session_gone(ctx: &mut Ctx, st: &State) -> Result<()> {
     Ok(())
 }
 
-/// The expiry of a request nobody answers, with the delay shortened to
-/// 2 s (the 300 s default is checked in `forwarding`); the delay is put
-/// back afterwards.
+/// The expiry of a request nobody answers, with the delay shortened; the
+/// delay is put back afterwards.
 fn expiry(ctx: &mut Ctx, st: &State) -> Result<()> {
     let out = ctx.cli_text("dpmadev ami expiry 2000");
     let res = ctx

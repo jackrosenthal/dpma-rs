@@ -1,4 +1,4 @@
-//! The parts: the scenarios of `run.py`.
+//! The parts.
 
 use std::os::unix::fs::PermissionsExt;
 
@@ -574,8 +574,7 @@ fn record(t: &mut T) -> Result<()> {
     );
     let mark = t.log().mark();
     // The official DPMA reads "Success" into an 8-byte buffer and always
-    // reports an error; dpma-rs reports the success (plan section 8,
-    // item 10).
+    // reports an error; dpma-rs reports the success.
     let got = t.call("p10phone", m, &p)?;
     t.expect("startRecording", got, 0, &ok(m, success()));
     let chans = t.cli("core show channels concise");

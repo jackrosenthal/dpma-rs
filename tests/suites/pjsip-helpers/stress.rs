@@ -1,22 +1,17 @@
-//! The line locking stress test (`stress.py`) for the module's PJSIP
-//! side (the official DPMA's endpoint identifier helper) and the rest of
-//! the module.
+//! The line locking stress test for the module's PJSIP side.
 //!
-//! Phase 1 (`seconds`): ARI updates of auth 2005-auth (password pwA and
-//! pwB) and endpoint 2005 (caller ID A and B) make the PJSIP side's
-//! sorcery observers rewrite line 2005 on their own threads (clear seven
-//! settings, then set them), while three readers run `dpmadev config
-//! 2003`, which reads the line's account from phone 2003's configuration
+//! Phase 1: ARI updates of auth 2005-auth and endpoint 2005 make the PJSIP
+//! side's sorcery observers rewrite line 2005 on their own threads (clear
+//! the settings, then set them), while readers run `dpmadev config 2003`,
+//! which reads the line's account from phone 2003's configuration
 //! document, over and over.  The document must always show a complete
-//! line: password pwA or pwB, authname ari5, caller ID A or B.  Before
-//! readers took the line's ao2 lock, a read could land between the
-//! clearing and the setting.
+//! line.  Before readers took the line's ao2 lock, a read could land
+//! between the clearing and the setting.
 //!
-//! Phase 2 (`seconds`): the same plus res_dpma_rs and res_pjsip reloads
-//! (full processing passes, also from a sorcery thread).  A pass has its
-//! own intermediate states (as in the official DPMA), so only deadlocks are
-//! checked: every CLI command and ARI request must answer within 20
-//! seconds.
+//! Phase 2: the same plus res_dpma_rs and res_pjsip reloads (full
+//! processing passes, also from a sorcery thread).  A pass has its own
+//! intermediate states (as in the official DPMA), so only deadlocks are
+//! checked: every CLI command and ARI request must answer in time.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
@@ -58,7 +53,7 @@ struct Shared {
 }
 
 impl Shared {
-    /// A CLI command with the 20-second limit; `None` (and a timeout
+    /// A CLI command with the time limit; `None` (and a timeout
     /// counted) when it takes that long.  When Asterisk does not answer
     /// at all, the output is empty.
     fn cli(&self, cmd: &str) -> Option<Vec<u8>> {
