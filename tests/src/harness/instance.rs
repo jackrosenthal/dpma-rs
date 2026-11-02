@@ -30,15 +30,6 @@ pub const SIP_PORT: u16 = 15060;
 /// The instance's AMI port (user `test`, secret `test`).
 pub const AMI_PORT: u16 = 15038;
 
-/// The modules of the original distribution, which [`Instance::install`]
-/// removes from the module directory: Asterisk would load them next to
-/// `res_dpma_rs.so`.
-pub const ORIGINAL_MODULES: [&str; 3] = [
-    "res_digium_phone.so",
-    "res_pjsip_endpoint_identifier_dpma.so",
-    "res_pjsip_dialog_info_digium_body_supplement.so",
-];
-
 /// How long [`Instance::start`] waits for Asterisk to boot, and
 /// [`Instance::stop`] for it to exit.
 const START_TIMEOUT: Duration = Duration::from_secs(60);
@@ -291,7 +282,7 @@ impl Instance {
                     log_path.display()
                 );
             }
-            std::thread::sleep(Duration::from_millis(500));
+            std::thread::sleep(Duration::from_millis(50));
         }
     }
 
@@ -314,7 +305,7 @@ impl Instance {
             return Ok(());
         }
         let stopped =
-            crate::util::wait_until(STOP_TIMEOUT, Duration::from_millis(100), || match pid {
+            crate::util::wait_until(STOP_TIMEOUT, Duration::from_millis(20), || match pid {
                 Some(p) => !pid_alive(p),
                 None => !cli.alive(),
             });
@@ -344,8 +335,7 @@ impl Instance {
     /// Installs the module built in `profile` (`debug` or `release`) as
     /// `res_dpma_rs.so` in the module directory, by copying it to a
     /// temporary file and renaming that into place (so that a running
-    /// Asterisk is not hurt; restart it to use the new build), and removes
-    /// the [`ORIGINAL_MODULES`] from it.
+    /// Asterisk is not hurt; restart it to use the new build).
     pub fn install(&self, profile: &str) -> Result<()> {
         let src = Instance::module_build(profile);
         if !src.is_file() {
@@ -364,14 +354,6 @@ impl Instance {
         let tmp = m.join(format!("res_dpma_rs.so.new.{}", std::process::id()));
         fs::copy(&src, &tmp).with_context(|| format!("copying {}", src.display()))?;
         fs::rename(&tmp, &dest).with_context(|| dest.display().to_string())?;
-        for name in ORIGINAL_MODULES {
-            match fs::remove_file(m.join(name)) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                    return Err(e).with_context(|| m.join(name).display().to_string())
-                }
-                _ => {}
-            }
-        }
         Ok(())
     }
 

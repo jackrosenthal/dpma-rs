@@ -727,8 +727,17 @@ pub fn asterisk(ctx: &mut Ctx) -> Result<()> {
 
 fn asterisk_checks(ctx: &mut Ctx) -> Result<()> {
     let p = phone(ctx, MAC_A)?;
-    let echo = method_request("test.dpma.api.echo", json!({"x": 1, "y": "z"}));
-    let want = http(br#"{"response":{"method":"test.dpma.api.echo","result":{"x":1,"y":"z"}}}"#);
+    // Every JSON value type through jansson and back; the request escapes
+    // the non-ASCII and control characters (\u00e9, \u0001), the reply
+    // escapes only the control character.
+    let echo = method_request(
+        "test.dpma.api.echo",
+        json!({"a": "b", "n": [1, 2.5, null, true], "o": {"x": "é\u{1}/"}}),
+    );
+    let want = http(
+        r#"{"response":{"method":"test.dpma.api.echo","result":{"a":"b","n":[1,2.5,null,true],"o":{"x":"é\u0001/"}}}}"#
+            .as_bytes(),
+    );
     let ex = call(&p, "simphone:1234", &echo, "AsteriskRequest")?;
     expect(
         ctx,
@@ -738,10 +747,10 @@ fn asterisk_checks(ctx: &mut Ctx) -> Result<()> {
         None,
         Body::Is(&want),
     );
-    let ex = call(&p, "simphone:1234", &echo, "HTTPRequest")?;
+    let ex = call(&p, "p12b:", &echo, "HTTPRequest")?;
     expect(
         ctx,
-        "echo as HTTPRequest",
+        "echo as HTTPRequest, a phone without a pin and an empty secret",
         &ex,
         "HTTPResponse",
         None,
@@ -1084,21 +1093,21 @@ fn xml_checks(ctx: &mut Ctx) -> Result<()> {
 
 pub fn ami(ctx: &mut Ctx) -> Result<()> {
     set_auth(ctx, "mac_globalpin", "disabled")?;
-    // Registered with DPMAMessageRegister when that action exists (P13),
-    // else with the test hook.
-    let p13 = ctx
-        .ami()?
-        .action("DPMAMessageRegister", [("Method", "p12.ami.method")])
-        .success();
-    if !p13 {
-        cli(ctx, "dpmadev method register ami p12.ami.method")?;
-    }
-    let res = ami_checks(ctx, p13);
+    let res = ami_checks(ctx);
     cli(ctx, "dpmadev method unregister ami p12.ami.method")?;
     res
 }
 
-fn ami_checks(ctx: &mut Ctx, p13: bool) -> Result<()> {
+/// What the request handler gives the DPMAMessage event of an
+/// AMI-registered method (the event itself, the queue, and the answers are
+/// checked byte for byte in the ami suite): the method as requested and
+/// the parameters.
+fn ami_checks(ctx: &mut Ctx) -> Result<()> {
+    let ok = ctx
+        .ami()?
+        .action("DPMAMessageRegister", [("Method", "p12.ami.method")])
+        .success();
+    ctx.c.require("DPMAMessageRegister", ok, "")?;
     let p = phone(ctx, MAC_A)?;
     ctx.ami()?.drain_events();
     let json_doc = method_request(
@@ -1121,104 +1130,54 @@ fn ami_checks(ctx: &mut Ctx, p13: bool) -> Result<()> {
         let ev = ctx
             .ami()?
             .wait_event(Some("DPMAMessage"), &[], Duration::from_secs(5));
-        ctx.c
-            .check(format!("{fmt}: DPMAMessage raised"), ev.is_some(), "");
-        let Some(ev) = ev else { continue };
-        let f = |k: &str| field(&ev, k);
-        ctx.c.same(
-            format!("{fmt}: RequestID is the transaction key"),
-            f("RequestID"),
-            Some(format!("{}-{MAC_A}", ex.id)),
-        );
+        let f = |k: &str| ev.as_ref().and_then(|ev| field(ev, k));
         ctx.c.same(
             format!("{fmt}: Method as requested"),
             f("Method").as_deref(),
             Some("p12.AMI.method"),
         );
-        ctx.c
-            .same(format!("{fmt}: Format"), f("Format").as_deref(), Some(fmt));
         ctx.c.same(
             format!("{fmt}: Parameters"),
             f("Parameters").as_deref(),
             Some(params),
         );
-        let privilege = f("Privilege").unwrap_or_default();
-        ctx.c.same(
-            format!("{fmt}: Privilege (agent)"),
-            privilege.split(',').next().unwrap_or_default(),
-            "agent",
+        // Answer it, so that it does not stay queued.
+        let rid = format!("{}-{MAC_A}", ex.id);
+        ctx.ami()?.action(
+            "DPMAMessageResponse",
+            [
+                ("RequestID", rid.as_str()),
+                ("Format", fmt),
+                ("Response", "ok"),
+            ],
         );
-        if p13 {
-            let body = if fmt == "JSON" {
-                r#"{"ok":1}"#
-            } else {
-                "<ok/>"
-            };
-            let rid = f("RequestID").unwrap_or_default();
-            let lower = fmt.to_lowercase();
-            ctx.ami()?.action(
-                "DPMAMessageResponse",
-                [
-                    ("RequestID", rid.as_str()),
-                    ("Format", lower.as_str()),
-                    ("Response", body),
-                ],
-            );
-            p.wait_reply(&mut ex, Some(Duration::from_secs(10)));
-            let r = ex.reply.as_ref();
-            ctx.c.check(
-                format!("{fmt}: answered through DPMAMessageResponse"),
-                r.is_some_and(|r| r.payload.starts_with(HTTP) && r.payload.contains_str("ok")),
-                format!("{:?}", r.map(|r| &r.payload)),
-            );
-        } else {
-            // Without P13's queue the request cannot wait: the reply goes
-            // out at once with just the HTTP header.
-            p.wait_reply(&mut ex, Some(Duration::from_secs(5)));
-            expect(
-                ctx,
-                &format!("{fmt}: without the AMI queue the reply is the bare header"),
-                &ex,
-                "AsteriskResponse",
-                None,
-                Body::Is(HTTP),
-            );
-        }
+        p.wait_reply(&mut ex, Some(Duration::from_secs(5)));
     }
-    // Parameters that are not an object or array: no event.
+    // Parameters that are not an object or array: queued without an event
+    // (the handler raises the event before it queues the request).
     let mut ex = p
         .asterisk(method_request("p12.ami.method", json!("scalar")))
         .auth("p12a:4321")
         .no_wait()
         .send()?;
+    let rid = format!("{}-{MAC_A}", ex.id);
+    let queued =
+        dpma_tests::util::wait_until(Duration::from_secs(5), Duration::from_millis(20), || {
+            cli_text(ctx, "dpmadev ami queue").is_ok_and(|q| q.contains(&rid))
+        });
+    ctx.c
+        .check("JSON scalar parameters: queued", queued, "not in the queue");
     let ev = ctx
         .ami()?
-        .wait_event(Some("DPMAMessage"), &[], Duration::from_secs(2));
+        .wait_event(Some("DPMAMessage"), &[], Duration::from_millis(200));
     ctx.c.check(
         "JSON scalar parameters: no DPMAMessage",
         ev.is_none(),
         format!("{ev:?}"),
     );
-    if p13 {
-        // It still waits for DPMAMessageResponse (which nobody can send
-        // without the event).
-        p.wait_reply(&mut ex, Some(Duration::from_secs(2)));
-        ctx.c.check(
-            "JSON scalar parameters: queued, no reply",
-            ex.reply.is_none(),
-            "",
-        );
-    } else {
-        p.wait_reply(&mut ex, Some(Duration::from_secs(5)));
-        expect(
-            ctx,
-            "JSON scalar parameters: bare header",
-            &ex,
-            "AsteriskResponse",
-            None,
-            Body::Is(HTTP),
-        );
-    }
+    p.wait_reply(&mut ex, Some(Duration::from_millis(200)));
+    ctx.c
+        .check("JSON scalar parameters: no reply", ex.reply.is_none(), "");
     // A built-in method shadows an AMI registration of the same name.
     cli(ctx, "dpmadev method register ami test.dpma.api.echo")?;
     let ex = call(
@@ -1251,17 +1210,36 @@ pub fn handshake(ctx: &mut Ctx) -> Result<()> {
     res
 }
 
+/// Sends a handshake that fails and waits until the module logged `last`
+/// (the handshake handler's last line); then a reply can no longer come.
+fn failed_handshake(
+    ctx: &mut Ctx,
+    p: &Phone,
+    bundle: Option<&str>,
+    last: &str,
+) -> Result<Exchange> {
+    let mark = log_mark(ctx);
+    let mut b = p.handshake().no_wait();
+    if let Some(bundle) = bundle {
+        b = b.bundle(bundle);
+    }
+    let mut ex = b.send()?;
+    logged(ctx, &format!("log: {last}"), mark, last);
+    p.wait_reply(&mut ex, Some(Duration::from_millis(200)));
+    Ok(ex)
+}
+
 fn handshake_checks(ctx: &mut Ctx) -> Result<()> {
     let mut o = ctx.sim_options().mac(MAC_A);
     o.user_agent = BString::default();
     let p = Phone::start(o)?;
     let mark = log_mark(ctx);
-    let ex = p.handshake().timeout_secs(2.0).send()?;
+    let last = "Failed to create auth problem record";
+    let ex = failed_handshake(ctx, &p, None, last)?;
     ctx.c.check("no reply", ex.reply.is_none(), ex.describe(0));
     for text in [
         "User Agent allocation failed",
         "Session could not be created due to invalid credentials",
-        "Failed to create auth problem record",
     ] {
         logged(ctx, &format!("log: {text}"), mark, text);
     }
@@ -1274,7 +1252,10 @@ fn handshake_checks(ctx: &mut Ctx) -> Result<()> {
     // With an incident for the address already there, it counts.
     {
         let q = Phone::start(ctx.sim_options().mac(MAC_A))?;
-        q.handshake().bundle("rogue").timeout_secs(2.0).send()?;
+        let last = format!(
+            "Auth failed for ip '127.0.0.1' mac '{MAC_A}' reason 'invalid credentials' count=1"
+        );
+        failed_handshake(ctx, &q, Some("rogue"), &last)?;
     }
     let inc = local_incident(ctx)?;
     ctx.c.same(
@@ -1286,7 +1267,10 @@ fn handshake_checks(ctx: &mut Ctx) -> Result<()> {
             Some("1".to_string()),
         )),
     );
-    p.handshake().timeout_secs(2.0).send()?;
+    let last = format!(
+        "Auth failed for ip '127.0.0.1' mac '{MAC_A}' reason 'invalid credentials' count=2"
+    );
+    failed_handshake(ctx, &p, None, &last)?;
     let inc = local_incident(ctx)?;
     ctx.c.same(
         "no user agent: the incident counts",

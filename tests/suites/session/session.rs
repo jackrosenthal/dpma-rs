@@ -1,18 +1,120 @@
 //! Session layer checks (`session.sim`): handshakes, encryption, session
-//! validation, the CLI and AMI, reloads, and pruning on a new handshake.
-//! Every reply must arrive over the transport the simulator uses, Session
-//! Timeout replies included (port plan section 8, item 11; the original
-//! sends those over UDP).
+//! validation, what validation drops, reloads, and pruning on a new
+//! handshake.  Every reply must arrive over the transport the simulator
+//! uses, Session Timeout replies included (port plan section 8, item 11;
+//! the original sends those over UDP).  Over TCP, only what depends on
+//! the transport runs: chunking (the handshakes), the reply URI's
+//! transport (encrypted replies, Echo, -398 replies), and the PEM cuts.
 
 use std::time::Duration;
 
 use anyhow::Result;
-use dpma_tests::harness::Ctx;
-use dpma_tests::sim::{Phone, Transport};
+use bstr::BString;
+use dpma_tests::harness::{Ctx, LogMark};
+use dpma_tests::sim::proto::{
+    method_request_json, H_FINISHED, H_ID, H_MAC, H_RESPONSE_TYPE, H_SEQUENCE, H_SESSION,
+};
+use dpma_tests::sim::{Exchange, Phone, Transport};
 
-use crate::{ami_action, ami_cli};
+use crate::ami_cli;
+
+/// Checks that the module dropped a request: `text` (its last log line
+/// about it) is logged since `mark`, and then no reply comes.
+fn dropped(ctx: &mut Ctx, label: &str, phone: &Phone, mut ex: Exchange, mark: LogMark, text: &str) {
+    let ok = ctx.log().wait_for(mark, text, Duration::from_secs(2));
+    ctx.c.check(
+        format!("{label}: logged"),
+        ok,
+        format!("not in the log: {text:?}"),
+    );
+    phone.wait_reply(&mut ex, Some(Duration::from_millis(200)));
+    ctx.c.exchange(label, &ex).no_reply();
+}
+
+/// Sends one hand-made MESSAGE on the phone's session with `headers`
+/// (besides the ID, MAC, and session, and sequence 0, finished) and
+/// `body`, unencrypted; the exchange that catches a reply to its ID.
+fn raw_message(phone: &Phone, headers: &[(&str, &str)], body: &str) -> Result<Exchange> {
+    let txid = phone.new_id();
+    let ex = phone.expect_reply("(none)", &txid);
+    let mut h: Vec<(String, BString)> = vec![
+        (H_ID.into(), txid.as_str().into()),
+        (H_MAC.into(), phone.mac().into()),
+        (H_SESSION.into(), phone.session().unwrap_or_default().into()),
+        (H_SEQUENCE.into(), "0".into()),
+        (H_FINISHED.into(), "1".into()),
+    ];
+    h.extend(
+        headers
+            .iter()
+            .map(|(k, v)| (k.to_string(), BString::from(*v))),
+    );
+    phone.send_message(&h, body.as_bytes())?;
+    Ok(ex)
+}
+
+/// What validation drops before a request reaches its handler (UDP only:
+/// none of it depends on the transport).
+fn drops(ctx: &mut Ctx, phone: &Phone) -> Result<()> {
+    let log = ctx.log();
+
+    // An unencrypted AsteriskRequest with a body.
+    let mark = log.mark();
+    let ex = phone
+        .request("AsteriskRequest")
+        .encrypt(false)
+        .body("X-Digium-AppServer-Digest-Auth=a:b")
+        .no_wait()
+        .send()?;
+    let text = "AsteriskRequest dropped due to lack of encryption.";
+    dropped(ctx, "unencrypted AsteriskRequest", phone, ex, mark, text);
+
+    // An unencrypted HTTPRequest is not dropped.
+    let doc = method_request_json("test.dpma.api.echo", Some(&serde_json::json!({"x": 1})));
+    let ex = phone
+        .http(doc)
+        .auth("simphone:1234")
+        .encrypt(false)
+        .send()?;
+    ctx.c
+        .exchange("unencrypted HTTPRequest answered", &ex)
+        .raw_ok()
+        .ty("HTTPResponse")
+        .payload_matches(r#""result":\{"x":1\}"#);
+
+    // An unencrypted UserlistResponse with a body.
+    let mark = log.mark();
+    let ex = raw_message(phone, &[(H_RESPONSE_TYPE, "UserlistResponse")], "x")?;
+    let text = "UserlistResponse dropped due to lack of encryption.";
+    dropped(ctx, "unencrypted UserlistResponse", phone, ex, mark, text);
+
+    // Neither a request type nor a response type.
+    let mark = log.mark();
+    let ex = raw_message(phone, &[], "x")?;
+    let text = "Message dropped due to lack of response or request type.";
+    dropped(ctx, "no request or response type", phone, ex, mark, text);
+
+    // A request that needs a session, without one.
+    let mark = log.mark();
+    let ex = phone
+        .request("PingRequest")
+        .no_session()
+        .encrypt(false)
+        .no_wait()
+        .send()?;
+    let text = "Message 'PingRequest' dropped because of lacking session id";
+    dropped(ctx, "no session", phone, ex, mark, text);
+
+    // A request type nobody handles.
+    let mark = log.mark();
+    let ex = phone.request("BogusRequest").no_wait().send()?;
+    let text = "Received request with unknown type 'BogusRequest'";
+    dropped(ctx, "unknown request type", phone, ex, mark, text);
+    Ok(())
+}
 
 pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
+    let udp = t == Transport::Udp;
     let phone = Phone::start(ctx.sim_options().transport(t))?;
     let c = &mut ctx.c;
 
@@ -51,7 +153,8 @@ pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
         .ty("EchoResponse")
         .error("0")
         .encrypted(false)
-        .body("plain echo");
+        .body("plain echo")
+        .transport(t);
 
     // An encrypted request in many chunks (the Ping handler ignores the
     // body).
@@ -77,7 +180,8 @@ pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
     c.exchange("unknown session", &ex)
         .raw_ok()
         .ty("HandshakeResponse")
-        .error("-398");
+        .error("-398")
+        .transport(t);
 
     // MAC or contact mismatch: "Session Timeout" (-398) in the request's
     // own response type, encrypted, prefixed "Command: ".
@@ -99,64 +203,46 @@ pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
         .error("-398")
         .transport(t);
 
-    // An unencrypted AsteriskRequest with a body is dropped.
-    let ex = phone
-        .request("AsteriskRequest")
-        .encrypt(false)
-        .body("X-Digium-AppServer-Digest-Auth=a:b")
-        .timeout(Duration::from_secs(2))
-        .send()?;
-    c.exchange("unencrypted AsteriskRequest", &ex).no_reply();
+    if udp {
+        drops(ctx, &phone)?;
 
-    // The session in the CLI and AMI.
-    let session = phone.session().unwrap_or_default();
-    let res = ami_cli(ctx, "digium_phones show sessions")?;
-    ctx.c
-        .ami("show sessions", res.response.as_ref())
-        .matches("Output", &regex::escape(&session))
-        .matches("Output", &regex::escape(phone.mac()));
-    let m = ami_action(ctx, "DPMAShowPhones", &[])?;
-    ctx.c
-        .ami("DPMAShowPhones", Some(&m))
-        .eq("Response", "Success")
-        .matches("EventList", "Complete");
+        // Sessions survive a module reload (AstDB).
+        ami_cli(ctx, "module reload res_dpma_rs.so")?;
+        let c = &mut ctx.c;
+        let ex = phone.ping().send()?;
+        c.exchange("ping after a reload", &ex)
+            .ok()
+            .ty("PingResponse")
+            .no_error();
 
-    // Sessions survive a module reload (AstDB).
-    ami_cli(ctx, "module reload res_dpma_rs.so")?;
-    std::thread::sleep(Duration::from_secs(1));
-    let c = &mut ctx.c;
-    let ex = phone.ping().send()?;
-    c.exchange("ping after a reload", &ex)
-        .ok()
-        .ty("PingResponse")
-        .no_error();
-
-    // A new handshake prunes the phone's old session.
-    let old = phone.session().unwrap_or_default();
-    let ex = phone.handshake().bundle("legacy").send()?;
-    c.exchange("handshake legacy", &ex)
-        .ok()
-        .ty("HandshakeResponse")
-        .header_absent("Handshake-Version")
-        .appserver_ok();
-    let ex = phone
-        .request("PingRequest")
-        .session(old)
-        .encrypt(false)
-        .send()?;
-    c.exchange("old session after a new handshake", &ex)
-        .raw_ok()
-        .ty("HandshakeResponse")
-        .error("-398");
-    let ex = phone.ping().send()?;
-    c.exchange("ping on the new session", &ex)
-        .ok()
-        .ty("PingResponse");
+        // A new handshake prunes the phone's old session.
+        let old = phone.session().unwrap_or_default();
+        let ex = phone.handshake().bundle("legacy").send()?;
+        c.exchange("handshake legacy", &ex)
+            .ok()
+            .ty("HandshakeResponse")
+            .header_absent("Handshake-Version")
+            .appserver_ok();
+        let ex = phone
+            .request("PingRequest")
+            .session(old)
+            .encrypt(false)
+            .send()?;
+        c.exchange("old session after a new handshake", &ex)
+            .raw_ok()
+            .ty("HandshakeResponse")
+            .error("-398");
+        let ex = phone.ping().send()?;
+        c.exchange("ping on the new session", &ex)
+            .ok()
+            .ty("PingResponse");
+    }
 
     // Handshake bodies in chunks that end right before and after every
     // BEGIN and END line: Asterisk strips those line breaks and the
     // module restores them (port plan section 8, item 12; the original
     // rejects these).
+    let c = &mut ctx.c;
     let ex = phone.handshake().bundle("legacy").pem_cuts().send()?;
     c.exchange("handshake legacy, PEM cuts", &ex)
         .ok()
@@ -181,6 +267,9 @@ pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
         .ok()
         .ty("PingResponse")
         .no_error();
+    if !udp {
+        return Ok(());
+    }
 
     // Accepted: expired certificates (errors 9 and 10 are ignored) and a
     // 512-bit SHA-1 legacy certificate.
@@ -189,21 +278,22 @@ pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
         c.exchange(format!("handshake {bundle}"), &ex).ok();
     }
 
-    // Rejected: untrusted CA, two or four certificates.  No reply at all
-    // (and an auth incident for 127.0.0.1).
+    // Rejected: untrusted CA, two or four certificates.  No reply at all,
+    // and an auth incident for 127.0.0.1 (its log line is the handshake
+    // handler's last).
     for bundle in ["rogue", "two", "four"] {
-        let ex = phone
-            .handshake()
-            .bundle(bundle)
-            .timeout(Duration::from_secs(2))
-            .send()?;
-        c.exchange(format!("handshake {bundle}"), &ex).no_reply();
+        let mark = ctx.log().mark();
+        let ex = phone.handshake().bundle(bundle).no_wait().send()?;
+        let label = format!("handshake {bundle}");
+        dropped(
+            ctx,
+            &label,
+            &phone,
+            ex,
+            mark,
+            "Auth failed for ip '127.0.0.1'",
+        );
     }
-    let m = ami_action(ctx, "DPMAShowIncidents", &[])?;
-    ctx.c
-        .ami("DPMAShowIncidents", Some(&m))
-        .eq("Response", "Success")
-        .matches("EventList", "Complete");
 
     // Leave a working session behind.
     let c = &mut ctx.c;

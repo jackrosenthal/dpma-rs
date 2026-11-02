@@ -73,7 +73,7 @@ fn results(ctx: &mut Ctx, tids: &[String], timeout: Duration) -> Results {
                 out.insert(t.clone(), Some(v.split('|').map(str::to_string).collect()));
             }
         }
-        fixtures::sleep(0.3);
+        fixtures::sleep(0.05);
     }
     for t in tids {
         out.entry(t.clone()).or_insert(None);

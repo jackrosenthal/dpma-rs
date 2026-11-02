@@ -1,7 +1,7 @@
 //! `cargo xtask`: the development tasks of dpma-rs (see `tests/README.md`).
 //!
 //! ```text
-//! cargo xtask test [--asterisk VERSION] [--original DIR] [-j N] [SUITE... | all]
+//! cargo xtask test [--asterisk VERSION] [-j N] [SUITE... | all]
 //! cargo xtask ci [--asterisk VERSION] [-j N]
 //! cargo xtask headers [--asterisk VERSION]
 //! cargo xtask majors
@@ -43,24 +43,16 @@ enum Cmd {
     /// Run test suites, each in a fresh container of a pinned release's
     /// test image (built first if needed), several at a time.
     ///
-    /// Suites (default: all of these, in this order): session config-xml
-    /// users-runtime methods-vm methods-vm-phone methods-calls
-    /// methods-calls-phone methods-calls-http pjsip-helpers
-    /// request-handlers ami apps-discovery raw-bytes.  "all" runs these
-    /// and then ami-expiry (about six minutes); parity runs only when
-    /// named, and needs --original.  Each suite's output goes to
-    /// target/container/<release>/logs/<suite>.log.  Exit status 0 when
-    /// every suite passes.
+    /// Suites (default, or "all": all of these, in this order): session
+    /// config-xml users-runtime methods-vm methods-calls pjsip-helpers
+    /// request-handlers ami apps-discovery raw-bytes.  Each suite's output
+    /// goes to target/container/<release>/logs/<suite>.log.  Exit status 0
+    /// when every suite passes.
     Test {
         /// The Asterisk release: a major version or a pinned release
         /// (default: the newest).
         #[arg(long, value_name = "VERSION")]
         asterisk: Option<String>,
-        /// The directory of the original binaries (res_digium_phone.so
-        /// and its two PJSIP helpers 24.0_3.6.13), for parity: mounted
-        /// read-only into the containers.
-        #[arg(long, value_name = "DIR")]
-        original: Option<PathBuf>,
         /// Suites that run at the same time, each in its own container
         /// (default: the number of CPUs).
         #[arg(short, long, value_name = "N")]
@@ -144,29 +136,14 @@ pub fn run(cmd: &mut Command) -> Result<()> {
     Ok(())
 }
 
-fn test(
-    asterisk: Option<String>,
-    original: Option<PathBuf>,
-    jobs: usize,
-    names: Vec<String>,
-) -> Result<u8> {
+fn test(asterisk: Option<String>, jobs: usize, names: Vec<String>) -> Result<u8> {
     let suites = suites::selection(&names);
     if let Some(s) = suites.iter().find(|s| suites::target(s).is_none()) {
         println!("unknown suite {s}");
         return Ok(2);
     }
-    if let Some(dir) = &original {
-        if !dir.is_dir() {
-            bail!("--original {}: not a directory", dir.display());
-        }
-    } else if suites.iter().any(|s| s == "parity") {
-        bail!(
-            "parity needs the original binaries (res_digium_phone.so and its two PJSIP helpers, \
-             24.0_3.6.13; not distributed with dpma-rs): cargo xtask test --original DIR parity"
-        );
-    }
     let pin = pins::pin(asterisk.as_deref())?;
-    let run = container::Run::new(&pin, original.as_deref())?;
+    let run = container::Run::new(&pin)?;
     let code = suites::run_suites(&run, &container::out_dir(&pin), &suites, jobs)?;
     println!(
         "Asterisk {}; logs in {}",
@@ -180,10 +157,9 @@ fn run_cli(cli: Cli) -> Result<u8> {
     match cli.cmd {
         Cmd::Test {
             asterisk,
-            original,
             jobs: j,
             suites,
-        } => return test(asterisk, original, jobs(j), suites),
+        } => return test(asterisk, jobs(j), suites),
         Cmd::Ci { asterisk, jobs: j } => {
             return ci::ci(&pins::pin(asterisk.as_deref())?, jobs(j));
         }

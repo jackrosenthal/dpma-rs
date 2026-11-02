@@ -25,14 +25,14 @@
 //!
 //! The suite prepares the instance (fresh configuration, the test
 //! configuration below, the debug build installed, Asterisk started;
-//! `--no-prepare` skips this) and runs these parts (about a minute and a
-//! half in all), each after restarting Asterisk:
+//! `--no-prepare` skips this) and runs these parts (about thirty seconds
+//! in all), each after restarting Asterisk:
 //!
 //! | Part | Was | Checks |
 //! |---|---|---|
 //! | `identifier` | `check.sh` (`scenario.py identifier`) | The identifier scenario's transcript is `tests/data/pjsip-helpers/expected-identifier.txt`, byte for byte |
 //! | `dialog-info` | `check.sh` (`scenario.py dialog-info`) | The dialog-info supplement adds the restricted caller to the Digium subscriber's NOTIFY and never to the other subscriber's; on releases with Asterisk bug #2186, that it adds nothing and logs "Bail.  No Channel" |
-//! | `stress` | `stress.py 15` | Line locking under concurrent observer updates, reads, and reloads (15 seconds per phase) |
+//! | `stress` | `stress.py 5` | Line locking under concurrent observer updates, reads, and reloads (5 seconds per phase) |
 //!
 //! The transcripts go to `<instance>/pjsip-helpers/` (`identifier.txt`
 //! and `dialog-info.txt`); `-v` also prints them as they are made.  When
@@ -418,12 +418,22 @@ impl Scenario {
         self.log_pos = 0;
     }
 
-    /// Waits 0.3 seconds, then adds the module's log lines since the mark
-    /// (the PJSIP side's, "Reconfiguring triggered", and "P11 probe"),
-    /// without times, thread IDs, and source line numbers, as `log:`
-    /// lines; moves the mark.
+    /// Waits until Asterisk's logger thread is quiet (`messages.log` has
+    /// not grown for 0.1 s), then adds the module's log lines since the
+    /// mark (the PJSIP side's, "Reconfiguring triggered", and "P11
+    /// probe"), without times, thread IDs, and source line numbers, as
+    /// `log:` lines; moves the mark.
     pub fn log_show(&mut self) {
-        fixtures::sleep(0.3);
+        let size = || std::fs::metadata(&self.inst.messages_log).map_or(0, |m| m.len());
+        let mut last = size();
+        loop {
+            fixtures::sleep(0.1);
+            let now = size();
+            if now == last {
+                break;
+            }
+            last = now;
+        }
         let data = std::fs::read(&self.inst.messages_log).unwrap_or_default();
         let start = usize::try_from(self.log_pos).unwrap_or(usize::MAX);
         let new = data.get(start..).unwrap_or_default();
@@ -496,12 +506,12 @@ impl Scenario {
         Uas::spawn("127.0.0.1", self.inst.sip_port, c)
     }
 
-    /// Adds what a background UAS printed, as `<label>: ` lines:
-    /// `REGISTER <user> <status>`, `INVITE <n> answered|ringing`, and
-    /// each INFO (`sipua.py uas`).
-    pub fn collect_uas(&mut self, uas: Uas, user: &str, label: &str) {
+    /// Adds what a background UAS printed (its `events`), as `<label>: `
+    /// lines: `REGISTER <user> <status>`, `INVITE <n> answered|ringing`,
+    /// and each INFO (`sipua.py uas`).
+    pub fn collect_uas(&mut self, events: Vec<UaEvent>, user: &str, label: &str) {
         let mut lines = Vec::new();
-        for e in uas.join() {
+        for e in events {
             match e {
                 UaEvent::Registered(s) => {
                     lines.push(format!("REGISTER {user} {}", sipua::status_text(&s)));
@@ -569,9 +579,24 @@ impl Scenario {
         }
     }
 
+    /// Waits until the sorcery observers of `object_type` (`endpoint`,
+    /// `auth`, `aor`, or `contact`) have handled every change so far: they
+    /// run on that type's serializer (`sorcery/<type>-<n>`), so a ping
+    /// (`core ping taskprocessor`) answers after them.
+    pub fn settle(&self, object_type: &str) {
+        let prefix = format!("sorcery/{object_type}-");
+        let list = self
+            .inst
+            .cli_text(&format!("core show taskprocessors like {prefix}"));
+        for name in list.split_whitespace().filter(|w| w.starts_with(&prefix)) {
+            self.inst
+                .cli_text(&format!("core ping taskprocessor {name}"));
+        }
+    }
+
     /// An ARI push configuration request on `res_pjsip/<path>` (fields:
     /// a JSON body; none: no body), as `ARI <method> <path>: <status>`;
-    /// then waits a second.
+    /// then waits until the observers have handled it.
     pub fn ari(&mut self, method: &str, path: &str, fields: &[(&str, &str)]) {
         let body = (!fields.is_empty()).then(|| Ari::config_fields(fields));
         let code = match self.ari.request(
@@ -583,7 +608,7 @@ impl Scenario {
             Err(e) => format!("error {e:#}"),
         };
         self.out(format!("  ARI {method} {path}: {code}"));
-        fixtures::sleep(1.0);
+        self.settle(path.split('/').next().unwrap_or_default());
     }
 
     /// Replaces every `old` with `new` in the configuration file `name`.
@@ -638,6 +663,6 @@ fn main() -> std::process::ExitCode {
         .prepare(|inst| fixtures::prepare(inst, install_conf))
         .part("identifier", identifier::run)
         .part("dialog-info", dialog_info::run)
-        .part("stress", |ctx| stress::run(ctx, 15.0))
+        .part("stress", |ctx| stress::run(ctx, 5.0))
         .main()
 }

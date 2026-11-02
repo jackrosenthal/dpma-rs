@@ -36,9 +36,32 @@ fn wait_browse(pred: impl Fn(&Found) -> bool, timeout: f64) -> Found {
         if pred(&found) {
             return found;
         }
-        fixtures::sleep(0.3);
+        fixtures::sleep(0.1);
     }
     found
+}
+
+/// Waits up to `timeout` seconds until the listener heard, since `mark`,
+/// a PTR record of the service for every instance in `names` (goodbyes
+/// when `goodbye`); whether it did.
+fn heard(lst: &Listener, mark: usize, goodbye: bool, names: &[&str], timeout: f64) -> bool {
+    dpma_tests::util::wait_until(
+        Duration::from_secs_f64(timeout),
+        Duration::from_millis(50),
+        || {
+            let got = ptrs(&lst.since(mark), goodbye);
+            names.iter().all(|n| got.contains(*n))
+        },
+    )
+}
+
+/// Waits up to three seconds until Asterisk holds no mDNS socket; the
+/// sockets it still holds.
+fn mdns_sockets_closed() -> Vec<String> {
+    dpma_tests::util::wait_until(Duration::from_secs(3), Duration::from_millis(50), || {
+        asterisk_mdns_sockets().is_empty()
+    });
+    asterisk_mdns_sockets()
 }
 
 fn has(name: &str) -> impl Fn(&Found) -> bool + '_ {
@@ -149,10 +172,9 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         found.get("P14 Test Server").map(|i| i.addresses.clone()),
         Some(strings(&["127.0.0.1", "::1"])),
     );
-    fixtures::sleep(1.5);
     c.same(
         "mDNS: announced (unsolicited)",
-        ptrs(&lst.since(mark), false).contains("P14 Test Server"),
+        heard(&lst, mark, false, &["P14 Test Server"], 3.0),
         true,
     );
     let types = mdns::query(
@@ -207,16 +229,14 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         txt(&found, "P14 Renamed"),
         Some(strings(&["serviceType=asterisk"])),
     );
-    fixtures::sleep(1.5);
-    let recs = lst.since(mark);
     c.same(
         "mDNS reload: goodbye for the old name",
-        ptrs(&recs, true).contains("P14 Test Server"),
+        heard(&lst, mark, true, &["P14 Test Server"], 3.0),
         true,
     );
     c.same(
         "mDNS reload: new name announced",
-        ptrs(&recs, false).contains("P14 Renamed"),
+        heard(&lst, mark, false, &["P14 Renamed"], 3.0),
         true,
     );
 
@@ -224,17 +244,15 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
     // Avahi's group reset).
     let mark = lst.mark();
     cli(ctx, "module reload res_dpma_rs.so");
-    fixtures::sleep(3.0);
-    let recs = lst.since(mark);
     let c = &mut ctx.c;
     c.same(
         "mDNS unchanged reload: goodbye",
-        ptrs(&recs, true).contains("P14 Renamed"),
+        heard(&lst, mark, true, &["P14 Renamed"], 3.0),
         true,
     );
     c.same(
         "mDNS unchanged reload: announced again",
-        ptrs(&recs, false).contains("P14 Renamed"),
+        heard(&lst, mark, false, &["P14 Renamed"], 3.0),
         true,
     );
 
@@ -285,9 +303,12 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         vec!["serviceType=asterisk".to_string(), want],
     );
 
-    // Names Avahi refuses are not announced; 63 bytes is the limit.
+    // Names Avahi refuses are not announced; 63 bytes is the limit.  (A
+    // reload withdraws the old name first, then announces the new one
+    // or nothing.)
     let n64 = "N".repeat(64);
     let n63 = "N".repeat(63);
+    let mark = lst.mark();
     set_general(
         ctx,
         orig,
@@ -296,7 +317,7 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
             ("service_name", n64.as_bytes()),
         ],
     )?;
-    fixtures::sleep(2.0);
+    heard(&lst, mark, true, &["P14 Long"], 3.0);
     ctx.c.same(
         "mDNS: 64-byte name not announced",
         browse(0.7),
@@ -319,6 +340,7 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
     // A name that is not valid UTF-8 (Latin-1 "Café") is not announced;
     // an error is logged instead (README, difference 8).
     let mark = log.mark();
+    let lmark = lst.mark();
     set_general(
         ctx,
         orig,
@@ -327,7 +349,7 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
             ("service_name", b"P14 Caf\xe9"),
         ],
     )?;
-    fixtures::sleep(2.0);
+    heard(&lst, lmark, true, &[&n63], 3.0);
     ctx.c.same(
         "mDNS: non-UTF-8 name not announced",
         browse(0.7),
@@ -366,11 +388,10 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
             ("service_name", b"P14 Off"),
         ],
     )?;
-    fixtures::sleep(1.5);
     let c = &mut ctx.c;
     c.same(
         "mDNS disabled: goodbye",
-        ptrs(&lst.since(mark), true).contains("P14 dotted.name"),
+        heard(&lst, mark, true, &["P14 dotted.name"], 3.0),
         true,
     );
     c.same(
@@ -380,7 +401,7 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
     );
     c.same(
         "mDNS disabled: no responder socket",
-        asterisk_mdns_sockets(),
+        mdns_sockets_closed(),
         Vec::<String>::new(),
     );
 
@@ -402,17 +423,16 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         out,
         format!("Unloaded {MODULE}\n"),
     );
-    fixtures::sleep(1.5);
     let c = &mut ctx.c;
     c.same(
         "mDNS unload: goodbye",
-        ptrs(&lst.since(mark), true).contains("P14 Lifecycle"),
+        heard(&lst, mark, true, &["P14 Lifecycle"], 3.0),
         true,
     );
     c.same("mDNS unload: nothing announced", browse(0.7), Found::new());
     c.same(
         "mDNS unload: no responder socket",
-        asterisk_mdns_sockets(),
+        mdns_sockets_closed(),
         Vec::<String>::new(),
     );
     let mark = lst.mark();
@@ -425,10 +445,9 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         names(&found),
         strings(&["P14 Lifecycle"]),
     );
-    fixtures::sleep(1.0);
     ctx.c.same(
         "mDNS load: unsolicited announcement",
-        ptrs(&lst.since(mark), false).contains("P14 Lifecycle"),
+        heard(&lst, mark, false, &["P14 Lifecycle"], 3.0),
         true,
     );
     // Again: the responder was started from the AMI session's thread (the
@@ -468,10 +487,9 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
     ctx.drop_ami();
     let mark = lst.mark();
     ctx.inst.stop()?;
-    fixtures::sleep(2.0);
     ctx.c.same(
         "mDNS shutdown: goodbye",
-        ptrs(&lst.since(mark), true).contains("P14 Lifecycle"),
+        heard(&lst, mark, true, &["P14 Lifecycle"], 3.0),
         true,
     );
     let mark = lst.mark();
@@ -483,10 +501,9 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         names(&found),
         strings(&["P14 Lifecycle"]),
     );
-    fixtures::sleep(1.0);
     ctx.c.same(
         "mDNS startup: unsolicited announcement",
-        ptrs(&lst.since(mark), false).contains("P14 Lifecycle"),
+        heard(&lst, mark, false, &["P14 Lifecycle"], 3.0),
         true,
     );
     Ok(())

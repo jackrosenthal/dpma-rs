@@ -59,7 +59,7 @@ impl Log {
     /// Whether `text` was logged since `mark`, waiting up to `timeout` for
     /// it (Asterisk's logger writes from its own thread).
     pub fn wait_for(&self, mark: LogMark, text: impl AsRef<[u8]>, timeout: Duration) -> bool {
-        crate::util::wait_until(timeout, Duration::from_millis(100), || {
+        crate::util::wait_until(timeout, Duration::from_millis(20), || {
             contains_bytes(&self.since(mark), text.as_ref())
         })
     }

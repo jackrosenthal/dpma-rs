@@ -3,54 +3,49 @@
 //! Rust form of `tests/methods-vm/run.py`, `vm_uas.py`, and `setup.sh`).
 //!
 //! ```text
-//! cargo xtask test methods-vm methods-vm-phone
+//! cargo xtask test methods-vm
 //! ```
 //!
-//! runs it (`methods-vm-phone` with `--via phone`) in the test container
-//! after building the devtest module, as
+//! runs it in the test container after building the devtest module, as
 //!
 //! ```text
-//! cargo test -p dpma-tests --test methods-vm -- --ignored [--via hook|phone] [PART...]
+//! cargo test -p dpma-tests --test methods-vm -- --ignored [PART...]
 //! ```
 //!
 //! The suite prepares the instance (fresh configuration; the test
 //! `res_digium_phone.conf` and `voicemail.conf` of `tests/data/methods-vm`
 //! replace the instance's, `extensions_dpma_vm.conf` is included from
-//! `extensions.conf`, and the test mailboxes' spool is emptied; with
-//! `--via phone` also the test PKI; then the debug build is installed and
-//! Asterisk restarted; `--no-prepare` skips this).  The instance's
-//! `pjsip.conf` must have the endpoint 1001 (auth 1001/secret1001), as
-//! the scratch configuration has.
+//! `extensions.conf`, the test mailboxes' spool is emptied, and the test
+//! PKI is installed; then the debug build is installed and Asterisk
+//! restarted; `--no-prepare` skips this).  The instance's `pjsip.conf`
+//! must have the endpoint 1001 (auth 1001/secret1001), as the scratch
+//! configuration has.
 //!
-//! It leaves messages with the dialplan (Local channels into
-//! `VoiceMail()`), adds hand-made spool messages for unusual caller ids,
-//! and calls every method.  Each response is compared, as text, with the
-//! document the original builds (key order included), computed from the
-//! spool and a model of the decompile; the spool and the message trackers
-//! (`dpmadev vm trackers`) are checked after each change.
+//! It leaves a message with the dialplan (a Local channel into
+//! `VoiceMail()`), copies it into more messages and adds hand-made ones
+//! for unusual caller ids, and calls every method.  Each response is
+//! compared, as text, with the document the original builds (key order
+//! included), computed from the spool and a model of the decompile; the
+//! spool and the message trackers (`dpmadev vm trackers`) are checked
+//! after each change.
 //!
-//! How the methods are called (`--via`):
-//!
-//! - `hook` (default): `dpmadev method call` over AMI; return codes are
-//!   checked too.
-//! - `phone` (package P12): the way phones call them, as encrypted
-//!   AsteriskRequests from the phone simulator with the phone's name and
-//!   pin as the credentials.  The reply body must be the HTTP wrapper
-//!   around the same document; return codes are not visible that way, and
-//!   calls for phones that cannot authenticate are skipped.  This mode
-//!   also checks that a phone's new session (a TokenRequest after a new
-//!   handshake) drops its message trackers, and lists a page of 50 of 55
-//!   messages (a reply of many chunks).  The simulator's test
-//!   configuration is not installed: its identify would also catch the
-//!   test phone's REGISTER, and the module's PJSIP side identifies the
-//!   simulator.
+//! The methods are called with `dpmadev method call` over AMI, and their
+//! return codes are checked too.  (No voicemail method depends on how a
+//! request arrives; the request-handlers suite checks the AsteriskRequest
+//! path.)  The phone simulator, as vmphone with an authenticated session,
+//! checks what needs a phone: that a phone's new session (a TokenRequest
+//! after a new handshake) drops its message trackers, and a page of 50
+//! messages as an encrypted AsteriskRequest whose reply comes in many
+//! chunks.  The simulator's test configuration is not installed: its
+//! identify would also catch the test phone's REGISTER, and the module's
+//! PJSIP side identifies the simulator.
 //!
 //! The parts run in this order and build on each other's spool and
-//! trackers (about 50 seconds in all):
+//! trackers (about ten seconds in all):
 //!
 //! | Part | Checks |
 //! |---|---|
-//! | `messages` | Empties the test mailboxes and leaves the messages (no checks) |
+//! | `messages` | Empties the test mailboxes, leaves one message through `VoiceMail()`, and copies it into five more (one urgent, one for 1002, one for 2001@other) with their own caller ids and times (no checks) |
 //! | `folder-list` | getFolderList: translated and plain names, counts, another voicemail context, the errors |
 //! | `get-list` | getList: translated folders, sort orders, paging, caller id forms, the trackers, the errors (and the deviations from the original's crashes) |
 //! | `mark` | markRead and markUnread: moves between INBOX and Old, Urgent, translated ids, Friends refused, the errors |
@@ -58,8 +53,8 @@
 //! | `forward` | forward: copies to other mailboxes and contexts, the errors |
 //! | `remove` | remove: renumbering, stale trackers, the errors |
 //! | `play` | play: a registered test phone (the `sipua` UAS) gets the INVITE with the event header, DigiumVoicemailPlayback plays the message, DTMF fast forward and rewind send location INFOs; a busy phone, an unregistered one, the errors |
-//! | `trackers` | Trackers dropped with their phone on a reload, by `dpmadev vm forget`, and (with `--via phone`) by a new session |
-//! | `big-list` | getList of 55 messages, two pages (with `--via phone`, replies of many chunks) |
+//! | `trackers` | Trackers dropped with their phone on a reload, by `dpmadev vm forget`, and by the phone's new session |
+//! | `big-list` | getList of 55 messages, two pages; the first page also through the phone (a reply of many chunks) |
 
 mod model;
 mod scenarios;
@@ -72,9 +67,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 use bstr::{BString, ByteSlice};
-use dpma_tests::harness::{
-    fixtures, option_value, Checker, ConfFile, Ctx, Instance, LogMark, Suite,
-};
+use dpma_tests::harness::{fixtures, Checker, ConfFile, Ctx, Instance, LogMark, Suite};
 use dpma_tests::sim::Phone;
 use regex::Regex;
 use serde_json::Value;
@@ -82,35 +75,13 @@ use serde_json::Value;
 use model::{err_doc, ok_doc, VM};
 use spool::Spool;
 
-/// How the methods are called.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Via {
-    /// `dpmadev method call`.
-    Hook,
-    /// AsteriskRequests from the phone simulator.
-    Phone,
-}
-
-/// The test phones and their pins (`--via phone`).
-const PINS: [(&str, &str); 5] = [
-    ("vmphone", "1234"),
-    ("vmphone2", "2222"),
-    ("vmphone3", "3333"),
-    ("nomboxphone", "4444"),
-    ("ghostphone", "5555"),
-];
-
-fn pin(phone: &str) -> Option<&'static str> {
-    PINS.iter().find(|(p, _)| *p == phone).map(|(_, pin)| *pin)
-}
+/// The simulated phone's credentials (an AsteriskRequest's).
+const VMPHONE_AUTH: &str = "vmphone:1234";
 
 /// What the parts share.
 pub struct State {
-    via: Via,
-    /// The simulated phone (`--via phone`).
+    /// The simulated phone (vmphone), once started.
     phone: Option<Phone>,
-    /// The number of chunks of each reply received with `--via phone`.
-    replies: Vec<usize>,
 }
 
 /// A part's view of the suite: the context, the shared state, and the
@@ -137,19 +108,9 @@ impl<'a> Vm<'a> {
         &mut self.ctx.c
     }
 
-    /// How the methods are called.
-    pub fn via(&self) -> Via {
-        self.st.via
-    }
-
     /// The instance.
     pub fn inst(&self) -> &Instance {
         &self.ctx.inst
-    }
-
-    /// The chunk counts of the replies received so far.
-    pub fn replies(&self) -> &[usize] {
-        &self.st.replies
     }
 
     /// A CLI command over AMI; its output lines.
@@ -191,44 +152,42 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    fn call_phone(&mut self, phone: &str, method: &str, text: &str) -> Result<String> {
+    /// Calls a method as vmphone the way phones do, in an encrypted
+    /// AsteriskRequest from the simulator (started first if needed): the
+    /// response without the HTTP wrapper, and the number of chunks the
+    /// reply came in.
+    pub fn call_phone(&mut self, method: &str, params: &Value) -> Result<(String, usize)> {
         if self.st.phone.is_none() {
             self.start_phone()?;
         }
+        let text = dpma_tests::util::json_compact(params);
         let doc = format!(r#"{{"request": {{"method": "{VM}{method}", "parameters": {text}}}}}"#);
-        let auth = format!("{phone}:{}", pin(phone).unwrap_or_default());
         let sim = self.st.phone.as_ref().expect("started");
         let ex = sim
             .asterisk(doc)
-            .auth(auth)
+            .auth(VMPHONE_AUTH)
             .timeout(Duration::from_secs(10))
             .send()?;
         let r = match ex.reply() {
             Some(r) if r.ok() => r,
             _ => {
-                return Ok(format!(
-                    "(no reply or a bad one: {})",
-                    ex.describe(0).to_str_lossy()
-                ))
+                let d = ex.describe(0).to_str_lossy().into_owned();
+                return Ok((format!("(no reply or a bad one: {d})"), 0));
             }
         };
         let parts = r.parts.len();
         let body: BString = r.payload.clone();
-        self.st.replies.push(parts);
         let pre = fixtures::HTTP_PREAMBLE;
         if !body.starts_with(pre) || !body.ends_with(b"\r\n\r\n") {
-            return Ok(format!("(not wrapped: {body:?})"));
+            return Ok((format!("(not wrapped: {body:?})"), parts));
         }
         let end = body.len() - 4;
-        Ok(body
-            .get(pre.len()..end)
-            .unwrap_or_default()
-            .to_str_lossy()
-            .into_owned())
+        let doc = body.get(pre.len()..end).unwrap_or_default();
+        Ok((doc.to_str_lossy().into_owned(), parts))
     }
 
-    /// Calls a method as `phone`: (return code, response).  The return
-    /// code is `None` with `--via phone`.
+    /// Calls a method as `phone` (`dpmadev method call`): (return code,
+    /// response).
     pub fn call(
         &mut self,
         phone: &str,
@@ -236,9 +195,6 @@ impl<'a> Vm<'a> {
         params: &Value,
     ) -> Result<(Option<i64>, String)> {
         let text = dpma_tests::util::json_compact(params);
-        if self.via() == Via::Phone {
-            return Ok((None, self.call_phone(phone, method, &text)?));
-        }
         let esc = text.replace('\\', "\\\\").replace('"', "\\\"");
         let out = self.cli(&format!("dpmadev method call {phone} {VM}{method} {esc}"))?;
         let re = Regex::new(r"^Return code: (-?\d+)").expect("regex");
@@ -247,15 +203,6 @@ impl<'a> Vm<'a> {
             .and_then(|l| re.captures(l))
             .and_then(|c| c[1].parse().ok());
         Ok((rc, out.last().cloned().unwrap_or_default()))
-    }
-
-    /// With `--via phone`, a phone that cannot authenticate cannot call.
-    fn skipped(&self, name: &str, phone: &str) -> bool {
-        if self.via() == Via::Phone && pin(phone).is_none() {
-            self.ctx.c.skip(name, format!("no credentials for {phone}"));
-            return true;
-        }
-        false
     }
 
     /// Checks that a call fails with an error document.
@@ -268,13 +215,8 @@ impl<'a> Vm<'a> {
         code: u32,
         detail: &str,
     ) -> Result<()> {
-        if self.skipped(name, phone) {
-            return Ok(());
-        }
         let (rc, body) = self.call(phone, method, &params)?;
-        if self.via() == Via::Hook {
-            self.c().same(format!("{name} (code)"), rc, Some(-1));
-        }
+        self.c().same(format!("{name} (code)"), rc, Some(-1));
         self.c().same(name, body, err_doc(method, code, detail));
         Ok(())
     }
@@ -288,13 +230,8 @@ impl<'a> Vm<'a> {
         params: Value,
         result: Value,
     ) -> Result<()> {
-        if self.skipped(name, phone) {
-            return Ok(());
-        }
         let (rc, body) = self.call(phone, method, &params)?;
-        if self.via() == Via::Hook {
-            self.c().same(format!("{name} (code)"), rc, Some(0));
-        }
+        self.c().same(format!("{name} (code)"), rc, Some(0));
         self.c().same(name, body, ok_doc(method, result));
         Ok(())
     }
@@ -335,11 +272,12 @@ impl<'a> Vm<'a> {
         self.ctx.log().mark()
     }
 
-    /// What was logged since `mark` (after a moment: Asterisk's logger
-    /// writes from its own thread).
-    pub fn log_since(&self, mark: LogMark) -> BString {
-        fixtures::sleep(0.3);
-        self.ctx.log().since(mark)
+    /// What was logged since `mark`, once `wanted` was (Asterisk's logger
+    /// writes from its own thread; at most 3 s).
+    pub fn log_since(&self, mark: LogMark, wanted: &str) -> BString {
+        let log = self.ctx.log();
+        log.wait_for(mark, wanted, Duration::from_secs(3));
+        log.since(mark)
     }
 
     /// Leaves a 2 s message through `VoiceMail()` and waits until it is
@@ -369,7 +307,7 @@ impl<'a> Vm<'a> {
         )?;
         let saved = dpma_tests::util::wait_until(
             Duration::from_secs(15),
-            Duration::from_millis(200),
+            Duration::from_millis(50),
             || {
                 let msgs = self.spool.all(&mbox);
                 msgs.len() > before && msgs.iter().all(|m| m.has("duration"))
@@ -378,13 +316,12 @@ impl<'a> Vm<'a> {
         if !saved {
             bail!("message for {exten} was not saved");
         }
-        fixtures::sleep(1.1); // distinct origtimes
         Ok(())
     }
 }
 
 /// Installs the test setup into the instance (the suite's `setup`).
-fn setup(inst: &Instance, via: Via) -> Result<()> {
+fn setup(inst: &Instance) -> Result<()> {
     let data: [(&str, &[u8]); 3] = [
         (
             "res_digium_phone.conf",
@@ -407,28 +344,13 @@ fn setup(inst: &Instance, via: Via) -> Result<()> {
     for b in ["default/1001", "default/1002", "default/1003", "other/2001"] {
         spool.remove(b);
     }
-    if via == Via::Phone {
-        fixtures::install_sim_pki(inst)?;
-    }
-    Ok(())
+    fixtures::install_sim_pki(inst)
 }
 
 type PartFn = fn(&mut Vm) -> Result<()>;
 
 fn main() -> ExitCode {
-    let via = match option_value("--via").as_deref() {
-        None | Some("hook") => Via::Hook,
-        Some("phone") => Via::Phone,
-        Some(v) => {
-            eprintln!("methods-vm: unknown --via {v} (hook or phone)");
-            return ExitCode::from(2);
-        }
-    };
-    let state = Rc::new(RefCell::new(State {
-        via,
-        phone: None,
-        replies: Vec::new(),
-    }));
+    let state = Rc::new(RefCell::new(State { phone: None }));
     let parts: [(&str, PartFn); 10] = [
         ("messages", scenarios::messages),
         ("folder-list", scenarios::folder_list),
@@ -441,9 +363,7 @@ fn main() -> ExitCode {
         ("trackers", scenarios::tracker_lifecycle),
         ("big-list", scenarios::big_list),
     ];
-    let mut suite = Suite::new("methods-vm")
-        .value_option("--via")
-        .prepare(move |inst| fixtures::prepare(inst, |i| setup(i, via)));
+    let mut suite = Suite::new("methods-vm").prepare(|inst| fixtures::prepare(inst, setup));
     for (name, f) in parts {
         let st = state.clone();
         suite = suite.part(name, move |ctx| f(&mut Vm::new(ctx, &st)));

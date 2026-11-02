@@ -181,7 +181,7 @@ pub fn publish(release: &str) -> Result<u8> {
 /// `cargo xtask ci`: [`check`], the suites (up to `jobs` at a time), and
 /// [`publish`]; the exit status.
 pub fn ci(pin: &Pin, jobs: usize) -> Result<u8> {
-    let run = Run::new(pin, None)?.with_env("CARGO_INCREMENTAL", "0");
+    let run = Run::new(pin)?.with_env("CARGO_INCREMENTAL", "0");
     let v = pin.version.as_str();
     let code = run.inside("check", &["check", v])?;
     if code != 0 {

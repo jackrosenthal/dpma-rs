@@ -78,9 +78,8 @@ jobs:
         if: steps.image.outputs.cache-hit == 'true'
         run: docker load -i test-image.tar && rm test-image.tar
 
-      # cargo build, both clippy runs, cargo test, every suite (ami-expiry
-      # included), and the module for publishing (release build, glibc
-      # baseline, smoke test).
+      # cargo build, both clippy runs, cargo test, every suite, and the
+      # module for publishing (release build, glibc baseline, smoke test).
       - name: Build, lint, and test dpma-rs
         run: cargo xtask ci --asterisk ${{ matrix.asterisk }}
 

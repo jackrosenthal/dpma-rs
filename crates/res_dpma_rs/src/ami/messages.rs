@@ -32,6 +32,24 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 /// Delay of `sched_expire_queued` (FUN_001758c0 schedules after 300000 ms).
 pub const QUEUED_EXPIRY_MS: i32 = 300_000;
 
+/// A shorter delay set by the test hooks (`dpmadev ami expiry`); 0 means
+/// [`QUEUED_EXPIRY_MS`].
+#[cfg(feature = "devtest")]
+static EXPIRY_OVERRIDE_MS: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+/// The delay of a new expiry entry: [`QUEUED_EXPIRY_MS`], unless the test
+/// hooks shortened it.
+fn expiry_ms() -> i32 {
+    #[cfg(feature = "devtest")]
+    {
+        let ms = EXPIRY_OVERRIDE_MS.load(Ordering::Relaxed);
+        if ms > 0 {
+            return ms;
+        }
+    }
+    QUEUED_EXPIRY_MS
+}
+
 /// The `DPMAMessage` event's category: EVENT_FLAG_AGENT ("agent").
 const DPMA_MESSAGE_CATEGORY: i32 = manager::AUTH_AGENT;
 
@@ -111,11 +129,11 @@ pub fn sched_destroy() {
 }
 
 /// FUN_001758c0: schedule `sched_expire_queued` for `msg` in
-/// [`QUEUED_EXPIRY_MS`] and record the entry in `msg.sched_id`.  Err (with
-/// `sched_id` -1) when that fails.
+/// [`QUEUED_EXPIRY_MS`] (or the test hooks' delay) and record the entry in
+/// `msg.sched_id`.  Err (with `sched_id` -1) when that fails.
 pub fn schedule_expiry(msg: &mut QueuedMsg) -> Result<(), ()> {
     msg.sched_id = match SCHED.read().unwrap_or_else(|e| e.into_inner()).as_ref() {
-        Some(ctx) => ctx.add(QUEUED_EXPIRY_MS, sched_expire_queued, msg.token),
+        Some(ctx) => ctx.add(expiry_ms(), sched_expire_queued, msg.token),
         None => -1,
     };
     if msg.sched_id == -1 {
@@ -397,7 +415,8 @@ pub fn actions() -> Vec<AmiAction> {
 pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
     use dpma_ast::cli::{CliArgs, CliCommand, CliResult};
 
-    /// dpmadev ami queue: list the queued requests.
+    /// dpmadev ami queue: list the queued requests, each with the seconds
+    /// until its expiry runs (-1: none scheduled).
     fn list(a: &CliArgs) -> CliResult {
         if a.argc() != 3 {
             return CliResult::ShowUsage;
@@ -407,17 +426,41 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             a.out("No queued message container\n");
             return CliResult::Success;
         };
+        let sched = SCHED.read().unwrap_or_else(|e| e.into_inner());
         for m in q {
             let (kind, len) = match m.outgoing.as_ref() {
                 Some(o) => (o.response_type.as_slice(), o.body.len()),
                 None => (&b"(none)"[..], 0),
             };
+            let expires = match (sched.as_ref(), m.sched_id) {
+                (Some(ctx), id) if id != -1 => ctx.when(id),
+                _ => -1,
+            };
             a.out(bformat!(
-                "RequestID: {}  Method: {}  Session: {}  SchedID: {}  Reply: {} ({} bytes)\n",
-                m.request_id, m.method, m.session_id, m.sched_id, kind, len
+                "RequestID: {}  Method: {}  Session: {}  SchedID: {}  Expires: {} s  Reply: {} ({} bytes)\n",
+                m.request_id, m.method, m.session_id, m.sched_id, expires, kind, len
             ));
         }
         a.out(bformat!("{} queued\n", q.len()));
+        CliResult::Success
+    }
+
+    /// dpmadev ami expiry <ms>|default: the delay of the expiries scheduled
+    /// from now on (default: QUEUED_EXPIRY_MS).
+    fn expiry(a: &CliArgs) -> CliResult {
+        if a.argc() != 4 {
+            return CliResult::ShowUsage;
+        }
+        let ms = if a.argv[3] == b"default" {
+            0
+        } else {
+            match crate::util::parse::<i32>(&a.argv[3]) {
+                Ok(ms) if ms > 0 => ms,
+                _ => return CliResult::ShowUsage,
+            }
+        };
+        EXPIRY_OVERRIDE_MS.store(ms, Ordering::Relaxed);
+        a.out(bformat!("New AMI requests expire after {} ms\n", expiry_ms()));
         CliResult::Success
     }
 
@@ -486,6 +529,13 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             summary: "List the requests queued for DPMAMessageResponse",
             usage: "Usage: dpmadev ami queue\n",
             exec: list,
+            complete: None,
+        },
+        CliCommand {
+            command: "dpmadev ami expiry",
+            summary: "Set the delay of AMI request expiries",
+            usage: "Usage: dpmadev ami expiry <ms>|default\n       Requests queued from now on expire after <ms> (default: 300000).\n",
+            exec: expiry,
             complete: None,
         },
         CliCommand {

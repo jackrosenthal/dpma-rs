@@ -27,12 +27,14 @@
 //! |---|---|
 //! | `presence` | Presence options from status applications (and the six defaults), `digium_phones show status`, the `send_dnd` options of the configuration document, and the `switchvox.users.presence` methods (`options.getList`, `update`, `getInfo`) with their errors |
 //! | `tokens` | Configuration tokens (build and find, the previous token), last-seen information and AstDB (orphaned by MAC, MAC mismatch, stale location), `digium_phones show tokens`, events to phones without a session; then the lookups (by credentials, MAC, group pin, last MAC, user name, line, mailbox, applications), which rely on the tokens' last-seen information |
-//! | `incidents` | Auth incidents keyed by the full IPv6 host (`DPMAShowIncidents`) |
+//! | `incidents` | Auth incidents (`dpmadev auth alert`) keyed by the full IPv6 host (`DPMAShowIncidents`); from the fifth failure the log line says ALERT and the incident is blocking; incidents expire more than 600 s after the latest failure (`dpmadev auth age` and `dpmadev auth expire`) |
 
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use anyhow::Result;
+use bstr::ByteSlice;
 use dpma_tests::harness::{fixtures, setup, Ctx, Suite};
 
 /// Whether the runtime state was reset (once per run, before the first
@@ -326,6 +328,63 @@ fn incidents(ctx: &mut Ctx) -> Result<()> {
     for ip in ["2001:db8::1", "2001:db8::2"] {
         ctx.ami()?.action("DPMARemoveIncident", [("IPAddress", ip)]);
     }
+
+    // From the fifth failure on, the log line says ALERT and
+    // DPMAShowIncidents reports the incident as blocking (" Yes", with the
+    // original's space).
+    let ip = "192.0.2.5";
+    let log = ctx.log();
+    for n in 1..=5 {
+        let mark = log.mark();
+        expect(
+            ctx,
+            &format!("dpmadev auth alert {ip}:5060 000fd3000805 UA5 invalid credentials"),
+            &["recorded"],
+        );
+        if n < 4 {
+            continue;
+        }
+        let alert = if n == 5 { " ALERT" } else { "" };
+        let line = format!(
+            "Auth failed for ip '{ip}' mac '000fd3000805' reason 'invalid credentials' count={n}{alert}\n"
+        );
+        let ok = log.wait_for(mark, &line, Duration::from_secs(2));
+        ctx.c
+            .check(format!("failure {n}: logged{alert}"), ok, line.trim_end());
+        let raw = fixtures::incidents(ctx.ami()?)
+            .remove(ip.as_bytes())
+            .map(|m| m.raw().to_str_lossy().into_owned())
+            .unwrap_or_default();
+        let blocking = if n == 5 {
+            "Blocking:  Yes\r\n"
+        } else {
+            "Blocking: No\r\n"
+        };
+        ctx.c.check(
+            format!("failure {n}: {}", blocking.trim_end()),
+            raw.contains(&format!("IncidentCount: {n}\r\n")) && raw.contains(blocking),
+            &raw,
+        );
+    }
+
+    // An incident expires once its latest failure is more than 600 s old.
+    let present = |ctx: &mut Ctx| -> Result<bool> {
+        Ok(fixtures::incidents(ctx.ami()?).contains_key(ip.as_bytes()))
+    };
+    ctx.cli(&format!("dpmadev auth age {ip} 599"));
+    ctx.cli("dpmadev auth expire");
+    let kept = present(ctx)?;
+    ctx.c
+        .check("incident kept 599 s after the latest failure", kept, "");
+    let mark = log.mark();
+    ctx.cli(&format!("dpmadev auth age {ip} 2"));
+    ctx.cli("dpmadev auth expire");
+    let kept = present(ctx)?;
+    ctx.c
+        .check("incident expired 601 s after the latest failure", !kept, "");
+    let line = format!("Expiring auth incident for ip '{ip}' at count=5");
+    let ok = log.wait_for(mark, &line, Duration::from_secs(2));
+    ctx.c.check("incident expiry logged", ok, line);
     Ok(())
 }
 

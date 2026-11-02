@@ -206,6 +206,7 @@ const FUNCTIONS: &[&str] = &[
     "ast_sched_add",
     "ast_sched_del",
     "ast_sched_runq",
+    "ast_sched_when",
     "ast_threadpool_create",
     "__ast_threadpool_push",
     "ast_threadpool_shutdown",

@@ -4,14 +4,14 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use bstr::ByteSlice;
-use dpma_tests::harness::{fixtures, ConfFile};
+use dpma_tests::harness::ConfFile;
 use dpma_tests::sipua::{Answer, UaEvent, Uas, UasConfig};
 use regex::bytes::Regex as BytesRegex;
 use regex::Regex;
 use serde_json::{json, Value};
 
 use crate::model::{de, getlist_doc, inbox_ids, snapshot};
-use crate::{Via, Vm};
+use crate::Vm;
 
 const ORIGDATE: &str = "Sat Jan  1 12:00:00 AM UTC 2022";
 
@@ -29,25 +29,86 @@ fn first<T: Clone>(v: &[T], what: &str) -> Result<T> {
     v.first().cloned().ok_or_else(|| anyhow!("no {what}"))
 }
 
+/// A message made from the one left through `VoiceMail()`: mailbox,
+/// folder, number, the extension and context `VoiceMail()` would have run
+/// in, the flag, and the caller id.
+type MsgCopy<'a> = (&'a str, &'a str, u32, &'a str, &'a str, &'a str, &'a [u8]);
+
 /// Empties the test mailboxes and leaves the messages: four for 1001 (one
 /// urgent), one for 1002, one for 2001@other, and hand-made ones with
-/// unusual caller ids.
+/// unusual caller ids.  The first is left through `VoiceMail()`; the
+/// others are copies of it, with the fields that `VoiceMail()` would have
+/// written for them (`flag=Urgent` in the Urgent folder for the urgent
+/// one), each a second later than the one before.
 pub fn messages(vm: &mut Vm) -> Result<()> {
     for b in ["default/1001", "default/1002", "default/1003", "other/2001"] {
         vm.spool.remove(b);
     }
     let leave = "dpma-vm-leave";
     vm.leave("1001", "\"Alice Caller\" <2005551212>", leave, None)?;
-    vm.leave("1001", "2125551234", leave, None)?;
-    vm.leave(
-        "1001",
-        "\"Bob Urgent\" <3035550000>",
-        "dpma-vm-urgent",
-        None,
-    )?;
-    vm.leave("1001", "\"Carol\" <4045550000>", leave, None)?;
-    vm.leave("1002", "\"Dave\" <5055550000>", leave, None)?;
-    vm.leave("o2001", "\"Eve\" <6065550000>", leave, Some("other/2001"))?;
+    let src = first(&vm.spool.all("default/1001"), "message left")?;
+    let t0: u64 = src.get("origtime").parse()?;
+    let copies: [MsgCopy; 5] = [
+        ("default/1001", "INBOX", 1, "1001", leave, "", b"2125551234"),
+        (
+            "default/1001",
+            "Urgent",
+            0,
+            "1001",
+            "dpma-vm-urgent",
+            "Urgent",
+            b"\"Bob Urgent\" <3035550000>",
+        ),
+        (
+            "default/1001",
+            "INBOX",
+            2,
+            "1001",
+            leave,
+            "",
+            b"\"Carol\" <4045550000>",
+        ),
+        (
+            "default/1002",
+            "INBOX",
+            0,
+            "1002",
+            leave,
+            "",
+            b"\"Dave\" <5055550000>",
+        ),
+        (
+            "other/2001",
+            "INBOX",
+            0,
+            "o2001",
+            leave,
+            "",
+            b"\"Eve\" <6065550000>",
+        ),
+    ];
+    for (i, (mbox, folder, num, exten, context, flag, cid)) in copies.into_iter().enumerate() {
+        let n = i as u64 + 1;
+        let origmailbox = exten.trim_start_matches('o');
+        let callerchan = format!("Local/{exten}@{context}-{:08x};2", 0x100 + n);
+        vm.spool.copy_msg(
+            "default/1001",
+            &src,
+            mbox,
+            folder,
+            num,
+            &[
+                ("origmailbox", origmailbox.as_bytes()),
+                ("context", context.as_bytes()),
+                ("exten", exten.as_bytes()),
+                ("callerchan", callerchan.as_bytes()),
+                ("callerid", cid),
+                ("origtime", (t0 + n).to_string().as_bytes()),
+                ("msg_id", format!("{}-{:08x}", t0 + n, 0x100 + n).as_bytes()),
+                ("flag", flag.as_bytes()),
+            ],
+        )?;
+    }
     // Unusual caller ids, in Friends (the order of the list is by number).
     let friends: [(&str, &[u8]); 6] = [
         ("1640995200-0000f001", b"Name Only <7075550000>"),
@@ -499,12 +560,9 @@ pub fn mark(vm: &mut Vm) -> Result<()> {
         json!({"account_id": "1001", "message_ids": [format!("Friends-{friends}")]}),
         success(),
     )?;
-    let log = vm.log_since(mark);
-    vm.c().contains(
-        "markRead on Friends logs",
-        &log,
-        &["Attempted to mark read/unread on Friends folder"],
-    );
+    let want = "Attempted to mark read/unread on Friends folder";
+    let log = vm.log_since(mark, want);
+    vm.c().contains("markRead on Friends logs", &log, &[want]);
     let ok = in_folder(vm, b, "Friends", &friends);
     vm.c().same("Friends message not moved", ok, true);
 
@@ -642,12 +700,9 @@ pub fn move_(vm: &mut Vm) -> Result<()> {
         10011,
         "could not move message",
     )?;
-    let log = vm.log_since(mark);
-    vm.c().contains(
-        "move failure logs",
-        &log,
-        &["Could not move msgs from INBOX to Family"],
-    );
+    let want = "Could not move msgs from INBOX to Family";
+    let log = vm.log_since(mark, want);
+    vm.c().contains("move failure logs", &log, &[want]);
 
     // getList of Work, then move one to Recordings (Cust5).
     vm.call(
@@ -725,12 +780,9 @@ pub fn move_(vm: &mut Vm) -> Result<()> {
         10011,
         "id decode",
     )?;
-    let log = vm.log_since(mark);
-    vm.c().contains(
-        "move decode error logs",
-        &log,
-        &["ERROR decoding message id xyz"],
-    );
+    let want = "ERROR decoding message id xyz";
+    let log = vm.log_since(mark, want);
+    vm.c().contains("move decode error logs", &log, &[want]);
     vm.expect_error(
         "move unknown message",
         "vmphone",
@@ -865,12 +917,9 @@ pub fn forward(vm: &mut Vm) -> Result<()> {
         10011,
         "could not forward message",
     )?;
-    let log = vm.log_since(mark);
-    vm.c().contains(
-        "forward failure logs",
-        &log,
-        &["Could not forward msgs from 1001@default to 1005@default"],
-    );
+    let want = "Could not forward msgs from 1001@default to 1005@default";
+    let log = vm.log_since(mark, want);
+    vm.c().contains("forward failure logs", &log, &[want]);
     vm.expect_error(
         "forward from a line of another phone",
         "vmphone",
@@ -1079,7 +1128,7 @@ pub fn play(vm: &mut Vm) -> Result<()> {
         "INBOX message",
     )?;
     vm.cli("core set verbose 3")?; // for file.c's "Playing" line
-    let (uas, first_) = run_uas(vm, 6, Answer::All, "#*")?;
+    let (mut uas, first_) = run_uas(vm, 10, Answer::All, "#*")?;
     vm.c().same("UAS registered", first_.as_str(), "registered");
     let mark = vm.log_mark();
     vm.expect_ok(
@@ -1089,7 +1138,9 @@ pub fn play(vm: &mut Vm) -> Result<()> {
         json!({"account_id": "1001", "message_id": msg.0}),
         success(),
     )?;
-    let events = uas.join();
+    // The message plays to its end, then the call is hung up.
+    uas.wait_for(Duration::from_secs(10), |e| matches!(e, UaEvent::Bye(_)));
+    let events = uas.stop();
     vm.cli("core set verbose 0")?;
     let invite = events.iter().any(|e| {
         matches!(e, UaEvent::Invite(_, m, _)
@@ -1106,7 +1157,8 @@ pub fn play(vm: &mut Vm) -> Result<()> {
         [answered, bye],
         [true, true],
     );
-    let log = vm.log_since(mark);
+    let playing = format!("Playing '{}/default/1001/INBOX/msg", vm.spool.dir.display());
+    let log = vm.log_since(mark, &playing);
     // DigiumVoicemailPlayback (P14) plays the message with # and * as fast
     // forward and rewind, and reports each new position with an INFO.
     vm.c().lacks(
@@ -1114,7 +1166,6 @@ pub fn play(vm: &mut Vm) -> Result<()> {
         &log,
         &["Could not find application (DigiumVoicemailPlayback)"],
     );
-    let playing = format!("Playing '{}/default/1001/INBOX/msg", vm.spool.dir.display());
     vm.c().contains("play: plays the message", &log, &[playing]);
     let keys = key_lines(&events);
     let dtmf: Vec<&str> = keys
@@ -1142,7 +1193,7 @@ pub fn play(vm: &mut Vm) -> Result<()> {
         || format!("got:  {infos:?}\nwant: [true, true]\nlines: {keys:?}"),
     );
 
-    let (uas, _) = run_uas(vm, 6, Answer::Reject, "")?;
+    let (uas, _) = run_uas(vm, 10, Answer::Reject, "")?;
     let mark = vm.log_mark();
     vm.expect_ok(
         "play, phone busy",
@@ -1151,13 +1202,12 @@ pub fn play(vm: &mut Vm) -> Result<()> {
         json!({"account_id": "1001", "message_id": msg.0}),
         success(),
     )?;
-    uas.join();
-    fixtures::sleep(0.5);
     let want = format!(
         "for DigiumVoicemailPlayback,1001@default,INBOX,{} was not answered",
         msg.1
     );
-    let log = vm.log_since(mark);
+    let log = vm.log_since(mark, &want);
+    uas.stop();
     vm.c()
         .contains("play, busy: logged as not answered", &log, &[want]);
 
@@ -1170,12 +1220,9 @@ pub fn play(vm: &mut Vm) -> Result<()> {
         10012,
         "channel could not run",
     )?;
-    let log = vm.log_since(mark);
-    vm.c().contains(
-        "play prerun failure logs",
-        &log,
-        &["Failed dialing to PJSIP/1001 (prerun)"],
-    );
+    let want = "Failed dialing to PJSIP/1001 (prerun)";
+    let log = vm.log_since(mark, want);
+    vm.c().contains("play prerun failure logs", &log, &[want]);
     vm.expect_error(
         "play Recordings id is not mapped",
         "vmphone",
@@ -1241,7 +1288,6 @@ pub fn tracker_lifecycle(vm: &mut Vm) -> Result<()> {
     conf.write(re.replace_all(&text, &b"\n"[..]))?;
     let result = (|| -> Result<()> {
         vm.cli("module reload res_dpma_rs.so")?;
-        fixtures::sleep(1.0);
         let tr = vm.trackers("vmphone3")?;
         vm.c().same("tracker removed with its phone", tr, None);
         let tr = vm.trackers("vmphone")?;
@@ -1250,32 +1296,30 @@ pub fn tracker_lifecycle(vm: &mut Vm) -> Result<()> {
     })();
     backup.restore()?;
     vm.cli("module reload res_dpma_rs.so")?;
-    fixtures::sleep(1.0);
     result?;
     vm.cli("dpmadev vm forget vmphone")?;
     let tr = vm.trackers("vmphone")?;
     vm.c().same("dpmadev vm forget", tr, None);
-    if vm.via() == Via::Phone {
-        // A new session for the phone (P8's phone_user_token_set_last_info)
-        // drops its trackers.
-        vm.call(
-            "vmphone",
-            "getList",
-            &json!({"account_id": "1001", "folder": "INBOX"}),
-        )?;
-        let tr = vm.trackers("vmphone")?;
-        vm.c()
-            .same("trackers before a new session", tr.is_some(), true);
-        vm.start_phone()?;
-        let tr = vm.trackers("vmphone")?;
-        vm.c()
-            .same("a new session drops the phone's trackers", tr, None);
-    }
+    // A new session for the phone (P8's phone_user_token_set_last_info,
+    // through a TokenRequest after a new handshake) drops its trackers.
+    vm.start_phone()?;
+    vm.call(
+        "vmphone",
+        "getList",
+        &json!({"account_id": "1001", "folder": "INBOX"}),
+    )?;
+    let tr = vm.trackers("vmphone")?;
+    vm.c()
+        .same("trackers before a new session", tr.is_some(), true);
+    vm.start_phone()?;
+    let tr = vm.trackers("vmphone")?;
+    vm.c()
+        .same("a new session drops the phone's trackers", tr, None);
     Ok(())
 }
 
-/// 55 messages: getList pages of 50 (with `--via phone`, replies of many
-/// chunks).
+/// 55 messages: getList pages of 50; the first page also as the phone
+/// asks for it (a reply of many chunks).
 pub fn big_list(vm: &mut Vm) -> Result<()> {
     let result = (|| -> Result<()> {
         for i in 0..55u32 {
@@ -1289,7 +1333,6 @@ pub fn big_list(vm: &mut Vm) -> Result<()> {
                 ORIGDATE,
             )?;
         }
-        let before = vm.replies().len();
         for page in [1, 2] {
             let (want, ids) = getlist_doc(
                 &vm.spool,
@@ -1315,14 +1358,27 @@ pub fn big_list(vm: &mut Vm) -> Result<()> {
                 Some(ids),
             );
         }
-        if vm.via() == Via::Phone {
-            let chunks = vm.replies()[before..].to_vec();
-            vm.c().check(
-                "getList pages came in many chunks",
-                chunks.len() == 2 && chunks[0] > 10,
-                format!("{chunks:?}"),
-            );
-        }
+        let (want, _) = getlist_doc(
+            &vm.spool,
+            "default/1001",
+            "Cust2",
+            "Cust2",
+            50,
+            1,
+            false,
+            false,
+        );
+        let (body, chunks) = vm.call_phone(
+            "getList",
+            &json!({"account_id": "1001", "folder": "Cust2", "page_number": "1"}),
+        )?;
+        vm.c()
+            .same("getList 55 messages, page 1 through the phone", body, want);
+        vm.c().check(
+            "getList 55 messages, page 1 through the phone: many chunks",
+            chunks > 10,
+            format!("{chunks} chunks"),
+        );
         Ok(())
     })();
     vm.spool.remove("default/1001/Cust2");

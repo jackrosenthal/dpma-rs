@@ -1,7 +1,7 @@
 //! The suites: which ones `cargo xtask test` runs, and how.
 //!
-//! Each suite is a test target of dpma-tests, run as `<test binary>
-//! --ignored [OPTIONS]`; it prepares the test instance itself (fresh
+//! Each suite is a test target of dpma-tests of the same name, run as
+//! `<test binary> --ignored`; it prepares the test instance itself (fresh
 //! configuration, its setup, the module installed, Asterisk restarted).
 //! A run has two steps:
 //!
@@ -29,19 +29,16 @@ use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
 
-use crate::container::{Run, ORIGINAL, OUT, SRC};
+use crate::container::{Run, OUT, SRC};
 use crate::run;
 
-/// The suites of a default run, in order.
-pub const DEFAULT: [&str; 13] = [
+/// The suites, in order: a default run (or `all`) runs them all.
+pub const SUITES: [&str; 10] = [
     "session",
     "config-xml",
     "users-runtime",
     "methods-vm",
-    "methods-vm-phone",
     "methods-calls",
-    "methods-calls-phone",
-    "methods-calls-http",
     "pjsip-helpers",
     "request-handlers",
     "ami",
@@ -49,48 +46,30 @@ pub const DEFAULT: [&str; 13] = [
     "raw-bytes",
 ];
 
-/// What `all` adds to the default suites.
-pub const ALL_EXTRA: [&str; 1] = ["ami-expiry"];
-
 /// The suites that take longest, longest first: they start first.
-const LONGEST: [&str; 7] = [
-    "ami-expiry",
-    "request-handlers",
-    "pjsip-helpers",
-    "session",
+const LONGEST: [&str; 6] = [
     "apps-discovery",
+    "pjsip-helpers",
+    "request-handlers",
+    "session",
+    "ami",
     "methods-vm",
-    "methods-vm-phone",
 ];
 
 /// The list of test binaries that [`build`] writes (`<target> <path>`
 /// lines), in `target/container/<release>/`.
 const BINARIES: &str = "test-binaries";
 
-/// The test target of a suite and the options it runs with.  `parity`
-/// runs only when named, with the original binaries mounted at
-/// [`ORIGINAL`].
-pub fn target(suite: &str) -> Option<(&'static str, &'static [&'static str])> {
-    Some(match suite {
-        "methods-vm-phone" => ("methods-vm", &["--via", "phone"]),
-        "methods-calls-phone" => ("methods-calls", &["--via", "phone"]),
-        "methods-calls-http" => ("methods-calls", &["--via", "http"]),
-        "ami-expiry" => ("ami", &["--expiry"]),
-        "parity" => ("parity", &["--original", ORIGINAL]),
-        s => (*DEFAULT.iter().find(|&&d| d == s)?, &[]),
-    })
+/// The suite (and test target) named `name`, if there is one.
+pub fn target(name: &str) -> Option<&'static str> {
+    SUITES.iter().find(|&&s| s == name).copied()
 }
 
-/// The suites that `args` names (`[]`: the default suites; `["all"]`:
-/// the default suites and ami-expiry).
+/// The suites that `args` names (`[]` or `["all"]`: every suite).
 pub fn selection(args: &[String]) -> Vec<String> {
     match args {
-        [] => DEFAULT.iter().map(|s| s.to_string()).collect(),
-        [a] if a == "all" => DEFAULT
-            .iter()
-            .chain(ALL_EXTRA.iter())
-            .map(|s| s.to_string())
-            .collect(),
+        [] => SUITES.iter().map(|s| s.to_string()).collect(),
+        [a] if a == "all" => selection(&[]),
         _ => args.to_vec(),
     }
 }
@@ -145,7 +124,7 @@ pub fn build(suites: &[String]) -> Result<u8> {
     let existing = test_targets()?;
     let mut targets: Vec<&str> = Vec::new();
     for s in suites {
-        let (t, _) = target(s).context("an unknown suite")?;
+        let t = target(s).context("an unknown suite")?;
         if existing.iter().any(|e| e == t) && !targets.contains(&t) {
             targets.push(t);
         }
@@ -195,7 +174,7 @@ struct Outcome {
 
 /// Runs suite `s` in a fresh container, its output in `log`.
 fn run_one(run: &Run, s: &str, binary: Option<&String>, log: &Path) -> Outcome {
-    let (t, options) = target(s).expect("checked");
+    let t = target(s).expect("checked");
     let fail = |secs: u64, why: String| Outcome {
         ok: false,
         secs,
@@ -215,8 +194,7 @@ fn run_one(run: &Run, s: &str, binary: Option<&String>, log: &Path) -> Outcome {
                 return Ok(fail(0, see.clone()));
             }
         };
-        let mut args = vec![binary.as_str(), "--ignored"];
-        args.extend(options);
+        let args = [binary.as_str(), "--ignored"];
         // In tests/, as Cargo runs test binaries.
         let tests = format!("{SRC}/tests");
         let start = Instant::now();
@@ -275,7 +253,7 @@ pub fn run_suites(run: &Run, out: &Path, suites: &[String], jobs: usize) -> Resu
                 let next = queue.lock().expect("not poisoned").next();
                 let Some(i) = next else { break };
                 let s = &suites[i];
-                let t = target(s).expect("checked").0;
+                let t = target(s).expect("checked");
                 let log = logdir.join(format!("{s}.log"));
                 let _ = tx.send((i, run_one(run, s, binaries.get(t), &log)));
             });
@@ -309,21 +287,10 @@ mod tests {
 
     #[test]
     fn suite_names() {
-        assert_eq!(target("session"), Some(("session", &[][..])));
-        assert_eq!(
-            target("methods-calls-http"),
-            Some(("methods-calls", &["--via", "http"][..]))
-        );
-        assert_eq!(target("ami-expiry"), Some(("ami", &["--expiry"][..])));
-        assert_eq!(
-            target("parity"),
-            Some(("parity", &["--original", ORIGINAL][..]))
-        );
+        assert_eq!(target("session"), Some("session"));
         assert_eq!(target("nope"), None);
-        assert_eq!(selection(&[]).len(), DEFAULT.len());
-        let all = selection(&["all".into()]);
-        assert_eq!(all.last().map(String::as_str), Some("ami-expiry"));
-        assert!(!all.iter().any(|s| s == "parity"));
+        assert_eq!(selection(&[]), SUITES);
+        assert_eq!(selection(&["all".into()]), SUITES);
         assert_eq!(
             selection(&["ami".into(), "session".into()]),
             ["ami", "session"]
@@ -333,7 +300,7 @@ mod tests {
 
     #[test]
     fn longest_first() {
-        let all = selection(&["all".into()]);
+        let all = selection(&[]);
         let order: Vec<&str> = start_order(&all)
             .into_iter()
             .map(|i| all[i].as_str())

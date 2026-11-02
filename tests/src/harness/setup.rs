@@ -1,7 +1,7 @@
 //! Test setups that suites install into the instance: configuration
 //! snippets included from a main configuration file, and the
-//! configuration document test setup (`tests/data/config-xml`), which the
-//! config-xml and parity suites share.
+//! configuration document test setup (`tests/data/config-xml`) of the
+//! config-xml suite.
 
 use std::path::Path;
 

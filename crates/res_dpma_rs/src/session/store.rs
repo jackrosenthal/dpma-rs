@@ -338,6 +338,19 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
         CliResult::Success
     }
 
+    /// dpmadev session txage <seconds>: pretend every incomplete
+    /// transaction was last updated that much earlier, and let the next
+    /// read prune at once.
+    fn txage(a: &CliArgs) -> CliResult {
+        if a.argc() != 4 {
+            return CliResult::ShowUsage;
+        }
+        let Ok(secs) = crate::util::parse::<i64>(&a.argv[3]) else { return CliResult::ShowUsage };
+        let n = super::incoming::backdate_pending(secs);
+        a.out(bformat!("{} incomplete transaction(s) made {} s older\n", n, secs));
+        CliResult::Success
+    }
+
     /// dpmadev session event <id> <event> <length>|<text...>
     fn event(a: &CliArgs) -> CliResult {
         if a.argc() < 6 {
@@ -403,6 +416,13 @@ pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
             summary: "Backdate a session's last activity",
             usage: "Usage: dpmadev session idle <id> <seconds>\n       Sets the last activity <seconds> ago; the next read prunes.\n",
             exec: idle,
+            complete: None,
+        },
+        CliCommand {
+            command: "dpmadev session txage",
+            summary: "Backdate the incomplete transactions",
+            usage: "Usage: dpmadev session txage <seconds>\n       Makes every incomplete transaction <seconds> older; the next read prunes.\n",
+            exec: txage,
             complete: None,
         },
         CliCommand {

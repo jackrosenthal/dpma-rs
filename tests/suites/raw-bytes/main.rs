@@ -77,10 +77,12 @@ fn cli(ctx: &Ctx, cmd: &[u8]) -> BString {
         .unwrap_or_default()
 }
 
-/// What Asterisk logged since `mark`, after half a second.
-fn log_since(ctx: &Ctx, mark: LogMark) -> BString {
-    harness::fixtures::sleep(0.5);
-    ctx.log().since(mark)
+/// What Asterisk logged since `mark`, once `wanted` was (Asterisk's
+/// logger writes from its own thread; at most 3 s).
+fn log_since(ctx: &Ctx, mark: LogMark, wanted: &[u8]) -> BString {
+    let log = ctx.log();
+    log.wait_for(mark, wanted, Duration::from_secs(3));
+    log.since(mark)
 }
 
 /// A regular expression over bytes (Unicode off: `\xHH` is a byte).
@@ -381,16 +383,9 @@ fn check_phone(ctx: &mut Ctx, sessions: &mut Vec<BString>) -> Result<()> {
             .is_some_and(|t| t.starts_with(&cat(&[fx::PHONE, b"/", fx::MAC.as_bytes(), b"/"]))),
         format!("{token:?}"),
     );
-    let text = log_since(ctx, mark);
-    ctx.c.contains(
-        "log: now connected",
-        &text,
-        &[cat(&[
-            b"Phone user '",
-            fx::PHONE,
-            b"' now connected from '",
-        ])],
-    );
+    let want = cat(&[b"Phone user '", fx::PHONE, b"' now connected from '"]);
+    let text = log_since(ctx, mark, &want);
+    ctx.c.contains("log: now connected", &text, &[want]);
 
     // The configuration document.
     let mark = ctx.log().mark();
@@ -440,11 +435,12 @@ fn check_phone(ctx: &mut Ctx, sessions: &mut Vec<BString>) -> Result<()> {
         doc.starts_with(b"<config>"),
         format!("{:?}", doc[..doc.len().min(80)].as_bstr()),
     );
-    let text = log_since(ctx, mark);
+    let want = "Error Parsing phone user config, phone configuration may be invalid.";
+    let text = log_since(ctx, mark, want.as_bytes());
     ctx.c.contains(
         "display rules: libxml2 refused the document",
         &text,
-        &["Error Parsing phone user config, phone configuration may be invalid."],
+        &[want],
     );
 
     // Files: a Latin-1 name, and the default contacts.
@@ -602,11 +598,12 @@ fn check_phone(ctx: &mut Ctx, sessions: &mut Vec<BString>) -> Result<()> {
         got,
         HTTP,
     );
-    let text = log_since(ctx, mark);
+    let want = "Unable to generate JSON for error response";
+    let text = log_since(ctx, mark, want.as_bytes());
     ctx.c.contains(
         "log: Unable to generate JSON for error response",
         &text,
-        &["Unable to generate JSON for error response"],
+        &[want],
     );
 
     check_ami_phone(ctx, &ami, &p)?;
@@ -846,7 +843,14 @@ fn check_incident(ctx: &mut Ctx) -> Result<()> {
     let mut o: Options = ctx.sim_options().mac("000fd30018ff");
     o.user_agent = fx::USER_AGENT.into();
     let p = Phone::start(o)?;
-    p.handshake().bundle("rogue").send()?;
+    // No reply comes; the incident is there once its log line is.
+    let mark = ctx.log().mark();
+    p.handshake().bundle("rogue").no_wait().send()?;
+    ctx.log().wait_for(
+        mark,
+        "Auth failed for ip '127.0.0.1' mac '000fd30018ff'",
+        Duration::from_secs(3),
+    );
     drop(p);
     let msgs = ami.action(&[], "DPMAShowIncidents", None);
     let ev = msgs

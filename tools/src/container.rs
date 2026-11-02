@@ -26,13 +26,12 @@
 //!   different releases never clash.  Root in the container (an `exec` as
 //!   user 0, with `--cap-add NET_ADMIN`) turns multicast on for `lo` and
 //!   routes 224.0.0.0/4 through it, for the apps-discovery suite's mDNS.
-//! - Mounts (the [`SRC`], [`OUT`], [`CARGO_HOME`], and [`ORIGINAL`]
-//!   paths): the repository; `target/container/<release>/` for the Cargo
-//!   target directory, the logs, the test PKI, and the published module;
+//! - Mounts (the [`SRC`], [`OUT`], and [`CARGO_HOME`] paths): the
+//!   repository; `target/container/<release>/` for the Cargo target
+//!   directory, the logs, the test PKI, and the published module; and
 //!   `target/container/cargo/` as `CARGO_HOME`, the registry cache that
-//!   the releases share; and, for parity, the original binaries
-//!   (read-only).  The container has no network, so the host fetches the
-//!   crates into that cache first (`cargo fetch --locked`).
+//!   the releases share.  The container has no network, so the host
+//!   fetches the crates into that cache first (`cargo fetch --locked`).
 //! - `--security-opt label=disable`, so that SELinux hosts let the
 //!   container read and write the mounts without relabeling them.
 //! - The work runs as the container user that is the host user: the
@@ -51,7 +50,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::time::Duration;
 
@@ -67,8 +66,6 @@ pub const SRC: &str = "/src";
 pub const OUT: &str = "/out";
 /// `target/container/cargo/` (`CARGO_HOME`), in the container.
 pub const CARGO_HOME: &str = "/cargo";
-/// The original binaries, in the container (read-only; `test --original`).
-pub const ORIGINAL: &str = "/original";
 /// The configured headers in the image (`ASTERISK_SOURCE_DIR`).
 const HEADERS: &str = "/opt/asterisk-headers";
 /// The image's name; the tag is [`image_tag`].
@@ -207,8 +204,8 @@ pub struct Container {
     stdin: Option<ChildStdin>,
 }
 
-/// A bind mount: host path, container path, read-only.
-pub type Mount = (PathBuf, &'static str, bool);
+/// A bind mount: host path and container path.
+pub type Mount = (PathBuf, &'static str);
 
 /// An exit status as the xtask's (1 for a signal).
 pub fn exit_code(status: ExitStatus) -> u8 {
@@ -234,10 +231,10 @@ impl Container {
             .args(["--network", "none", "--cap-add", "NET_ADMIN"])
             .args(["--cap-drop", "DAC_OVERRIDE"])
             .args(["--security-opt", "label=disable"]);
-        for (host, inside, ro) in mounts {
+        for (host, inside) in mounts {
             let host = fs::canonicalize(host).with_context(|| host.display().to_string())?;
             let mut v = host.into_os_string();
-            v.push(format!(":{inside}{}", if *ro { ":ro" } else { "" }));
+            v.push(format!(":{inside}"));
             c.arg("-v").arg(v);
         }
         for (k, v) in env {
@@ -354,10 +351,9 @@ pub struct Run {
 }
 
 impl Run {
-    /// A run of `pin`'s image (built if needed), with `original` (the
-    /// original binaries) mounted at [`ORIGINAL`]; makes the run's
+    /// A run of `pin`'s image (built if needed); makes the run's
     /// directories and fetches the crates.
-    pub fn new(pin: &Pin, original: Option<&Path>) -> Result<Run> {
+    pub fn new(pin: &Pin) -> Result<Run> {
         let engine = Engine::detect()?;
         let image = engine.image(pin)?;
         let out = out_dir(pin);
@@ -370,14 +366,7 @@ impl Run {
         run(crate::cargo()
             .args(["fetch", "--locked"])
             .env("CARGO_HOME", &cargo_home))?;
-        let mut mounts: Vec<Mount> = vec![
-            (repo_root(), SRC, false),
-            (out, OUT, false),
-            (cargo_home, CARGO_HOME, false),
-        ];
-        if let Some(dir) = original {
-            mounts.push((dir.to_path_buf(), ORIGINAL, true));
-        }
+        let mounts: Vec<Mount> = vec![(repo_root(), SRC), (out, OUT), (cargo_home, CARGO_HOME)];
         let env = vec![
             ("CARGO_HOME", CARGO_HOME.to_string()),
             ("CARGO_TARGET_DIR", format!("{OUT}/target")),
