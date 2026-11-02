@@ -16,7 +16,7 @@ const UPDATE: &str = "digium.config.update";
 /// The body of a reconfigure message.
 const PLAIN: &[u8] = b"<config></config>";
 /// The phones whose AstDB entries are deleted first.
-const PHONES: [&str; 4] = ["p12a", "p12b", "p12c", "p12tmp"];
+const PHONES: [&str; 4] = ["phonea", "phoneb", "phonec", "phonetmp"];
 
 /// Whether the users' flows were set up (once per run, before the first
 /// of their parts).
@@ -122,11 +122,11 @@ fn no_event(ctx: &mut Ctx, name: &str, p: &Phone) {
     ctx.c.check(name, r.is_none(), detail);
 }
 
-/// Writes the P12 test phones with `extra` appended and reloads.
-fn edit_p12conf(ctx: &mut Ctx, extra: &str) -> Result<()> {
+/// Writes the test phones with `extra` appended and reloads.
+fn edit_phones_conf(ctx: &mut Ctx, extra: &str) -> Result<()> {
     std::fs::write(
-        ctx.inst.conf("res_digium_phone_p12.conf"),
-        format!("{P12_CONF}{extra}"),
+        ctx.inst.conf("res_digium_phone_handlers.conf"),
+        format!("{PHONES_CONF}{extra}"),
     )?;
     cli(ctx, "module reload res_dpma_rs.so")?;
     Ok(())
@@ -136,55 +136,56 @@ fn edit_p12conf(ctx: &mut Ctx, extra: &str) -> Result<()> {
 
 pub fn reload(ctx: &mut Ctx) -> Result<()> {
     let res = reload_checks(ctx);
-    edit_p12conf(ctx, "")?;
+    edit_phones_conf(ctx, "")?;
     res
 }
 
 fn reload_checks(ctx: &mut Ctx) -> Result<()> {
     let p = phone(ctx, MAC_A)?;
-    token_for(ctx, &p, "p12a")?;
+    token_for(ctx, &p, "phonea")?;
     let mark = log_mark(ctx);
-    edit_p12conf(ctx, "\n[p12a-line2]\ntype=line\n")?;
-    // Adding a line section alone changes nothing for p12a.
+    edit_phones_conf(ctx, "\n[phonea-line2]\ntype=line\n")?;
+    // Adding a line section alone changes nothing for phonea.
     no_event(ctx, "unrelated change: no reconfigure", &p);
-    edit_p12conf(
+    edit_phones_conf(
         ctx,
-        "\n[p12a-line2]\ntype=line\n[p12a](+)\nline=p12a-line2\n",
+        "\n[phonea-line2]\ntype=line\n[phonea](+)\nline=phonea-line2\n",
     )?;
     expect_event(ctx, "lines changed: reconfigure", &p, PLAIN, UPDATE);
     logged(
         ctx,
         "lines changed (log)",
         mark,
-        "Phone user 'p12a' setting reconfigure due to change in lines",
+        "Phone user 'phonea' setting reconfigure due to change in lines",
     );
     logged(
         ctx,
         "lines changed: sending (log)",
         mark,
-        "Sending reconfigure to user p12a",
+        "Sending reconfigure to user phonea",
     );
-    edit_p12conf(ctx, "")?;
+    edit_phones_conf(ctx, "")?;
     expect_event(ctx, "lines changed back: reconfigure", &p, PLAIN, UPDATE);
 
-    edit_p12conf(
+    edit_phones_conf(
         ctx,
-        "\n[p12tmp]\ntype=phone\nmac=000fd30012aa\nline=p12tmp-line\n[p12tmp-line]\ntype=line\n",
+        "\n[phonetmp]\ntype=phone\nmac=000fd30012aa\nline=phonetmp-line\n[phonetmp-line]\ntype=line\n",
     )?;
     let t = phone(ctx, "000fd30012aa")?;
-    token_for(ctx, &t, "p12tmp")?;
-    let (_, db) = last_info(ctx, "p12tmp")?;
+    token_for(ctx, &t, "phonetmp")?;
+    let (_, db) = last_info(ctx, "phonetmp")?;
     ctx.c.check(
-        "p12tmp in AstDB",
+        "phonetmp in AstDB",
         db.as_ref()
             .is_some_and(|d| d.starts_with("last_mac=000fd30012aa;")),
         format!("{db:?}"),
     );
     let got = flags(ctx, &sid(&t))?;
-    ctx.c.same("p12tmp's session active", got, fl("Yes", "No"));
-    edit_p12conf(ctx, "")?;
+    ctx.c
+        .same("phonetmp's session active", got, fl("Yes", "No"));
+    edit_phones_conf(ctx, "")?;
     expect_event(ctx, "deleted phone: reconfigure", &t, PLAIN, UPDATE);
-    let out = cli_text(ctx, "database get DigiumPhoneUsers p12tmp")?;
+    let out = cli_text(ctx, "database get DigiumPhoneUsers phonetmp")?;
     ctx.c.check(
         "deleted phone: AstDB entry removed",
         out.to_lowercase().contains("not found"),
@@ -207,18 +208,18 @@ pub fn mismatch(ctx: &mut Ctx) -> Result<()> {
 fn mismatch_checks(ctx: &mut Ctx) -> Result<()> {
     let a = phone(ctx, MAC_A)?;
     let b = phone(ctx, MAC_BAD)?;
-    token_for(ctx, &a, "p12a")?;
-    let got = last_info(ctx, "p12a")?.0;
+    token_for(ctx, &a, "phonea")?;
+    let got = last_info(ctx, "phonea")?.0;
     ctx.c
-        .same("p12a at A", got, at(MAC_A, &uri_of(&a), &sid(&a)));
+        .same("phonea at A", got, at(MAC_A, &uri_of(&a), &sid(&a)));
     let mark = log_mark(ctx);
-    token_for(ctx, &b, "p12a")?;
+    token_for(ctx, &b, "phonea")?;
     logged(
         ctx,
         "MAC mismatch (log)",
         mark,
         &format!(
-            "Phone user 'p12a' reconfigure due to mac mismatch - was '{MAC_A}' now '{MAC_BAD}'"
+            "Phone user 'phonea' reconfigure due to mac mismatch - was '{MAC_A}' now '{MAC_BAD}'"
         ),
     );
     logged(
@@ -226,7 +227,7 @@ fn mismatch_checks(ctx: &mut Ctx) -> Result<()> {
         "now connected (log)",
         mark,
         &format!(
-            "Phone user 'p12a' now connected from '{}' mac '{MAC_BAD}'",
+            "Phone user 'phonea' now connected from '{}' mac '{MAC_BAD}'",
             uri_of(&b)
         ),
     );
@@ -238,9 +239,9 @@ fn mismatch_checks(ctx: &mut Ctx) -> Result<()> {
         UPDATE,
     );
     no_event(ctx, "MAC mismatch: the new location is not", &b);
-    let got = last_info(ctx, "p12a")?.0;
+    let got = last_info(ctx, "phonea")?.0;
     ctx.c
-        .same("p12a at B", got, at(MAC_BAD, &uri_of(&b), &sid(&b)));
+        .same("phonea at B", got, at(MAC_BAD, &uri_of(&b), &sid(&b)));
     let got = flags(ctx, &sid(&a))?;
     ctx.c
         .same("A's session marked inactive", got, fl("Yes", "Yes"));
@@ -249,19 +250,19 @@ fn mismatch_checks(ctx: &mut Ctx) -> Result<()> {
         .same("B's session authenticated", got, fl("Yes", "No"));
 
     let mark = log_mark(ctx);
-    token_for(ctx, &b, "p12b")?;
+    token_for(ctx, &b, "phoneb")?;
     logged(
         ctx,
         "orphaned (log)",
         mark,
-        &format!("Phone user 'p12a' configuration orphaned by mac '{MAC_BAD}'"),
+        &format!("Phone user 'phonea' configuration orphaned by mac '{MAC_BAD}'"),
     );
-    let got = last_info(ctx, "p12a")?;
+    let got = last_info(ctx, "phonea")?;
     ctx.c
         .same("orphaned phone forgets its location", got, forgotten());
-    let got = last_info(ctx, "p12b")?.0;
+    let got = last_info(ctx, "phoneb")?.0;
     ctx.c
-        .same("p12b at B", got, at(MAC_BAD, &uri_of(&b), &sid(&b)));
+        .same("phoneb at B", got, at(MAC_BAD, &uri_of(&b), &sid(&b)));
     let got = flags(ctx, &sid(&b))?;
     ctx.c.same(
         "B's session still authenticated and active",
@@ -280,7 +281,7 @@ pub fn stale(ctx: &mut Ctx) -> Result<()> {
 
 fn stale_checks(ctx: &mut Ctx) -> Result<()> {
     let p = phone(ctx, MAC_A)?;
-    token_for(ctx, &p, "p12a")?;
+    token_for(ctx, &p, "phonea")?;
     let old = sid(&p);
     // Another phone behind the same address (the same socket here): a new
     // session with another MAC (and the Contact that goes with it), set
@@ -292,14 +293,14 @@ fn stale_checks(ctx: &mut Ctx) -> Result<()> {
     let mark = log_mark(ctx);
     let ex = p
         .get_token()
-        .user("p12b")
+        .user("phoneb")
         .config_password(GLOBALPIN)
         .mac(MAC_BAD)
         .contact(&contact)
         .send()?;
     expect(
         ctx,
-        &format!("token for p12b from {MAC_BAD}"),
+        &format!("token for phoneb from {MAC_BAD}"),
         &ex,
         "TokenResponse",
         None,
@@ -309,9 +310,9 @@ fn stale_checks(ctx: &mut Ctx) -> Result<()> {
         ctx,
         "stale phone removed (log)",
         mark,
-        &format!("Removing stale user 'p12a' from '{}'", uri_of(&p)),
+        &format!("Removing stale user 'phonea' from '{}'", uri_of(&p)),
     );
-    let got = last_info(ctx, "p12a")?;
+    let got = last_info(ctx, "phonea")?;
     ctx.c
         .same("stale phone forgets its location", got, forgotten());
     let got = flags(ctx, &old)?;
@@ -322,7 +323,7 @@ fn stale_checks(ctx: &mut Ctx) -> Result<()> {
 
 pub fn uri(ctx: &mut Ctx) -> Result<()> {
     let p = phone(ctx, MAC_A)?;
-    token_for(ctx, &p, "p12a")?;
+    token_for(ctx, &p, "phonea")?;
     let old_uri = uri_of(&p);
     // The same phone (contact, session, key, token) from another port.
     let mut o = ctx.sim_options().mac(MAC_A);
@@ -346,7 +347,7 @@ pub fn uri(ctx: &mut Ctx) -> Result<()> {
         "now connected (log)",
         mark,
         &format!(
-            "Phone user 'p12a' now connected from '{}' mac '{MAC_A}'",
+            "Phone user 'phonea' now connected from '{}' mac '{MAC_A}'",
             uri_of(&q)
         ),
     );
@@ -355,11 +356,11 @@ pub fn uri(ctx: &mut Ctx) -> Result<()> {
         "session update (log)",
         mark,
         &format!(
-            "Phone user 'p12a' session update due to uri change - was '{old_uri}' now '{}'",
+            "Phone user 'phonea' session update due to uri change - was '{old_uri}' now '{}'",
             uri_of(&q)
         ),
     );
-    let got = last_info(ctx, "p12a")?.0;
+    let got = last_info(ctx, "phonea")?.0;
     ctx.c
         .same("last info follows", got, at(MAC_A, &uri_of(&q), &sid(&p)));
     let line = session_line(ctx, &sid(&p))?;
@@ -368,7 +369,7 @@ pub fn uri(ctx: &mut Ctx) -> Result<()> {
         line.contains(&format!("URI:{} ", uri_of(&q))),
         &line,
     );
-    cli(ctx, "digium_phones reconfigure phone p12a")?;
+    cli(ctx, "digium_phones reconfigure phone phonea")?;
     expect_event(
         ctx,
         "reconfigure goes to the new address",
@@ -385,7 +386,7 @@ pub fn marks(ctx: &mut Ctx) -> Result<()> {
     let got = flags(ctx, &sid(&p))?;
     ctx.c
         .same("new session: not authenticated", got, fl("No", "No"));
-    token_for(ctx, &p, "p12a")?;
+    token_for(ctx, &p, "phonea")?;
     let got = flags(ctx, &sid(&p))?;
     ctx.c.same(
         "token build authenticates the session",
@@ -423,7 +424,7 @@ pub fn marks(ctx: &mut Ctx) -> Result<()> {
         got,
         fl("Yes", "No"),
     );
-    let got = last_info(ctx, "p12a")?.0.map(|i| i.2);
+    let got = last_info(ctx, "phonea")?.0.map(|i| i.2);
     ctx.c.same("phone's session follows", got, Some(sid(&p)));
     Ok(())
 }
@@ -439,7 +440,7 @@ pub fn restore(ctx: &mut Ctx) -> Result<()> {
         let p = Phone::start(opts.clone())?;
         let ex = p.handshake().send()?;
         ctx.c.check("handshake", ex.ok(), "");
-        token_for(ctx, &p, "p12a")?;
+        token_for(ctx, &p, "phonea")?;
         (sid(&p), p.common_password(), p.token())
     };
     // Another session that never authenticates is not saved.
@@ -457,7 +458,7 @@ pub fn restore(ctx: &mut Ctx) -> Result<()> {
     let line = session_line(ctx, &xsid)?;
     ctx.c
         .same("unauthenticated session not restored", line.as_str(), "");
-    let got = last_info(ctx, "p12a")?.0;
+    let got = last_info(ctx, "phonea")?.0;
     ctx.c.same(
         "last info restored",
         got,
@@ -489,7 +490,7 @@ pub fn restore(ctx: &mut Ctx) -> Result<()> {
         None,
         Body::Matches(r"\A<config>"),
     );
-    cli(ctx, "digium_phones reconfigure phone p12a")?;
+    cli(ctx, "digium_phones reconfigure phone phonea")?;
     expect_event(ctx, "restored session: reconfigure", &p, PLAIN, UPDATE);
     // Idle for 65 s (inactive sessions are pruned after 59 s); an Echo
     // starts the read cycle that prunes, and the ping comes after it.

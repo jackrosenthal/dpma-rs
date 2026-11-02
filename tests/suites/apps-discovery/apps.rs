@@ -28,13 +28,13 @@ fn originate(ctx: &mut Ctx, app: &str, tid: &str, args: &str, keys: &str, gap: &
         ("Exten", "keys".into()),
         ("Priority", "1".into()),
         ("Async", "true".into()),
-        ("Variable", format!("P14ID={tid}")),
+        ("Variable", format!("TEST_ID={tid}")),
         (
             "Variable",
-            format!("P14ARGS={}", fixtures::ami_var_escape(args)),
+            format!("TEST_ARGS={}", fixtures::ami_var_escape(args)),
         ),
-        ("Variable", format!("P14KEYS={keys}")),
-        ("Variable", format!("P14GAP={gap}")),
+        ("Variable", format!("TEST_KEYS={keys}")),
+        ("Variable", format!("TEST_GAP={gap}")),
     ];
     let res = ctx.ami()?.action("Originate", fields);
     let ok = res
@@ -322,7 +322,7 @@ fn leave_message(ctx: &mut Ctx) -> Result<Option<String>> {
             ("Context", "dpma-vm-source"),
             ("Exten", "tone"),
             ("Priority", "1"),
-            ("CallerID", "\"P14\" <5551234>"),
+            ("CallerID", "\"Test\" <5551234>"),
             ("Async", "true"),
         ],
     );

@@ -16,7 +16,7 @@ line 2001:
   secret 'pw2001'
   callerid '"Phone One" <2001>'
   mailbox '2001@default'
-  context 'p11-phones'
+  context 'test-phones'
   authname '2001'
   pjsip_auth '2001-auth'
   line_label ''
@@ -42,7 +42,7 @@ line 2003:
   secret 'pw2003'
   callerid '<unknown>'
   mailbox ''
-  context 'p11-phones'
+  context 'test-phones'
   authname 'user2003'
   pjsip_auth '2003-auth'
   line_label ''
@@ -86,7 +86,7 @@ line 2001:
   secret 'pw2001b'
   callerid '"Phone One B" <2001>'
   mailbox '2001@default'
-  context 'p11-phones'
+  context 'test-phones'
   authname '2001'
   pjsip_auth '2001-auth'
   line_label ''
@@ -102,7 +102,7 @@ line 2001:
   secret 'pw2001'
   callerid '"Phone One" <2001>'
   mailbox '2001@default'
-  context 'p11-phones'
+  context 'test-phones'
   authname '2001'
   pjsip_auth '2001-auth'
   line_label ''
@@ -118,7 +118,7 @@ line 2005:
   secret ''
   callerid '"ARI Five" <2005>'
   mailbox ''
-  context 'p11-phones'
+  context 'test-phones'
   authname ''
   pjsip_auth ''
   line_label 'ARI'
@@ -132,7 +132,7 @@ line 2005:
   secret ''
   callerid '"ARI Five" <2005>'
   mailbox ''
-  context 'p11-phones'
+  context 'test-phones'
   authname ''
   pjsip_auth ''
   line_label 'ARI'
@@ -146,7 +146,7 @@ line 2005:
   secret 'pw2005'
   callerid '"ARI Five B" <2005>'
   mailbox ''
-  context 'p11-phones'
+  context 'test-phones'
   authname 'ari5'
   pjsip_auth '2005-auth'
   line_label 'ARI'
@@ -160,7 +160,7 @@ line 2005:
   secret 'pw2005b'
   callerid '"ARI Five B" <2005>'
   mailbox ''
-  context 'p11-phones'
+  context 'test-phones'
   authname 'ari5'
   pjsip_auth '2005-auth'
   line_label 'ARI'
@@ -174,7 +174,7 @@ line 2005:
   secret 'pw2005b'
   callerid '"ARI Five B" <2005>'
   mailbox ''
-  context 'p11-phones'
+  context 'test-phones'
   authname 'ari5'
   pjsip_auth '2005-auth'
   line_label 'ARI'
@@ -188,7 +188,7 @@ line 2005:
   secret 'pw2005b'
   callerid '"ARI Five B" <2005>'
   mailbox '2005@default'
-  context 'p11-phones'
+  context 'test-phones'
   authname 'ari5'
   pjsip_auth '2005-auth'
   line_label 'ARI'
@@ -202,7 +202,7 @@ line 2005:
   secret ''
   callerid '"ARI Five B" <2005>'
   mailbox '2005@default'
-  context 'p11-phones'
+  context 'test-phones'
   authname ''
   pjsip_auth ''
   line_label 'ARI'
@@ -256,8 +256,8 @@ line 2005:
   info_send = 0
 > dpmadev pjsip info PJSIP/2001-00000000
   info_send = 0
-> channel originate Local/2002@p11-phones application Wait 2
-> dpmadev pjsip info Local/2002@p11-phones-00000000;2 {}
+> channel originate Local/2002@test-phones application Wait 2
+> dpmadev pjsip info Local/2002@test-phones-00000000;1 {}
   info_send = -1
   uas: REGISTER 2001 200 OK
   uas: INVITE 1 answered
@@ -283,7 +283,7 @@ line 2005:
   MESSAGE proxy X-Digium-User-Agent 202 Accepted
   MESSAGE probe X-Digium-User-Agent 202 Accepted
   log: DPMA load.rs: Reconfiguring triggered by res_digium_phone.conf
-  log: VERBOSE app_verbose.c: P11 probe: test
+  log: VERBOSE app_verbose.c: Test probe: test
 > module reload res_dpma_rs.so
   Module 'res_dpma_rs.so' reloaded successfully.
   MESSAGE probe X-Digium-User-Agent 404 Not Found
@@ -314,7 +314,7 @@ line 2001:
   secret 'pw2001'
   callerid '"Phone One" <2001>'
   mailbox '2001@default'
-  context 'p11-phones'
+  context 'test-phones'
   authname '2001'
   pjsip_auth '2001-auth'
   line_label ''
@@ -358,7 +358,7 @@ line 2001:
   secret 'pw2001'
   callerid '"Phone One" <2001>'
   mailbox '2001@default'
-  context 'p11-phones'
+  context 'test-phones'
   authname '2001'
   pjsip_auth '2001-auth'
   line_label ''
@@ -389,7 +389,7 @@ line 2005:
   secret ''
   callerid '<unknown>'
   mailbox '2005@other'
-  context 'p11-phones'
+  context 'test-phones'
   authname ''
   pjsip_auth ''
   line_label 'ARI'

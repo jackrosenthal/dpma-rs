@@ -13,13 +13,14 @@ pub use dpma_tests::harness::fixtures::{
     http_wrap as http, json_error, token_hash, xml_error, GLOBALPIN,
 };
 
-/// The MAC of the test phone p12a.
+/// The MAC of the test phone phonea.
 pub const MAC_A: &str = "000fd3001201";
 /// A MAC no phone has.
 pub const MAC_BAD: &str = "000fd30012ff";
 
-/// The P12 test phones (`res_digium_phone_p12.conf`).
-pub const P12_CONF: &str = include_str!("../../data/request-handlers/res_digium_phone_p12.conf");
+/// The test phones (`res_digium_phone_handlers.conf`).
+pub const PHONES_CONF: &str =
+    include_str!("../../data/request-handlers/res_digium_phone_handlers.conf");
 
 // The bits of the authentication requirements of a `config_auth` mode.
 /// A user name.

@@ -36,8 +36,8 @@ use regex::Regex;
 use serde_json::{json, Value};
 
 /// The test phones' configuration file.
-const CONF: &str = "res_digium_phone_p13.conf";
-const CONF_TEXT: &str = include_str!("../../data/ami/res_digium_phone_p13.conf");
+const CONF: &str = "res_digium_phone_ami.conf";
+const CONF_TEXT: &str = include_str!("../../data/ami/res_digium_phone_ami.conf");
 const DELETE_TOKEN_BODY: &[u8] =
     b"<config>\t<section id=\"all\"/>\t<option id=\"delete_token\" value=\"true\"/></config>";
 
@@ -52,7 +52,7 @@ fn logged(log: &Log, mark: LogMark, texts: &[&str]) -> (bool, BString) {
     (ok, log.since(mark))
 }
 
-/// The simulator setup plus the P13 phones.
+/// The simulator setup plus the test phones.
 fn setup(inst: &Instance) -> Result<()> {
     fixtures::sim_setup(inst)?;
     std::fs::write(inst.conf(CONF), CONF_TEXT)?;
@@ -350,7 +350,7 @@ fn init(ctx: &mut Ctx) -> Result<State> {
     }
     let a = new_phone(ctx, "000fd3001301")?;
     let b = new_phone(ctx, "000fd3001302")?;
-    for (phone, name) in [(&a, "p13phone"), (&b, "p13phone2")] {
+    for (phone, name) in [(&a, "testphone"), (&b, "testphone2")] {
         let (ok, detail) = authenticate(phone, name)?;
         ctx.c.check(format!("{name} located"), ok, detail);
     }
@@ -374,13 +374,13 @@ fn actions(ctx: &mut Ctx, st: &State) -> Result<()> {
     same_raw(
         c,
         "Register: Success",
-        reg(Some("r1"), &[("Method", b"com.p13.hello")]),
+        reg(Some("r1"), &[("Method", b"com.test.hello")]),
         &resp("Success", Some("r1")),
     );
     same_raw(
         c,
         "Register: no ActionID",
-        reg(None, &[("Method", b"com.p13.hello")]),
+        reg(None, &[("Method", b"com.test.hello")]),
         &resp("Success", None),
     );
     same_raw(
@@ -398,13 +398,13 @@ fn actions(ctx: &mut Ctx, st: &State) -> Result<()> {
     same_raw(
         c,
         "Register: second name",
-        reg(Some("r4"), &[("Method", b"com.p13.Other")]),
+        reg(Some("r4"), &[("Method", b"com.test.Other")]),
         &resp("Success", Some("r4")),
     );
     let out = ctx.cli_text("dpmadev method list");
     ctx.c.check(
         "Register: names in the AMI registry",
-        out.contains("com.p13.hello") && out.contains("com.p13.Other"),
+        out.contains("com.test.hello") && out.contains("com.test.Other"),
         &out,
     );
     // snprintf(idtext, 0x100, "ActionID: %s\r\n"): 243 characters fit;
@@ -418,7 +418,7 @@ fn actions(ctx: &mut Ctx, st: &State) -> Result<()> {
             ami,
             "DPMAMessageRegister",
             Some(a243.as_bytes()),
-            &[("Method", b"com.p13.hello")],
+            &[("Method", b"com.test.hello")],
         ),
         &resp("Success", Some(&a243)),
     );
@@ -431,7 +431,7 @@ fn actions(ctx: &mut Ctx, st: &State) -> Result<()> {
         ami,
         "DPMAMessageRegister",
         Some(b"r5"),
-        &[("Method", b"com.p13.hello")],
+        &[("Method", b"com.test.hello")],
     );
     let mut want = format!("Response: Success\r\nActionID: {a244}\r\r\n").into_bytes();
     want.extend(resp("Success", Some("r5")));
@@ -488,14 +488,14 @@ fn actions(ctx: &mut Ctx, st: &State) -> Result<()> {
     same_raw(
         c,
         "Send: no Method",
-        send("s3", &[("PhoneName", b"p13phone"), ("Message", b"m")]),
+        send("s3", &[("PhoneName", b"testphone"), ("Message", b"m")]),
         &resp("Failure", Some("s3")),
     );
     let pos2 = log.mark();
     same_raw(
         c,
         "Send: phone that never contacted the server",
-        send("s4", &[("PhoneName", b"p13phone3"), ("Method", b"e")]),
+        send("s4", &[("PhoneName", b"testphone3"), ("Method", b"e")]),
         &resp("Failure", Some("s4")),
     );
     let (ok, text) = logged(
@@ -511,7 +511,7 @@ fn actions(ctx: &mut Ctx, st: &State) -> Result<()> {
     let (ok, _) = logged(
         &log,
         pos2,
-        &["Unable to send event to 'p13phone3' with no uri"],
+        &["Unable to send event to 'testphone3' with no uri"],
     );
     c.check("Send: no uri logged", ok, "");
     Ok(())
@@ -520,9 +520,9 @@ fn actions(ctx: &mut Ctx, st: &State) -> Result<()> {
 fn forwarding(ctx: &mut Ctx, st: &State) -> Result<()> {
     let (ami, a) = (&st.ami, &st.a);
     let s = a.session().unwrap_or_default();
-    let auth = "p13phone:1313";
-    let hello = "com.p13.hello";
-    let other = "com.p13.Other";
+    let auth = "testphone:1313";
+    let hello = "com.test.hello";
+    let other = "com.test.Other";
 
     // JSON request answered with a JSON result.
     let mut f = forward(
@@ -672,7 +672,7 @@ fn forwarding(ctx: &mut Ctx, st: &State) -> Result<()> {
         "XML empty",
         r.as_ref(),
         &f.ex,
-        &preamble(b"\r\n\r\n<response method=\"com.p13.Other\">\r\n</response>\r\n"),
+        &preamble(b"\r\n\r\n<response method=\"com.test.Other\">\r\n</response>\r\n"),
         &s,
     );
 
@@ -704,7 +704,7 @@ fn forwarding(ctx: &mut Ctx, st: &State) -> Result<()> {
         r.as_ref(),
         &f.ex,
         &preamble(
-            b"\r\n\r\n<response method=\"com.p13.hello\">\r\n<result><ok a='1'/> & more</result>\r\n</response>\r\n",
+            b"\r\n\r\n<response method=\"com.test.hello\">\r\n<result><ok a='1'/> & more</result>\r\n</response>\r\n",
         ),
         &s,
     );
@@ -732,7 +732,7 @@ fn forwarding(ctx: &mut Ctx, st: &State) -> Result<()> {
         r.as_ref(),
         &f.ex,
         &preamble(
-            b"\r\n\r\n<response method=\"com.p13.hello\">\r\n<errors>\r\n<error code=\"abc\" message=\"bad \"thing\"\" />\r\n</errors>\r\n</response>\r\n",
+            b"\r\n\r\n<response method=\"com.test.hello\">\r\n<errors>\r\n<error code=\"abc\" message=\"bad \"thing\"\" />\r\n</errors>\r\n</response>\r\n",
         ),
         &s,
     );
@@ -887,8 +887,8 @@ fn send(ctx: &mut Ctx, st: &State) -> Result<()> {
         send(
             Some("e1"),
             &[
-                ("PhoneName", b"P13PHONE"),
-                ("Method", b"com.p13.event"),
+                ("PhoneName", b"TESTPHONE"),
+                ("Method", b"com.test.event"),
                 ("Message", b"<hello/>"),
             ],
         ),
@@ -898,7 +898,7 @@ fn send(ctx: &mut Ctx, st: &State) -> Result<()> {
     c.check(
         "Send: event reaches the phone",
         r.as_ref().is_some_and(|r| {
-            is(&r.event, "com.p13.event")
+            is(&r.event, "com.test.event")
                 && r.id.is_none()
                 && r.error.is_none()
                 && r.encrypted
@@ -913,7 +913,7 @@ fn send(ctx: &mut Ctx, st: &State) -> Result<()> {
         "Send: empty body",
         send(
             None,
-            &[("PhoneName", b"p13phone"), ("Method", b"com.p13.empty")],
+            &[("PhoneName", b"testphone"), ("Method", b"com.test.empty")],
         ),
         &resp("Success", None),
     );
@@ -921,7 +921,7 @@ fn send(ctx: &mut Ctx, st: &State) -> Result<()> {
     c.check(
         "Send: empty body is 'empty body'",
         r.as_ref()
-            .is_some_and(|r| is(&r.event, "com.p13.empty") && r.payload == "empty body"),
+            .is_some_and(|r| is(&r.event, "com.test.empty") && r.payload == "empty body"),
         describe(r.as_ref()),
     );
     same_raw(
@@ -930,7 +930,7 @@ fn send(ctx: &mut Ctx, st: &State) -> Result<()> {
         send(
             None,
             &[
-                ("PhoneName", b"p13phone"),
+                ("PhoneName", b"testphone"),
                 ("Method", b"digium.assignment.update"),
                 ("Message", b"<assign/>"),
             ],
@@ -956,7 +956,7 @@ fn send(ctx: &mut Ctx, st: &State) -> Result<()> {
         send(
             None,
             &[
-                ("PhoneName", b"p13phone"),
+                ("PhoneName", b"testphone"),
                 ("Method", b"Digium.Assignment.Update"),
                 ("Message", b"x"),
             ],
@@ -997,18 +997,18 @@ fn reconfigure(ctx: &mut Ctx, st: &State) -> Result<()> {
     let (ami, a, b) = (&st.ami, &st.a, &st.b);
     drain(a);
     drain(b);
-    let out = ctx.cli_text("digium_phones reconfigure phone p13phone");
+    let out = ctx.cli_text("digium_phones reconfigure phone testphone");
     ctx.c.same(
         "CLI reconfigure phone",
         out.as_str(),
-        "Phone 'P13 Phone' will reconfigure shortly.\n",
+        "Phone 'Test Phone' will reconfigure shortly.\n",
     );
     expect_reconfigure(&mut ctx.c, a, "CLI reconfigure phone", PLAIN_BODY);
-    let out = ctx.cli_text("digium_phones reconfigure phone p13phone3");
+    let out = ctx.cli_text("digium_phones reconfigure phone testphone3");
     ctx.c.same(
         "CLI reconfigure phone, not contacted",
         out.as_str(),
-        "Phone 'p13phone3' has not contacted the server.  The server is unaware of the location of this device and can not reconfigure it at this time.\n",
+        "Phone 'testphone3' has not contacted the server.  The server is unaware of the location of this device and can not reconfigure it at this time.\n",
     );
     let out = ctx.cli_text("digium_phones reconfigure all");
     ctx.c.same(
@@ -1016,8 +1016,13 @@ fn reconfigure(ctx: &mut Ctx, st: &State) -> Result<()> {
         out.as_str(),
         "Reconfigure message successfully sent to all known device locations.\n",
     );
-    expect_reconfigure(&mut ctx.c, a, "CLI reconfigure all (p13phone)", PLAIN_BODY);
-    expect_reconfigure(&mut ctx.c, b, "CLI reconfigure all (p13phone2)", PLAIN_BODY);
+    expect_reconfigure(&mut ctx.c, a, "CLI reconfigure all (testphone)", PLAIN_BODY);
+    expect_reconfigure(
+        &mut ctx.c,
+        b,
+        "CLI reconfigure all (testphone2)",
+        PLAIN_BODY,
+    );
 
     let c = &mut ctx.c;
     let rc = |name: &str, id: &str, fields: &[(&str, &[u8])]| {
@@ -1026,7 +1031,7 @@ fn reconfigure(ctx: &mut Ctx, st: &State) -> Result<()> {
     same_raw(
         c,
         "AMI DigiumPhoneReconfigure",
-        rc("DigiumPhoneReconfigure", "c1", &[("PhoneName", b"p13phone")]),
+        rc("DigiumPhoneReconfigure", "c1", &[("PhoneName", b"testphone")]),
         b"Response: Success\r\nActionID: c1\r\nMessage: Reconfigure message successfully sent\r\n\r\n",
     );
     expect_reconfigure(c, a, "AMI DigiumPhoneReconfigure", PLAIN_BODY);
@@ -1045,7 +1050,7 @@ fn reconfigure(ctx: &mut Ctx, st: &State) -> Result<()> {
     same_raw(
         c,
         "AMI DigiumPhoneReconfigure: not contacted",
-        rc("DigiumPhoneReconfigure", "c4", &[("PhoneName", b"p13phone3")]),
+        rc("DigiumPhoneReconfigure", "c4", &[("PhoneName", b"testphone3")]),
         b"Response: Error\r\nActionID: c4\r\nMessage: Phone has not contacted the server.  The server is unaware of the location of this device and can not reconfigure it at this time.\n\r\n\r\n",
     );
     same_raw(
@@ -1054,11 +1059,16 @@ fn reconfigure(ctx: &mut Ctx, st: &State) -> Result<()> {
         rc("DigiumPhoneReconfigureAll", "c5", &[]),
         b"Response: Success\r\nActionID: c5\r\nMessage: Reconfigure message successfully sent to all known device locations.\r\n\r\n",
     );
-    expect_reconfigure(c, a, "AMI DigiumPhoneReconfigureAll (p13phone)", PLAIN_BODY);
+    expect_reconfigure(
+        c,
+        a,
+        "AMI DigiumPhoneReconfigureAll (testphone)",
+        PLAIN_BODY,
+    );
     expect_reconfigure(
         c,
         b,
-        "AMI DigiumPhoneReconfigureAll (p13phone2)",
+        "AMI DigiumPhoneReconfigureAll (testphone2)",
         PLAIN_BODY,
     );
     // (The second phone's events arrive while the first one waits.)
@@ -1098,8 +1108,8 @@ fn reload(ctx: &mut Ctx, st: &State) -> Result<()> {
     let (a, b) = (&st.a, &st.b);
     let path = ctx.inst.conf(CONF);
     let lines_changed = CONF_TEXT.replace(
-        "full_name=P13 Phone\nline=p13line\n",
-        "full_name=P13 Phone\nline=p13line4\n",
+        "full_name=Test Phone\nline=testline\n",
+        "full_name=Test Phone\nline=testline4\n",
     );
     let result = (|| -> Result<()> {
         drain(a);
@@ -1113,8 +1123,8 @@ fn reload(ctx: &mut Ctx, st: &State) -> Result<()> {
             &log,
             pos,
             &[
-                "Phone user 'p13phone' setting reconfigure due to change in lines",
-                "Sending reconfigure to user p13phone",
+                "Phone user 'testphone' setting reconfigure due to change in lines",
+                "Sending reconfigure to user testphone",
             ],
         );
         let tail = &text[text.len().saturating_sub(2000)..];
@@ -1131,8 +1141,8 @@ fn reload(ctx: &mut Ctx, st: &State) -> Result<()> {
         std::fs::write(
             &path,
             lines_changed.replace(
-                "[p13phone2]\ntype=phone\n",
-                "[p13phone2-gone]\ntype=phone\n",
+                "[testphone2]\ntype=phone\n",
+                "[testphone2-gone]\ntype=phone\n",
             ),
         )?;
         ctx.cli_text("module reload res_dpma_rs.so");
@@ -1155,15 +1165,22 @@ fn reload(ctx: &mut Ctx, st: &State) -> Result<()> {
 /// by a new handshake from the same MAC.
 fn session_gone(ctx: &mut Ctx, st: &State) -> Result<()> {
     let (ami, b) = (&st.ami, &st.b);
-    let (ok, detail) = authenticate(b, "p13phone2")?;
-    ctx.c.check("p13phone2 located again", ok, detail);
+    let (ok, detail) = authenticate(b, "testphone2")?;
+    ctx.c.check("testphone2 located again", ok, detail);
     let mut f = forward(
         b,
-        "com.p13.hello",
+        "com.test.hello",
         Params::Json(json!({"gone": 1})),
-        "p13phone2:2323",
+        "testphone2:2323",
     )?;
-    dpma_message(&mut ctx.c, ami, &f, "com.p13.hello", "JSON", "session gone");
+    dpma_message(
+        &mut ctx.c,
+        ami,
+        &f,
+        "com.test.hello",
+        "JSON",
+        "session gone",
+    );
     // Prunes b's session.
     let _b2 = new_phone(ctx, b.mac())?;
     same_raw(
@@ -1199,14 +1216,14 @@ fn session_gone(ctx: &mut Ctx, st: &State) -> Result<()> {
             ami,
             "DPMAMessageSend",
             None,
-            &[("PhoneName", b"p13phone2"), ("Method", b"e")],
+            &[("PhoneName", b"testphone2"), ("Method", b"e")],
         ),
         &resp("Failure", None),
     );
     let (ok, text) = logged(
         &log,
         pos,
-        &["Unable to send event to 'p13phone2' without session"],
+        &["Unable to send event to 'testphone2' without session"],
     );
     ctx.c
         .check("Send: session gone logged", ok, text.to_str_lossy());
@@ -1231,12 +1248,12 @@ fn expiry_checks(ctx: &mut Ctx, st: &State) -> Result<()> {
     let pos = log.mark();
     let mut f = forward(
         a,
-        "com.p13.hello",
+        "com.test.hello",
         Params::Json(json!({"expire": 1})),
-        "p13phone:1313",
+        "testphone:1313",
     )?;
     let t0 = Instant::now();
-    dpma_message(&mut ctx.c, ami, &f, "com.p13.hello", "JSON", "expiry");
+    dpma_message(&mut ctx.c, ami, &f, "com.test.hello", "JSON", "expiry");
     let q = queued(ctx);
     ctx.c.check(
         "expiry: queued with an expiry 2 s out",

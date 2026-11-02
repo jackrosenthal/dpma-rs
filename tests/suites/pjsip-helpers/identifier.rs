@@ -56,7 +56,7 @@ fn scenario(s: &mut Scenario) -> Result<()> {
     s.line_settings(&["2001", "2002", "2003", "2004", "2005"]);
 
     s.step("res_pjsip reload with changed endpoint and auth");
-    let conf = "pjsip_p11.conf";
+    let conf = "pjsip_helpers.conf";
     s.edit(
         conf,
         "callerid=\"Phone One\" <2001>",
@@ -84,7 +84,7 @@ fn scenario(s: &mut Scenario) -> Result<()> {
             "PUT",
             "endpoint/2005",
             &[
-                ("context", "p11-phones"),
+                ("context", "test-phones"),
                 ("allow", "!all,ulaw"),
                 ("aors", "2005"),
                 ("auth", "2005-auth"),
@@ -163,13 +163,13 @@ fn scenario(s: &mut Scenario) -> Result<()> {
         s.ast(&format!("dpmadev pjsip info {chan}"), false);
     }
     s.ast(
-        "channel originate Local/2002@p11-phones application Wait 2",
+        "channel originate Local/2002@test-phones application Wait 2",
         false,
     );
     wait_until(secs, Duration::from_millis(20), || {
-        s.channel("Local/2002@p11-phones-").is_some()
+        s.channel("Local/2002@test-phones-").is_some()
     });
-    if let Some(local) = s.channel("Local/2002@p11-phones-") {
+    if let Some(local) = s.channel("Local/2002@test-phones-") {
         s.ast(&format!("dpmadev pjsip info {local} {{}}"), false);
     }
     // The two INFOs on the PJSIP channel (the Local one has none).
@@ -186,7 +186,7 @@ fn scenario(s: &mut Scenario) -> Result<()> {
     }
     s.log_show();
     // (The config hook applies the context during the reload.)
-    s.set_message_context(Some("dpma-p11-test"))?;
+    s.set_message_context(Some("dpma-test"))?;
     s.ast(&format!("module reload {DPMA}"), false);
     for exten in ["proxy", "probe"] {
         s.message(exten, Some(DIGIUM_UA))?;
@@ -212,7 +212,7 @@ fn scenario(s: &mut Scenario) -> Result<()> {
         "PUT",
         "endpoint/2005",
         &[
-            ("context", "p11-phones"),
+            ("context", "test-phones"),
             ("allow", "!all,ulaw"),
             ("aors", "2005"),
         ],

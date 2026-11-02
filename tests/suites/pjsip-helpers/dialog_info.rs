@@ -108,7 +108,7 @@ fn scenario(s: &mut Scenario) -> Result<()> {
     fixtures::sleep(1.5);
     s.out("-- ringing (early), Carol Caller <3003>");
     s.ast(
-        "channel originate Local/3002@p11-phones application Wait 3",
+        "channel originate Local/3002@test-phones application Wait 3",
         false,
     );
     fixtures::sleep(1.5);
@@ -116,12 +116,12 @@ fn scenario(s: &mut Scenario) -> Result<()> {
     fixtures::sleep(1.5);
     s.out("-- answered (in use), then a restricted call rings (ringing while in use)");
     s.ast(
-        "channel originate Local/3002@p11-phones application Wait 8",
+        "channel originate Local/3002@test-phones application Wait 8",
         false,
     );
     fixtures::sleep(1.5);
     s.ast(
-        "channel originate Local/3012@p11-phones application Wait 3",
+        "channel originate Local/3012@test-phones application Wait 3",
         false,
     );
     fixtures::sleep(2.0);

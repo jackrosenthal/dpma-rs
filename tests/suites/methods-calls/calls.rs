@@ -29,7 +29,7 @@ fn keys(v: &Value) -> Vec<&str> {
 pub fn echo(t: &mut T) -> Result<()> {
     let m = "test.dpma.api.echo";
     let p = json!({"a": "b", "n": [1, 2.5, null, true], "o": {"x": "é\u{1}/"}});
-    let (rc, body) = t.call("p10phone", m, &p)?;
+    let (rc, body) = t.call("testphone", m, &p)?;
     let want = r#"{"response":{"method":"test.dpma.api.echo","result":{"a":"b","n":[1,2.5,null,true],"o":{"x":"é\u0001/"}}}}"#;
     let good = t.rc_ok(rc, 0) && body == want;
     t.c().check("echo", good, body);
@@ -58,14 +58,14 @@ fn todays_status_ok(t: &T, rc: Option<i64>, body: &str) -> bool {
                 "my_status",
                 "detailed_view",
             ]
-        && cq["account_id"] == "P10SALES"
+        && cq["account_id"] == "TESTSALES"
         && cq["overview"]
             == json!({"total_members": "1", "logged_in_count": "1", "members_on_call": "1", "callers_waiting": "1",
                       "total_calls": "0", "completed_calls_today": "0", "abandoned_calls": "0",
                       "redirected_calls": "0", "longest_queue_length": "0", "avg_entry_position": "0"})
         && cq["my_status"] == json!({"login_status": ""})
         && keys(member) == ["loggedin_status", "call_duration", "fullname"]
-        && member["fullname"] == "Alice P10"
+        && member["fullname"] == "Alice Test"
         && duration.is_some_and(|d| d >= 1)
         && keys(caller)
             == [
@@ -80,7 +80,7 @@ fn todays_status_ok(t: &T, rc: Option<i64>, body: &str) -> bool {
 
 pub fn queues(t: &mut T) -> Result<()> {
     let m = format!("{Q}getList");
-    let got = t.call("p10phone", &m, &json!({}))?;
+    let got = t.call("testphone", &m, &json!({}))?;
     t.expect(
         "getList: account_id required",
         got,
@@ -88,7 +88,7 @@ pub fn queues(t: &mut T) -> Result<()> {
         &err(&m, 10011, &not_found("account_id")),
     );
     let mark = t.log().mark();
-    let got = t.call("p10phone", &m, &json!({"account_id": "1001"}))?;
+    let got = t.call("testphone", &m, &json!({"account_id": "1001"}))?;
     t.expect(
         "getList: nobody logged in",
         got,
@@ -96,16 +96,16 @@ pub fn queues(t: &mut T) -> Result<()> {
         &ok(
             &m,
             json!({"callQueues": {"callQueue": [
-                {"name": "p10sales", "account_id": "p10sales", "total_members": "0", "members_logged_in": "0", "callers_waiting": "0", "loggedin_status": "logged_out"},
-                {"name": "p10support", "account_id": "p10support", "total_members": 0, "loggedin_status": "logged_out"},
-                {"name": "p10static", "account_id": "p10static", "loggedin_status": "manager"},
-                {"name": "p10ghost", "account_id": "p10ghost", "loggedin_status": "logged_out"}]}}),
+                {"name": "testsales", "account_id": "testsales", "total_members": "0", "members_logged_in": "0", "callers_waiting": "0", "loggedin_status": "logged_out"},
+                {"name": "testsupport", "account_id": "testsupport", "total_members": 0, "loggedin_status": "logged_out"},
+                {"name": "teststatic", "account_id": "teststatic", "loggedin_status": "manager"},
+                {"name": "testghost", "account_id": "testghost", "loggedin_status": "logged_out"}]}}),
         ),
     );
-    let logged = t.logged(mark, "Failed to find application 'p10-nosuchapp'");
+    let logged = t.logged(mark, "Failed to find application 'test-nosuchapp'");
     t.c()
         .check("getList: missing application logged", logged, "");
-    let got = t.call("p10phone2", &m, &json!({"account_id": "1002"}))?;
+    let got = t.call("testphone2", &m, &json!({"account_id": "1002"}))?;
     t.expect(
         "getList: static member",
         got,
@@ -113,19 +113,19 @@ pub fn queues(t: &mut T) -> Result<()> {
         &ok(
             &m,
             json!({"callQueues": {"callQueue": [
-                {"name": "p10static", "account_id": "p10static", "loggedin_status": "permanent", "total_members": "1", "members_logged_in": "1", "callers_waiting": "0"}]}}),
+                {"name": "teststatic", "account_id": "teststatic", "loggedin_status": "permanent", "total_members": "1", "members_logged_in": "1", "callers_waiting": "0"}]}}),
         ),
     );
 
     let m = format!("{Q}login");
-    let got = t.call("p10phone", &m, &json!({"call_queue_account_id": "all"}))?;
+    let got = t.call("testphone", &m, &json!({"call_queue_account_id": "all"}))?;
     t.expect(
         "login: account_id required",
         got,
         -1,
         &err(&m, 10011, &not_found("account_id")),
     );
-    let got = t.call("p10phone", &m, &json!({"account_id": "1001"}))?;
+    let got = t.call("testphone", &m, &json!({"account_id": "1001"}))?;
     t.expect(
         "login: call_queue_account_id required",
         got,
@@ -134,20 +134,20 @@ pub fn queues(t: &mut T) -> Result<()> {
     );
     let mark = t.log().mark();
     let got = t.call(
-        "p10phone",
+        "testphone",
         &m,
         &json!({"account_id": "1001", "call_queue_account_id": "ALL"}),
     )?;
     t.expect("login all", got, 0, &ok(&m, success()));
     let logged = t.logged(
         mark,
-        "Failed to add queue member Local/ghost@p10test to queue p10ghost",
+        "Failed to add queue member Local/ghost@calls to queue testghost",
     );
     t.c().check("login: failure only logged", logged, "");
-    let re = Regex::new(r"Alice P10 \(Local/agent@p10test\).*\(dynamic\)").expect("regex");
+    let re = Regex::new(r"Alice Test \(Local/agent@calls\).*\(dynamic\)").expect("regex");
     let support = |show: &str| {
-        show.split_once("p10support")
-            .is_some_and(|(_, rest)| rest.contains("Local/1001@p10test"))
+        show.split_once("testsupport")
+            .is_some_and(|(_, rest)| rest.contains("Local/1001@calls"))
     };
     // (The login extension runs on a channel of its own.)
     until(5.0, || support(&t.cli("queue show")));
@@ -160,9 +160,9 @@ pub fn queues(t: &mut T) -> Result<()> {
 
     let m = format!("{Q}pause");
     let got = t.call(
-        "p10phone",
+        "testphone",
         &m,
-        &json!({"account_id": "1001", "call_queue_account_id": "p10sales"}),
+        &json!({"account_id": "1001", "call_queue_account_id": "testsales"}),
     )?;
     t.expect(
         "pause: reason required",
@@ -171,21 +171,21 @@ pub fn queues(t: &mut T) -> Result<()> {
         &err(&m, 10011, &not_found("reason")),
     );
     let got = t.call(
-        "p10phone",
+        "testphone",
         &m,
-        &json!({"account_id": "1001", "reason": "Lunch", "call_queue_account_id": "p10sales"}),
+        &json!({"account_id": "1001", "reason": "Lunch", "call_queue_account_id": "testsales"}),
     )?;
-    t.expect("pause p10sales", got, 0, &ok(&m, success()));
-    let show = t.cli("queue show p10sales");
+    t.expect("pause testsales", got, 0, &ok(&m, success()));
+    let show = t.cli("queue show testsales");
     t.c()
         .contains("pause: reason sent", &show, &["paused:Lunch"]);
     let m = format!("{Q}getList");
-    let (rc, body) = t.call("p10phone", &m, &json!({"account_id": "1001"}))?;
+    let (rc, body) = t.call("testphone", &m, &json!({"account_id": "1001"}))?;
     let good = t.rc_ok(rc, 0)
-        && body.contains(r#"{"name":"p10sales","account_id":"p10sales","paused_time":"1","loggedin_status":"logged_in","total_members":"1","members_logged_in":"0","callers_waiting":"0"}"#);
+        && body.contains(r#"{"name":"testsales","account_id":"testsales","paused_time":"1","loggedin_status":"logged_in","total_members":"1","members_logged_in":"0","callers_waiting":"0"}"#);
     t.c().check("getList: paused member", good, &body);
     let m = format!("{Q}resume");
-    let got = t.call("p10phone", &m, &json!({"account_id": "1001"}))?;
+    let got = t.call("testphone", &m, &json!({"account_id": "1001"}))?;
     t.expect(
         "resume: call_queue_account_id required",
         got,
@@ -193,27 +193,27 @@ pub fn queues(t: &mut T) -> Result<()> {
         &err(&m, 10011, &not_found("call_queue_account_id")),
     );
     let got = t.call(
-        "p10phone",
+        "testphone",
         &m,
-        &json!({"account_id": "1001", "call_queue_account_id": "p10sales"}),
+        &json!({"account_id": "1001", "call_queue_account_id": "testsales"}),
     )?;
-    t.expect("resume p10sales", got, 0, &ok(&m, success()));
-    let show = t.cli("queue show p10sales");
+    t.expect("resume testsales", got, 0, &ok(&m, success()));
+    let show = t.cli("queue show testsales");
     t.c().lacks("resume: unpaused", &show, &["paused"]);
 
     // One caller connected to the agent, one waiting (for at least a
     // second each: the durations are whole seconds).
     let m = format!("{Q}getTodaysStatus");
-    let status = json!({"account_id": "1001", "call_queue_account_id": "P10SALES"});
-    t.cli("channel originate Local/caller@p10test application Wait 100");
+    let status = json!({"account_id": "1001", "call_queue_account_id": "TESTSALES"});
+    t.cli("channel originate Local/caller@calls application Wait 100");
     until(5.0, || {
-        t.call("p10phone", &m, &status)
+        t.call("testphone", &m, &status)
             .is_ok_and(|(_, b)| b.contains(r#""members_on_call":"1""#))
     });
-    t.cli("channel originate Local/caller2@p10test application Wait 100");
+    t.cli("channel originate Local/caller2@calls application Wait 100");
     let mut got = (None, String::new());
     until(10.0, || {
-        got = t.call("p10phone", &m, &status).unwrap_or_default();
+        got = t.call("testphone", &m, &status).unwrap_or_default();
         todays_status_ok(t, got.0, &got.1)
     });
     let (rc, body) = got;
@@ -224,9 +224,9 @@ pub fn queues(t: &mut T) -> Result<()> {
         &body,
     );
     let got = t.call(
-        "p10phone",
+        "testphone",
         &m,
-        &json!({"account_id": "1001", "call_queue_account_id": "p10support"}),
+        &json!({"account_id": "1001", "call_queue_account_id": "testsupport"}),
     )?;
     t.expect(
         "getTodaysStatus: overview permission",
@@ -235,7 +235,7 @@ pub fn queues(t: &mut T) -> Result<()> {
         &ok(
             &m,
             json!({"callQueue": {
-                "account_id": "p10support", "name": "p10support", "overview": {"total_members": "1", "logged_in_count": "1", "members_on_call": "0",
+                "account_id": "testsupport", "name": "testsupport", "overview": {"total_members": "1", "logged_in_count": "1", "members_on_call": "0",
                 "callers_waiting": "0", "total_calls": "0", "completed_calls_today": "0", "abandoned_calls": "0", "redirected_calls": "0",
                 "longest_queue_length": "0", "avg_entry_position": "0"}, "my_status": {"login_status": ""}}}),
         ),
@@ -244,18 +244,18 @@ pub fn queues(t: &mut T) -> Result<()> {
     // empty answer instead; see the request-handlers suite).
     let none = String::new();
     let got = t.call(
-        "p10phone",
+        "testphone",
         &m,
         &json!({"account_id": "1001", "call_queue_account_id": "nosuch"}),
     )?;
     t.expect("getTodaysStatus: no application, no answer", got, 0, &none);
     let got = t.call(
-        "p10phone",
+        "testphone",
         &m,
-        &json!({"account_id": "1001", "call_queue_account_id": "p10ghost"}),
+        &json!({"account_id": "1001", "call_queue_account_id": "testghost"}),
     )?;
     t.expect("getTodaysStatus: no queue, no answer", got, 0, &none);
-    let got = t.call("p10phone", &m, &json!({"account_id": "1001"}))?;
+    let got = t.call("testphone", &m, &json!({"account_id": "1001"}))?;
     t.expect(
         "getTodaysStatus: call_queue_account_id required",
         got,
@@ -263,7 +263,7 @@ pub fn queues(t: &mut T) -> Result<()> {
         &err(&m, 10011, &not_found("call_queue_account_id")),
     );
     let (_, body) = t.call(
-        "p10phone",
+        "testphone",
         &format!("{Q}getList"),
         &json!({"account_id": "1001"}),
     )?;
@@ -276,22 +276,22 @@ pub fn queues(t: &mut T) -> Result<()> {
     // Abandon the waiting caller, complete the call.
     let chans = t.cli("core show channels concise");
     for line in chans.lines() {
-        if line.starts_with("Local/caller2@p10test") && line.contains(";2!") {
+        if line.starts_with("Local/caller2@calls") && line.contains(";2!") {
             let chan = line.split('!').next().unwrap_or_default();
             t.cli(&format!("channel request hangup {chan}"));
         }
     }
-    let p10sales = json!({"account_id": "1001", "call_queue_account_id": "p10sales"});
+    let testsales = json!({"account_id": "1001", "call_queue_account_id": "testsales"});
     let abandoned = r#""abandoned_calls":"1""#;
     until(5.0, || {
-        t.call("p10phone", &m, &p10sales)
+        t.call("testphone", &m, &testsales)
             .is_ok_and(|(_, b)| b.contains(abandoned))
     });
     t.cli("channel request hangup all");
     let done = r#""total_calls":"2","completed_calls_today":"1","abandoned_calls":"1""#;
     let mut body = String::new();
     until(5.0, || {
-        body = t.call("p10phone", &m, &p10sales).unwrap_or_default().1;
+        body = t.call("testphone", &m, &testsales).unwrap_or_default().1;
         body.contains(done)
     });
     t.c()
@@ -299,37 +299,37 @@ pub fn queues(t: &mut T) -> Result<()> {
 
     let m = format!("{Q}logout");
     let got = t.call(
-        "p10phone2",
+        "testphone2",
         &m,
-        &json!({"account_id": "1002", "call_queue_account_id": "p10static"}),
+        &json!({"account_id": "1002", "call_queue_account_id": "teststatic"}),
     )?;
     t.expect("logout: static member stays", got, 0, &ok(&m, success()));
-    let show = t.cli("queue show p10static");
+    let show = t.cli("queue show teststatic");
     t.c()
         .contains("logout: static member still there", &show, &["Static Bob"]);
     let got = t.call(
-        "p10phone",
+        "testphone",
         &m,
         &json!({"account_id": "1001", "call_queue_account_id": "all"}),
     )?;
     t.expect("logout all", got, 0, &ok(&m, success()));
     // (The logout extension runs on a channel of its own.)
-    until(5.0, || !t.cli("queue show").contains("Local/1001@p10test"));
+    until(5.0, || !t.cli("queue show").contains("Local/1001@calls"));
     let show = t.cli("queue show");
     t.c().lacks(
         "logout: QueueRemove and logout_exten",
         &show,
-        &["Local/agent@p10test", "Local/1001@p10test"],
+        &["Local/agent@calls", "Local/1001@calls"],
     );
     let mark = t.log().mark();
     t.call(
-        "p10phone",
+        "testphone",
         &format!("{Q}pause"),
-        &json!({"account_id": "1001", "reason": "x", "call_queue_account_id": "p10sales"}),
+        &json!({"account_id": "1001", "reason": "x", "call_queue_account_id": "testsales"}),
     )?;
     let logged = t.logged(
         mark,
-        "Failed to pause queue member Local/agent@p10test on queue p10sales",
+        "Failed to pause queue member Local/agent@calls on queue testsales",
     );
     t.c().check("pause: failure only logged", logged, "");
     Ok(())
@@ -351,7 +351,7 @@ pub fn phonebook(t: &mut T) -> Result<()> {
             .filter(|(k, _)| *k != key)
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        let got = t.call("p10phone", m, &Value::Object(p))?;
+        let got = t.call("testphone", m, &Value::Object(p))?;
         t.expect(
             &format!("phonebook: {key} required"),
             got,
@@ -359,7 +359,7 @@ pub fn phonebook(t: &mut T) -> Result<()> {
             &err(m, 10011, &not_found(key)),
         );
     }
-    let got = t.call("p10phone", m, &with("extension", "1002"))?;
+    let got = t.call("testphone", m, &with("extension", "1002"))?;
     t.expect(
         "phonebook: entry exists",
         got,
@@ -370,19 +370,19 @@ pub fn phonebook(t: &mut T) -> Result<()> {
             "Phonebook entry already exists: contact_list_entry_exists ",
         ),
     );
-    let got = t.call("p10phone", m, &full)?;
+    let got = t.call("testphone", m, &full)?;
     t.expect("phonebook: add", got, 0, &ok(m, success()));
     let mut p = with("phonebook_id", "empty");
     p["extension"] = json!("1006");
     p["name"] = json!("Erin");
-    let got = t.call("p10phone", m, &p)?;
+    let got = t.call("testphone", m, &p)?;
     t.expect("phonebook: add to an empty list", got, 0, &ok(m, success()));
     let mut p = with("phonebook_id", "second");
     p["extension"] = json!("1007");
     p["name"] = json!("Frank");
-    let got = t.call("p10phone", m, &p)?;
+    let got = t.call("testphone", m, &p)?;
     t.expect("phonebook: second file", got, 0, &ok(m, success()));
-    let got = t.call("p10phone", m, &with("phonebook_id", "nosuch"))?;
+    let got = t.call("testphone", m, &with("phonebook_id", "nosuch"))?;
     t.expect(
         "phonebook: no such list",
         got,
@@ -390,7 +390,7 @@ pub fn phonebook(t: &mut T) -> Result<()> {
         &err(m, 51141, "Invalid phonebook_id: contact not found "),
     );
     let dir = files_dir(t.inst());
-    let doc = std::fs::read_to_string(dir.join("p10contacts.xml")).unwrap_or_default();
+    let doc = std::fs::read_to_string(dir.join("contacts.xml")).unwrap_or_default();
     t.c().contains(
         "phonebook: contact written",
         &doc,
@@ -399,11 +399,11 @@ pub fn phonebook(t: &mut T) -> Result<()> {
             r#"<numbers><number dial="1005" label="Extension" primary="1"/></numbers></contact></contacts>"#
         )],
     );
-    let second = dir.join("p10contacts2.xml");
+    let second = dir.join("contacts2.xml");
     std::fs::set_permissions(&second, std::fs::Permissions::from_mode(0o444))?;
     let mut p = with("phonebook_id", "second");
     p["extension"] = json!("1009");
-    let got = t.call("p10phone", m, &p);
+    let got = t.call("testphone", m, &p);
     std::fs::set_permissions(&second, std::fs::Permissions::from_mode(0o644))?;
     t.expect(
         "phonebook: unwritable file",
@@ -439,18 +439,18 @@ pub fn parking(t: &mut T) -> Result<()> {
     let m = "switchvox.users.parkingLots.getList";
     let lots = json!({"parking_lots": {"parking_lot": [
         {"account_id": "default", "parked_calls": {"parked_call": []}, "parking_lot_stop": "720", "timeout": "45", "parking_lot_start": "701"},
-        {"account_id": "p10lot", "parked_calls": {"parked_call": []}, "parking_lot_stop": "810", "timeout": "300", "parking_lot_start": "801"}]}});
-    let got = t.call("p10phone", m, &json!({}))?;
+        {"account_id": "testlot", "parked_calls": {"parked_call": []}, "parking_lot_stop": "810", "timeout": "300", "parking_lot_start": "801"}]}});
+    let got = t.call("testphone", m, &json!({}))?;
     t.expect("parkingLots.getList: empty lots", got, 0, &ok(m, lots));
-    t.cli("channel originate Local/parklot@p10test application Wait 100");
-    t.cli("channel originate Local/park@p10test application Wait 100");
-    // Parked: 801 for p10phone's lot, and 701 when its event arrives.
+    t.cli("channel originate Local/parklot@calls application Wait 100");
+    t.cli("channel originate Local/park@calls application Wait 100");
+    // Parked: 801 for testphone's lot, and 701 when its event arrives.
     until(5.0, || {
-        t.call("p10phone", m, &json!({}))
+        t.call("testphone", m, &json!({}))
             .is_ok_and(|(_, b)| b.contains(r#""lotnum":"801""#))
     });
     until(5.0, || phone.text().contains("digium.parkingLot.parked"));
-    let (rc, body) = t.call("p10phone", m, &json!({}))?;
+    let (rc, body) = t.call("testphone", m, &json!({}))?;
     let good = serde_json::from_str::<Value>(&body).is_ok_and(|doc| {
         let got = &doc["response"]["result"]["parking_lots"]["parking_lot"];
         let call0 = &got[1]["parked_calls"]["parked_call"][0];
@@ -469,14 +469,14 @@ pub fn parking(t: &mut T) -> Result<()> {
             && call0["lotnum"] == "801"
             && call0["current_call_id"]
                 .as_str()
-                .is_some_and(|s| s.starts_with("Local/parklot@p10test-"))
+                .is_some_and(|s| s.starts_with("Local/parklot@calls-"))
     });
     t.c().check(
         "parkingLots.getList: only the lots of the phone's parking application",
         good,
         &body,
     );
-    let (rc, body) = t.call("p10phone2", m, &json!({}))?;
+    let (rc, body) = t.call("testphone2", m, &json!({}))?;
     let good =
         t.rc_ok(rc, 0) && body.contains(r#""lotnum":"701""#) && body.contains(r#""lotnum":"801""#);
     t.c().check(
@@ -529,14 +529,14 @@ fn record(t: &mut T) -> Result<()> {
     let p = json!({"requested_account_id": "1001", "call_id": cid});
     let not_permitted =
         |what: &str| format!("Your account is not permitted to run this action: {what} ");
-    let got = t.call("p10phone", m, &json!({"call_id": cid}))?;
+    let got = t.call("testphone", m, &json!({"call_id": cid}))?;
     t.expect(
         "startRecording: requested_account_id required",
         got,
         -1,
         &err(m, 10011, &not_found("requested_account_id")),
     );
-    let got = t.call("p10phone", m, &json!({"requested_account_id": "1001"}))?;
+    let got = t.call("testphone", m, &json!({"requested_account_id": "1001"}))?;
     t.expect(
         "startRecording: call_id required",
         got,
@@ -544,7 +544,7 @@ fn record(t: &mut T) -> Result<()> {
         &err(m, 10011, &not_found("call_id")),
     );
     let got = t.call(
-        "p10phone",
+        "testphone",
         m,
         &json!({"requested_account_id": "1002", "call_id": cid}),
     )?;
@@ -555,7 +555,7 @@ fn record(t: &mut T) -> Result<()> {
         &err(m, 27168, &not_permitted("mailbox")),
     );
     let got = t.call(
-        "p10phone",
+        "testphone",
         m,
         &json!({"requested_account_id": "1001", "call_id": "nope"}),
     )?;
@@ -565,7 +565,7 @@ fn record(t: &mut T) -> Result<()> {
         -1,
         &err(m, 27168, &not_permitted("channel")),
     );
-    let got = t.call("p10phone", s, &p)?;
+    let got = t.call("testphone", s, &p)?;
     t.expect(
         "stopRecording: nothing recording",
         got,
@@ -575,7 +575,7 @@ fn record(t: &mut T) -> Result<()> {
     let mark = t.log().mark();
     // The official DPMA reads "Success" into an 8-byte buffer and always
     // reports an error; dpma-rs reports the success.
-    let got = t.call("p10phone", m, &p)?;
+    let got = t.call("testphone", m, &p)?;
     t.expect("startRecording", got, 0, &ok(m, success()));
     let chans = t.cli("core show channels concise");
     let chan = chans
@@ -605,7 +605,7 @@ fn record(t: &mut T) -> Result<()> {
             == 1,
         &plog,
     );
-    let got = t.call("p10phone", s, &p)?;
+    let got = t.call("testphone", s, &p)?;
     t.expect("stopRecording", got, 0, &ok(s, success()));
     until(5.0, || {
         phone
@@ -621,7 +621,7 @@ fn record(t: &mut T) -> Result<()> {
     let x = format!(
         "<parameters><requested_account_id>1001</requested_account_id><call_id>{cid}</call_id></parameters>"
     );
-    let got = t.call_xml("p10phone", m, &x)?;
+    let got = t.call_xml("testphone", m, &x)?;
     t.expect("startRecording (XML)", got, 0, &xml_ok(m));
     until(5.0, || phone.text().matches(started).count() == 2);
     let plog = phone.text();
@@ -632,9 +632,9 @@ fn record(t: &mut T) -> Result<()> {
             == 2,
         &plog,
     );
-    let got = t.call_xml("p10phone", s, &x)?;
+    let got = t.call_xml("testphone", s, &x)?;
     t.expect("stopRecording (XML)", got, 0, &xml_ok(s));
-    let got = t.call_xml("p10phone", s, &x)?;
+    let got = t.call_xml("testphone", s, &x)?;
     t.expect(
         "stopRecording (XML): nothing recording",
         got,
@@ -642,7 +642,7 @@ fn record(t: &mut T) -> Result<()> {
         &xml_err(s, 27168, "Your account is not permitted to run this action"),
     );
     let got = t.call_xml(
-        "p10phone",
+        "testphone",
         s,
         "<parameters><requested_account_id>1001</requested_account_id></parameters>",
     )?;
@@ -653,7 +653,7 @@ fn record(t: &mut T) -> Result<()> {
         &xml_err(s, 10011, "Parameters not found"),
     );
     let got = t.call_xml(
-        "p10phone",
+        "testphone",
         m,
         "<parameters><requested_account_id>1002</requested_account_id></parameters>",
     )?;

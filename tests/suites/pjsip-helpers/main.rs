@@ -98,36 +98,36 @@ use regex::Regex;
 pub const DIGIUM_UA: &str = "Digium D65 2_9_17";
 /// The module.
 pub const DPMA: &str = "res_dpma_rs.so";
-/// The ARI user of `ari_p11.conf`.
-pub const ARI_USER: (&str, &str) = ("p11", "p11test");
+/// The ARI user of `ari_helpers.conf`.
+pub const ARI_USER: (&str, &str) = ("test", "test");
 
 /// The configuration snippets: the configuration file that includes it,
 /// the snippet's file name, and its contents.
 const CONF: [(&str, &str, &str); 5] = [
     (
         "pjsip.conf",
-        "pjsip_p11.conf",
-        include_str!("../../data/pjsip-helpers/pjsip_p11.conf"),
+        "pjsip_helpers.conf",
+        include_str!("../../data/pjsip-helpers/pjsip_helpers.conf"),
     ),
     (
         "extensions.conf",
-        "extensions_p11.conf",
-        include_str!("../../data/pjsip-helpers/extensions_p11.conf"),
+        "extensions_helpers.conf",
+        include_str!("../../data/pjsip-helpers/extensions_helpers.conf"),
     ),
     (
         "res_digium_phone.conf",
-        "res_digium_phone_p11.conf",
-        include_str!("../../data/pjsip-helpers/res_digium_phone_p11.conf"),
+        "res_digium_phone_helpers.conf",
+        include_str!("../../data/pjsip-helpers/res_digium_phone_helpers.conf"),
     ),
     (
         "sorcery.conf",
-        "sorcery_p11.conf",
-        include_str!("../../data/pjsip-helpers/sorcery_p11.conf"),
+        "sorcery_helpers.conf",
+        include_str!("../../data/pjsip-helpers/sorcery_helpers.conf"),
     ),
     (
         "ari.conf",
-        "ari_p11.conf",
-        include_str!("../../data/pjsip-helpers/ari_p11.conf"),
+        "ari_helpers.conf",
+        include_str!("../../data/pjsip-helpers/ari_helpers.conf"),
     ),
 ];
 
@@ -170,7 +170,7 @@ static LOG_PREFIX: LazyLock<Regex> =
 static LOG_SOURCE: LazyLock<Regex> = LazyLock::new(|| re(r"(\w+\.(c|rs)):\d+ "));
 static LOG_KEEP: LazyLock<Regex> = LazyLock::new(|| {
     re(
-        r"res_pjsip_endpoint_identifier_dpma|res_pjsip_dialog_info_digium|Reconfiguring triggered|P11 probe",
+        r"res_pjsip_endpoint_identifier_dpma|res_pjsip_dialog_info_digium|Reconfiguring triggered|Test probe",
     )
 });
 static LINE_OBJECT: LazyLock<Regex> = LazyLock::new(|| re(r"^object 0xADDR name "));
@@ -471,7 +471,7 @@ impl Scenario {
         let f = ConfFile::new(&self.inst.conf("res_digium_phone.conf"));
         let mut data = f
             .read()?
-            .replace(&b"\npjsip_message_context=dpma-p11-test\n"[..], &b"\n"[..]);
+            .replace(&b"\npjsip_message_context=dpma-test\n"[..], &b"\n"[..]);
         if let Some(c) = context {
             data = data.replacen(
                 &b"[general]\n"[..],

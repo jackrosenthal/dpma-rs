@@ -13,24 +13,24 @@ use serde_json::{json, Value};
 
 use crate::common::*;
 
-/// The test `file_directory`: `<instance>/var/lib/asterisk/p12_files`.
+/// The test `file_directory`: `<instance>/var/lib/asterisk/test_files`.
 pub fn files_dir(ctx: &Ctx) -> PathBuf {
-    ctx.inst.var_lib().join("p12_files")
+    ctx.inst.var_lib().join("test_files")
 }
 
 /// The files the FileRequest and `config_file` checks read, by their
-/// path relative to the file directory (`p12-big.bin` is made by
+/// path relative to the file directory (`test-big.bin` is made by
 /// [`make_files`]).
 const FILES: [(&str, &[u8]); 6] = [
-    ("p12-small.txt", b"line one\nline two\n"),
+    ("test-small.txt", b"line one\nline two\n"),
     (
-        "p12c-config.xml",
-        b"<config>\n<!-- p12c's own configuration file -->\n</config>\n",
+        "phonec-config.xml",
+        b"<config>\n<!-- phonec's own configuration file -->\n</config>\n",
     ),
-    ("sub/p12-sub.txt", b"in a subdirectory\n"),
-    ("..p12-dots.txt", b"two dots\n"),
-    ("sub/..p12-dots.txt", b"two dots in sub\n"),
-    ("../p12-outside.txt", b"outside\n"),
+    ("sub/test-sub.txt", b"in a subdirectory\n"),
+    ("..test-dots.txt", b"two dots\n"),
+    ("sub/..test-dots.txt", b"two dots in sub\n"),
+    ("../test-outside.txt", b"outside\n"),
 ];
 
 /// Writes the test files into the file directory `dir`.
@@ -38,7 +38,7 @@ fn make_files(dir: &Path) -> Result<()> {
     std::fs::create_dir_all(dir.join("sub"))?;
     let mut big: Vec<u8> = (0..=255u8).cycle().take(256 * 20).collect();
     big.extend_from_slice(b"\0end");
-    std::fs::write(dir.join("p12-big.bin"), big)?;
+    std::fs::write(dir.join("test-big.bin"), big)?;
     for (name, data) in FILES {
         std::fs::write(dir.join(name), data)?;
     }
@@ -76,10 +76,10 @@ fn expected_token_error(flags: u32, mac_ok: bool, pin: &str, cfgpass: &str) -> O
     None
 }
 
-/// The token p12a gets from a phone with MAC `mac`.
-fn p12a_token(mac: &str) -> BString {
+/// The token phonea gets from a phone with MAC `mac`.
+fn phonea_token(mac: &str) -> BString {
     format!(
-        "p12a/{mac}/{}/{}",
+        "phonea/{mac}/{}/{}",
         token_hash(b""),
         token_hash(GLOBALPIN.as_bytes())
     )
@@ -109,7 +109,7 @@ pub fn token(ctx: &mut Ctx) -> Result<()> {
                 );
                 let ex = p
                     .get_token()
-                    .user("p12a")
+                    .user("phonea")
                     .pin(pin)
                     .config_password(cfgpass)
                     .send()?;
@@ -121,7 +121,7 @@ pub fn token(ctx: &mut Ctx) -> Result<()> {
                 let Some(r) = expect(ctx, &name, &ex, "TokenResponse", err, body) else {
                     continue;
                 };
-                let want = err.is_none().then(|| p12a_token(p.mac()));
+                let want = err.is_none().then(|| phonea_token(p.mac()));
                 ctx.c.same(
                     format!("{name} (token)"),
                     r.field("Config-Token").cloned(),
@@ -141,7 +141,7 @@ pub fn token(ctx: &mut Ctx) -> Result<()> {
         ctx.c
             .same("new session is not configured", got.as_deref(), Some("No"));
         // By the primary line's name and extension, and by MAC alone.
-        for user in [Some("p12a-line"), Some("5201"), Some("P12A-LINE"), None] {
+        for user in [Some("phonea-line"), Some("5201"), Some("PHONEA-LINE"), None] {
             let mut b = p.get_token().config_password(GLOBALPIN);
             if let Some(u) = user {
                 b = b.user(u);
@@ -152,7 +152,7 @@ pub fn token(ctx: &mut Ctx) -> Result<()> {
                 ctx.c.same(
                     format!("{name} (token)"),
                     r.field("Config-Token").cloned(),
-                    Some(p12a_token(MAC_A)),
+                    Some(phonea_token(MAC_A)),
                 );
             }
         }
@@ -162,7 +162,7 @@ pub fn token(ctx: &mut Ctx) -> Result<()> {
             got.as_deref(),
             Some("Yes"),
         );
-        let info = cli(ctx, "dpmadev token info p12a")?;
+        let info = cli(ctx, "dpmadev token info phonea")?;
         let db = capture(r"AstDB: (.*)", &info).map(|s| s.trim().to_string());
         ctx.c.same(
             "token records the last info (AstDB)",
@@ -247,7 +247,7 @@ pub fn config(ctx: &mut Ctx) -> Result<()> {
             Some(-192),
             Body::Default,
         );
-        let ex = p.config().config_token("p12a/000fd3999999/1/2").send()?;
+        let ex = p.config().config_token("phonea/000fd3999999/1/2").send()?;
         expect(
             ctx,
             "config with a bad token",
@@ -303,12 +303,12 @@ pub fn config(ctx: &mut Ctx) -> Result<()> {
 
         let ex = p
             .get_token()
-            .user("p12a")
+            .user("phonea")
             .config_password(GLOBALPIN)
             .send()?;
         expect(ctx, "token", &ex, "TokenResponse", None, Body::Default);
         cli(ctx, &format!("dpmadev session mark {sid} unconfigured"))?;
-        let want = cli(ctx, "dpmadev config p12a D65")?;
+        let want = cli(ctx, "dpmadev config phonea D65")?;
         let ex = p.config().send()?;
         if let Some(r) = expect(
             ctx,
@@ -319,7 +319,7 @@ pub fn config(ctx: &mut Ctx) -> Result<()> {
             Body::Matches(r"\A<config>"),
         ) {
             ctx.c.same_bytes(
-                "config document = get_config(p12a, D65)",
+                "config document = get_config(phonea, D65)",
                 r.payload.trim_end_with(|c| c == '\n'),
                 want.trim_end_with(|c| c == '\n'),
             );
@@ -333,7 +333,7 @@ pub fn config(ctx: &mut Ctx) -> Result<()> {
         // The prefix <phone><sep><last MAC> is all that is compared.
         let ex = p
             .config()
-            .config_token(format!("p12a-{MAC_A}-anything"))
+            .config_token(format!("phonea-{MAC_A}-anything"))
             .send()?;
         expect(
             ctx,
@@ -363,9 +363,20 @@ pub fn config(ctx: &mut Ctx) -> Result<()> {
 
     // A phone with config_file: the file from file_directory instead.
     let p = phone(ctx, "000fd3001203")?;
-    let ex = p.get_token().user("p12c").config_password("8888").send()?;
-    expect(ctx, "token p12c", &ex, "TokenResponse", None, Body::Default);
-    let want = read(&files.join("p12c-config.xml"))?;
+    let ex = p
+        .get_token()
+        .user("phonec")
+        .config_password("8888")
+        .send()?;
+    expect(
+        ctx,
+        "token phonec",
+        &ex,
+        "TokenResponse",
+        None,
+        Body::Default,
+    );
+    let want = read(&files.join("phonec-config.xml"))?;
     let ex = p.config().send()?;
     expect(
         ctx,
@@ -444,8 +455,8 @@ pub fn userlist(ctx: &mut Ctx) -> Result<()> {
                 continue;
             }
             let want_names: Option<&[&str]> = match cfgpass {
-                "7777" => Some(&["P12 Phone A", "p12b"]),
-                "8888" => Some(&["p12c"]),
+                "7777" => Some(&["Test Phone A", "phoneb"]),
+                "8888" => Some(&["phonec"]),
                 _ => None,
             };
             if let Some(want_names) = want_names {
@@ -532,7 +543,7 @@ pub fn file(ctx: &mut Ctx) -> Result<()> {
         None,
         Body::Is(b"<contacts group_name=\"null\" editable=\"0\" />\n"),
     );
-    for fname in ["p12-small.txt", "p12-big.bin"] {
+    for fname in ["test-small.txt", "test-big.bin"] {
         let data = read(&files.join(fname))?;
         let ex = p.file(fname).send()?;
         let r = expect(
@@ -543,7 +554,7 @@ pub fn file(ctx: &mut Ctx) -> Result<()> {
             None,
             Body::Is(&data),
         );
-        if let (Some(r), "p12-big.bin") = (r, fname) {
+        if let (Some(r), "test-big.bin") = (r, fname) {
             ctx.c.check(
                 format!("file://{fname} came in several chunks"),
                 r.parts.len() > 1,
@@ -551,10 +562,10 @@ pub fn file(ctx: &mut Ctx) -> Result<()> {
             );
         }
     }
-    let small = read(&files.join("p12-small.txt"))?;
+    let small = read(&files.join("test-small.txt"))?;
     let ex = p
         .request("FileRequest")
-        .body("some text\r\nfile://p12-small.txt\r\nmore text")
+        .body("some text\r\nfile://test-small.txt\r\nmore text")
         .send()?;
     expect(
         ctx,
@@ -611,12 +622,12 @@ pub fn file(ctx: &mut Ctx) -> Result<()> {
     // Subdirectories of file_directory are served; names with a ".."
     // component are refused like a missing file, although the files exist.
     // Absolute names are looked up inside file_directory, as the official
-    // DPMA does ("<dir>//p12-small.txt").
+    // DPMA does ("<dir>//test-small.txt").
     for fname in [
-        "sub/p12-sub.txt",
-        "./sub/./p12-sub.txt",
-        "..p12-dots.txt",
-        "sub/..p12-dots.txt",
+        "sub/test-sub.txt",
+        "./sub/./test-sub.txt",
+        "..test-dots.txt",
+        "sub/..test-dots.txt",
     ] {
         let data = read(&files.join(fname))?;
         let ex = p.file(fname).send()?;
@@ -629,7 +640,7 @@ pub fn file(ctx: &mut Ctx) -> Result<()> {
             Body::Is(&data),
         );
     }
-    for fname in ["/p12-small.txt", "//p12-small.txt"] {
+    for fname in ["/test-small.txt", "//test-small.txt"] {
         let ex = p.file(fname).send()?;
         expect(
             ctx,
@@ -643,7 +654,7 @@ pub fn file(ctx: &mut Ctx) -> Result<()> {
     let outside = files
         .parent()
         .unwrap_or(&files)
-        .join("p12-outside.txt")
+        .join("test-outside.txt")
         .to_string_lossy()
         .into_owned();
     for fname in [outside.as_str(), "//etc/hostname"] {
@@ -665,12 +676,12 @@ pub fn file(ctx: &mut Ctx) -> Result<()> {
         );
     }
     for fname in [
-        "../p12-outside.txt",
-        "sub/../../p12-outside.txt",
-        "sub/../p12-small.txt",
+        "../test-outside.txt",
+        "sub/../../test-outside.txt",
+        "sub/../test-small.txt",
         "..",
         "sub/..",
-        "/../p12-outside.txt",
+        "/../test-outside.txt",
     ] {
         let mark = log_mark(ctx);
         let ex = p.file(fname).send()?;
@@ -712,9 +723,9 @@ fn method_request(method: &str, params: Value) -> String {
 
 pub fn asterisk(ctx: &mut Ctx) -> Result<()> {
     set_auth(ctx, "mac_globalpin", "disabled")?;
-    cli(ctx, "dpmadev method register json p12.Who.Json")?;
+    cli(ctx, "dpmadev method register json test.Who.Json")?;
     let res = asterisk_checks(ctx);
-    cli(ctx, "dpmadev method unregister json p12.Who.Json")?;
+    cli(ctx, "dpmadev method unregister json test.Who.Json")?;
     res
 }
 
@@ -740,7 +751,7 @@ fn asterisk_checks(ctx: &mut Ctx) -> Result<()> {
         None,
         Body::Is(&want),
     );
-    let ex = call(&p, "p12b:", &echo, "HTTPRequest")?;
+    let ex = call(&p, "phoneb:", &echo, "HTTPRequest")?;
     expect(
         ctx,
         "echo as HTTPRequest, a phone without a pin and an empty secret",
@@ -780,52 +791,58 @@ fn asterisk_checks(ctx: &mut Ctx) -> Result<()> {
         );
         anyhow::Ok(())
     };
-    let m = "p12.Who.Json";
-    who(ctx, "p12a:4321", "p12a", "phone name and pin", m)?;
+    let m = "test.Who.Json";
+    who(ctx, "phonea:4321", "phonea", "phone name and pin", m)?;
     who(
         ctx,
-        "  p12a :\t4321  ",
-        "p12a",
+        "  phonea :\t4321  ",
+        "phonea",
         "blanks around the credentials",
         m,
     )?;
     who(
         ctx,
-        "p12a-line:lsecret",
-        "p12a",
+        "phonea-line:lsecret",
+        "phonea",
         "line name and secret authenticate the line's phone",
         m,
     )?;
-    who(ctx, "p12b", "p12b", "no colon: a phone without a pin", m)?;
     who(
         ctx,
-        "p12b-line",
-        "p12b",
+        "phoneb",
+        "phoneb",
+        "no colon: a phone without a pin",
+        m,
+    )?;
+    who(
+        ctx,
+        "phoneb-line",
+        "phoneb",
         "no colon: a line without a secret",
         m,
     )?;
     who(
         ctx,
-        "p12a:4321",
-        "p12a",
+        "phonea:4321",
+        "phonea",
         "method name as requested",
-        "P12.WHO.JSON",
+        "TEST.WHO.JSON",
     )?;
     who(
         ctx,
-        "P12A:4321",
-        "p12a",
+        "PHONEA:4321",
+        "phonea",
         "phone names match case insensitively",
         m,
     )?;
 
     for auth in [
-        "p12a:1234",
-        "p12a",
-        "p12a-line:wrong",
+        "phonea:1234",
+        "phonea",
+        "phonea-line:wrong",
         "nosuch:1",
         ":4321",
-        "p12a:4321x",
+        "phonea:4321x",
     ] {
         let mark = log_mark(ctx);
         let ex = call(&p, auth, &echo, "AsteriskRequest")?;
@@ -985,25 +1002,25 @@ fn asterisk_checks(ctx: &mut Ctx) -> Result<()> {
 
 pub fn xml(ctx: &mut Ctx) -> Result<()> {
     set_auth(ctx, "mac_globalpin", "disabled")?;
-    cli(ctx, "dpmadev method register xml p12.Who.Xml")?;
+    cli(ctx, "dpmadev method register xml test.Who.Xml")?;
     let res = xml_checks(ctx);
-    cli(ctx, "dpmadev method unregister xml p12.Who.Xml")?;
+    cli(ctx, "dpmadev method unregister xml test.Who.Xml")?;
     res
 }
 
 fn xml_checks(ctx: &mut Ctx) -> Result<()> {
     let p = phone(ctx, MAC_A)?;
     let params = r#"<parameters><a x="1">t &amp; u</a><b/></parameters>"#;
-    let doc = format!(r#"<request method="P12.who.xml">{params}</request>"#);
+    let doc = format!(r#"<request method="Test.who.xml">{params}</request>"#);
     cli(ctx, "core set debug 3 res_dpma_rs")?;
     let mark = log_mark(ctx);
     let want = http(
         format!(
-            r#"<response method="P12.who.xml"><result phone="p12a" registry="xml">{params}</result></response>"#
+            r#"<response method="Test.who.xml"><result phone="phonea" registry="xml">{params}</result></response>"#
         )
         .as_bytes(),
     );
-    let ex = call(&p, "p12a:4321", &doc, "AsteriskRequest")?;
+    let ex = call(&p, "phonea:4321", &doc, "AsteriskRequest")?;
     expect(
         ctx,
         "XML method gets phone, method, and <parameters>",
@@ -1016,15 +1033,15 @@ fn xml_checks(ctx: &mut Ctx) -> Result<()> {
         ctx,
         "XML debug log",
         mark,
-        "Asterisk request method 'P12.who.xml' is using XML body\n",
+        "Asterisk request method 'Test.who.xml' is using XML body\n",
     );
     cli(ctx, "core set debug 0 res_dpma_rs")?;
     let cases = [
-        (r#"<request method="p12.who.xml"/>"#, "p12.who.xml", 10001),
+        (r#"<request method="test.who.xml"/>"#, "test.who.xml", 10001),
         (r#"<request method=""><parameters/></request>"#, "NA", 10003),
         (
-            r#"<request method="p12.who.xml"><params/></request>"#,
-            "p12.who.xml",
+            r#"<request method="test.who.xml"><params/></request>"#,
+            "test.who.xml",
             10011,
         ),
         (
@@ -1032,10 +1049,14 @@ fn xml_checks(ctx: &mut Ctx) -> Result<()> {
             "no.such.method",
             10005,
         ),
-        (r#"<request method="p12.who.xml"><parameters>"#, "NA", 10002),
+        (
+            r#"<request method="test.who.xml"><parameters>"#,
+            "NA",
+            10002,
+        ),
     ];
     for (d, method, code) in cases {
-        let ex = call(&p, "p12a:4321", d, "AsteriskRequest")?;
+        let ex = call(&p, "phonea:4321", d, "AsteriskRequest")?;
         expect(
             ctx,
             &format!("XML {d}"),
@@ -1046,7 +1067,7 @@ fn xml_checks(ctx: &mut Ctx) -> Result<()> {
         );
     }
     // Text before the request element is ignored.
-    let ex = call(&p, "p12a:4321", &format!("junk {doc}"), "AsteriskRequest")?;
+    let ex = call(&p, "phonea:4321", &format!("junk {doc}"), "AsteriskRequest")?;
     expect(
         ctx,
         "XML after other text",
@@ -1058,7 +1079,7 @@ fn xml_checks(ctx: &mut Ctx) -> Result<()> {
     // A built-in XML method: startRecording without parameters.
     let m = "switchvox.users.currentCalls.startRecording";
     let d = format!(r#"<request method="{m}"><parameters/></request>"#);
-    let ex = call(&p, "p12a:4321", &d, "AsteriskRequest")?;
+    let ex = call(&p, "phonea:4321", &d, "AsteriskRequest")?;
     expect(
         ctx,
         "built-in XML method",
@@ -1069,7 +1090,7 @@ fn xml_checks(ctx: &mut Ctx) -> Result<()> {
     );
     // JSON-only methods are not XML methods.
     let d = r#"<request method="test.dpma.api.echo"><parameters/></request>"#;
-    let ex = call(&p, "p12a:4321", d, "AsteriskRequest")?;
+    let ex = call(&p, "phonea:4321", d, "AsteriskRequest")?;
     expect(
         ctx,
         "JSON-only method requested as XML",
@@ -1087,7 +1108,7 @@ fn xml_checks(ctx: &mut Ctx) -> Result<()> {
 pub fn ami(ctx: &mut Ctx) -> Result<()> {
     set_auth(ctx, "mac_globalpin", "disabled")?;
     let res = ami_checks(ctx);
-    cli(ctx, "dpmadev method unregister ami p12.ami.method")?;
+    cli(ctx, "dpmadev method unregister ami test.ami.method")?;
     res
 }
 
@@ -1096,13 +1117,13 @@ pub fn ami(ctx: &mut Ctx) -> Result<()> {
 fn ami_checks(ctx: &mut Ctx) -> Result<()> {
     let ok = ctx
         .ami()?
-        .action("DPMAMessageRegister", [("Method", "p12.ami.method")])
+        .action("DPMAMessageRegister", [("Method", "test.ami.method")])
         .success();
     ctx.c.require("DPMAMessageRegister", ok, "")?;
     let p = phone(ctx, MAC_A)?;
     ctx.ami()?.drain_events();
     let json_doc = method_request(
-        "p12.AMI.method",
+        "test.AMI.method",
         json!({"a": [1, 2.5, "x"], "b": {"c": null}}),
     );
     for (fmt, doc, params) in [
@@ -1113,11 +1134,11 @@ fn ami_checks(ctx: &mut Ctx) -> Result<()> {
         ),
         (
             "XML",
-            r#"<request method="p12.AMI.method"><parameters><a>one</a> <b>two</b></parameters></request>"#,
+            r#"<request method="test.AMI.method"><parameters><a>one</a> <b>two</b></parameters></request>"#,
             "one two",
         ),
     ] {
-        let mut ex = p.asterisk(doc).auth("p12a:4321").no_wait().send()?;
+        let mut ex = p.asterisk(doc).auth("phonea:4321").no_wait().send()?;
         let ev = ctx
             .ami()?
             .wait_event(Some("DPMAMessage"), &[], Duration::from_secs(5));
@@ -1125,7 +1146,7 @@ fn ami_checks(ctx: &mut Ctx) -> Result<()> {
         ctx.c.same(
             format!("{fmt}: Method as requested"),
             f("Method").as_deref(),
-            Some("p12.AMI.method"),
+            Some("test.AMI.method"),
         );
         ctx.c.same(
             format!("{fmt}: Parameters"),
@@ -1147,8 +1168,8 @@ fn ami_checks(ctx: &mut Ctx) -> Result<()> {
     // Parameters that are not an object or array: queued without an event
     // (the handler raises the event before it queues the request).
     let mut ex = p
-        .asterisk(method_request("p12.ami.method", json!("scalar")))
-        .auth("p12a:4321")
+        .asterisk(method_request("test.ami.method", json!("scalar")))
+        .auth("phonea:4321")
         .no_wait()
         .send()?;
     let rid = format!("{}-{MAC_A}", ex.id);

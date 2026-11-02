@@ -48,40 +48,40 @@ use serde_json::{json, Value};
 const SNIPPETS: [(&str, &str, &[u8]); 5] = [
     (
         "res_digium_phone.conf",
-        "res_digium_phone_p10.conf",
-        include_bytes!("../../data/methods-calls/res_digium_phone_p10.conf"),
+        "res_digium_phone_calls.conf",
+        include_bytes!("../../data/methods-calls/res_digium_phone_calls.conf"),
     ),
     (
         "queues.conf",
-        "queues_p10.conf",
-        include_bytes!("../../data/methods-calls/queues_p10.conf"),
+        "queues_calls.conf",
+        include_bytes!("../../data/methods-calls/queues_calls.conf"),
     ),
     (
         "res_parking.conf",
-        "res_parking_p10.conf",
-        include_bytes!("../../data/methods-calls/res_parking_p10.conf"),
+        "res_parking_calls.conf",
+        include_bytes!("../../data/methods-calls/res_parking_calls.conf"),
     ),
     (
         "extensions.conf",
-        "extensions_p10.conf",
-        include_bytes!("../../data/methods-calls/extensions_p10.conf"),
+        "extensions_calls.conf",
+        include_bytes!("../../data/methods-calls/extensions_calls.conf"),
     ),
     (
         "voicemail.conf",
-        "voicemail_p10.conf",
-        include_bytes!("../../data/methods-calls/voicemail_p10.conf"),
+        "voicemail_calls.conf",
+        include_bytes!("../../data/methods-calls/voicemail_calls.conf"),
     ),
 ];
 
 /// The contacts files (in the file directory).
 const CONTACTS: [(&str, &[u8]); 2] = [
     (
-        "p10contacts.xml",
-        include_bytes!("../../data/methods-calls/p10contacts.xml"),
+        "contacts.xml",
+        include_bytes!("../../data/methods-calls/contacts.xml"),
     ),
     (
-        "p10contacts2.xml",
-        include_bytes!("../../data/methods-calls/p10contacts2.xml"),
+        "contacts2.xml",
+        include_bytes!("../../data/methods-calls/contacts2.xml"),
     ),
 ];
 
@@ -105,7 +105,7 @@ fn install_contacts(inst: &Instance) -> Result<()> {
 }
 
 /// AOR 1001 keeps one contact and endpoint 1001's mailbox is
-/// `1001@p10vm`.
+/// `1001@testvm`.
 fn edit_pjsip(conf: &ConfFile) -> Result<()> {
     let text = conf.read()?;
     let text = text.to_str_lossy();
@@ -127,7 +127,7 @@ fn edit_pjsip(conf: &ConfFile) -> Result<()> {
                 line = "max_contacts=1\nremove_existing=yes".into();
             }
             if name == "1001" && mbox_re.is_match(&line) {
-                line = "mailboxes=1001@p10vm".into();
+                line = "mailboxes=1001@testvm".into();
             }
         }
         out.push(line);
@@ -195,7 +195,7 @@ impl<'a> T<'a> {
             return Ok(());
         }
         if !self
-            .cli("dpmadev method call p10phone test.dpma.api.echo {}")
+            .cli("dpmadev method call testphone test.dpma.api.echo {}")
             .contains("Return code")
         {
             bail!("dpmadev hooks not available (devtest build installed and Asterisk running?)");
@@ -273,8 +273,8 @@ impl<'a> T<'a> {
             bail!("channels still up after hangup all");
         }
         for (q, iface) in [
-            ("p10sales", "Local/agent@p10test"),
-            ("p10support", "Local/1001@p10test"),
+            ("testsales", "Local/agent@calls"),
+            ("testsupport", "Local/1001@calls"),
         ] {
             self.cli(&format!("queue remove member {iface} from {q}"));
         }

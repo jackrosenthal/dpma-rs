@@ -141,20 +141,20 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
             ("mdns_address", b"10.1.2.3"),
             ("mdns_port", b"5070"),
             ("mdns_transport", b"tcp"),
-            ("service_name", b"P14 Test Server"),
+            ("service_name", b"Test Server"),
         ],
     )?;
-    let found = wait_browse(has("P14 Test Server"), 8.0);
+    let found = wait_browse(has("Test Server"), 8.0);
     let c = &mut ctx.c;
     c.same(
         "mDNS: one instance",
         names(&found),
-        strings(&["P14 Test Server"]),
+        strings(&["Test Server"]),
     );
-    c.same("mDNS: port", port(&found, "P14 Test Server"), Some(5070));
+    c.same("mDNS: port", port(&found, "Test Server"), Some(5070));
     c.same(
         "mDNS: TXT records",
-        txt(&found, "P14 Test Server"),
+        txt(&found, "Test Server"),
         Some(strings(&[
             "serviceType=asterisk",
             "sipUrl=sip:proxy@10.1.2.3:5070;transport=tcp",
@@ -162,17 +162,17 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
     );
     c.same(
         "mDNS: SRV target",
-        found.get("P14 Test Server").and_then(|i| i.target.clone()),
+        found.get("Test Server").and_then(|i| i.target.clone()),
         Some(host_name()),
     );
     c.same(
         "mDNS: target addresses (A, AAAA)",
-        found.get("P14 Test Server").map(|i| i.addresses.clone()),
+        found.get("Test Server").map(|i| i.addresses.clone()),
         Some(strings(&["127.0.0.1", "::1"])),
     );
     c.same(
         "mDNS: announced (unsolicited)",
-        heard(&lst, mark, false, &["P14 Test Server"], 3.0),
+        heard(&lst, mark, false, &["Test Server"], 3.0),
         true,
     );
     let types = mdns::query(
@@ -207,34 +207,34 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         orig,
         &[
             ("service_discovery_enabled", b"yes"),
-            ("service_name", b"P14 Renamed"),
+            ("service_name", b"Test Renamed"),
         ],
     )?;
-    let found = wait_browse(has("P14 Renamed"), 8.0);
+    let found = wait_browse(has("Test Renamed"), 8.0);
     let c = &mut ctx.c;
     c.same(
         "mDNS reload: only the new instance",
         names(&found),
-        strings(&["P14 Renamed"]),
+        strings(&["Test Renamed"]),
     );
     c.same(
         "mDNS reload: default port",
-        port(&found, "P14 Renamed"),
+        port(&found, "Test Renamed"),
         Some(5060),
     );
     c.same(
         "mDNS reload: TXT without sipUrl",
-        txt(&found, "P14 Renamed"),
+        txt(&found, "Test Renamed"),
         Some(strings(&["serviceType=asterisk"])),
     );
     c.same(
         "mDNS reload: goodbye for the old name",
-        heard(&lst, mark, true, &["P14 Test Server"], 3.0),
+        heard(&lst, mark, true, &["Test Server"], 3.0),
         true,
     );
     c.same(
         "mDNS reload: new name announced",
-        heard(&lst, mark, false, &["P14 Renamed"], 3.0),
+        heard(&lst, mark, false, &["Test Renamed"], 3.0),
         true,
     );
 
@@ -245,12 +245,12 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
     let c = &mut ctx.c;
     c.same(
         "mDNS unchanged reload: goodbye",
-        heard(&lst, mark, true, &["P14 Renamed"], 3.0),
+        heard(&lst, mark, true, &["Test Renamed"], 3.0),
         true,
     );
     c.same(
         "mDNS unchanged reload: announced again",
-        heard(&lst, mark, false, &["P14 Renamed"], 3.0),
+        heard(&lst, mark, false, &["Test Renamed"], 3.0),
         true,
     );
 
@@ -261,20 +261,20 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         orig,
         &[
             ("service_discovery_enabled", b"yes"),
-            ("service_name", b"P14 Port"),
+            ("service_name", b"Test Port"),
             ("registration_address", b"10.7.7.7"),
             ("mdns_port", b"70000"),
         ],
     )?;
-    let found = wait_browse(has("P14 Port"), 8.0);
+    let found = wait_browse(has("Test Port"), 8.0);
     ctx.c.same(
         "mDNS: port 70000 & 0xffff",
-        port(&found, "P14 Port"),
+        port(&found, "Test Port"),
         Some((70000 & 0xffff) as u16),
     );
     ctx.c.same(
         "mDNS: registration_address as mdns_address",
-        txt(&found, "P14 Port"),
+        txt(&found, "Test Port"),
         Some(strings(&[
             "serviceType=asterisk",
             "sipUrl=sip:proxy@10.7.7.7:70000",
@@ -285,19 +285,19 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         orig,
         &[
             ("service_discovery_enabled", b"yes"),
-            ("service_name", b"P14 Long"),
+            ("service_name", b"Test Long"),
             ("mdns_address", long_addr.as_bytes()),
             ("mdns_transport", b"udp"),
         ],
     )?;
-    let found = wait_browse(has("P14 Long"), 8.0);
+    let found = wait_browse(has("Test Long"), 8.0);
     let want: String = format!("sipUrl=sip:proxy@{long_addr}:5060;transport=udp")
         .chars()
         .take(255)
         .collect();
     ctx.c.same(
         "mDNS: sipUrl cut to 255 bytes",
-        txt(&found, "P14 Long").unwrap_or_default(),
+        txt(&found, "Test Long").unwrap_or_default(),
         vec!["serviceType=asterisk".to_string(), want],
     );
 
@@ -315,7 +315,7 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
             ("service_name", n64.as_bytes()),
         ],
     )?;
-    heard(&lst, mark, true, &["P14 Long"], 3.0);
+    heard(&lst, mark, true, &["Test Long"], 3.0);
     ctx.c.same(
         "mDNS: 64-byte name not announced",
         browse(0.7),
@@ -344,7 +344,7 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         orig,
         &[
             ("service_discovery_enabled", b"yes"),
-            ("service_name", b"P14 Caf\xe9"),
+            ("service_name", b"Test Caf\xe9"),
         ],
     )?;
     heard(&lst, lmark, true, &[&n63], 3.0);
@@ -353,7 +353,7 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         browse(0.7),
         Found::new(),
     );
-    let re = Regex::new(r"(?-u)ERROR\[[^\n]*Service name 'P14 Caf\xE9' is not valid UTF-8")
+    let re = Regex::new(r"(?-u)ERROR\[[^\n]*Service name 'Test Caf\xE9' is not valid UTF-8")
         .expect("valid");
     let text = log.since(mark);
     ctx.c.check(
@@ -366,14 +366,14 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         orig,
         &[
             ("service_discovery_enabled", b"yes"),
-            ("service_name", b"P14 dotted.name"),
+            ("service_name", b"Test dotted.name"),
         ],
     )?;
-    let found = wait_browse(has("P14 dotted.name"), 8.0);
+    let found = wait_browse(has("Test dotted.name"), 8.0);
     ctx.c.same(
         "mDNS: name with a dot",
         names(&found),
-        strings(&["P14 dotted.name"]),
+        strings(&["Test dotted.name"]),
     );
 
     // Disabled: goodbye, no answers, no socket.
@@ -383,13 +383,13 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         orig,
         &[
             ("service_discovery_enabled", b"no"),
-            ("service_name", b"P14 Off"),
+            ("service_name", b"Test Off"),
         ],
     )?;
     let c = &mut ctx.c;
     c.same(
         "mDNS disabled: goodbye",
-        heard(&lst, mark, true, &["P14 dotted.name"], 3.0),
+        heard(&lst, mark, true, &["Test dotted.name"], 3.0),
         true,
     );
     c.same(
@@ -409,10 +409,10 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         orig,
         &[
             ("service_discovery_enabled", b"yes"),
-            ("service_name", b"P14 Lifecycle"),
+            ("service_name", b"Test Lifecycle"),
         ],
     )?;
-    wait_browse(has("P14 Lifecycle"), 8.0);
+    wait_browse(has("Test Lifecycle"), 8.0);
     let mark = lst.mark();
     // (AMI's Command refuses "module load" and "module unload".)
     let out = cli_raw(ctx, &format!("module unload {MODULE}"));
@@ -424,7 +424,7 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
     let c = &mut ctx.c;
     c.same(
         "mDNS unload: goodbye",
-        heard(&lst, mark, true, &["P14 Lifecycle"], 3.0),
+        heard(&lst, mark, true, &["Test Lifecycle"], 3.0),
         true,
     );
     c.same("mDNS unload: nothing announced", browse(0.7), Found::new());
@@ -437,15 +437,15 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
     let out = cli_raw(ctx, &format!("module load {MODULE}"));
     ctx.c
         .same(format!("load {MODULE}"), out, format!("Loaded {MODULE}\n"));
-    let found = wait_browse(has("P14 Lifecycle"), 8.0);
+    let found = wait_browse(has("Test Lifecycle"), 8.0);
     ctx.c.same(
         "mDNS load: announced again",
         names(&found),
-        strings(&["P14 Lifecycle"]),
+        strings(&["Test Lifecycle"]),
     );
     ctx.c.same(
         "mDNS load: unsolicited announcement",
-        heard(&lst, mark, false, &["P14 Lifecycle"], 3.0),
+        heard(&lst, mark, false, &["Test Lifecycle"], 3.0),
         true,
     );
     // Again: the responder was started from the AMI session's thread (the
@@ -465,7 +465,7 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
         out,
         format!("Loaded {MODULE}\n"),
     );
-    wait_browse(has("P14 Lifecycle"), 8.0);
+    wait_browse(has("Test Lifecycle"), 8.0);
     cli_raw(ctx, &format!("module unload {MODULE}"));
     cli_raw(ctx, &format!("module load {MODULE}"));
     fixtures::sleep(0.5);
@@ -487,21 +487,21 @@ fn checks(ctx: &mut Ctx, orig: &[u8]) -> Result<()> {
     ctx.inst.stop()?;
     ctx.c.same(
         "mDNS shutdown: goodbye",
-        heard(&lst, mark, true, &["P14 Lifecycle"], 3.0),
+        heard(&lst, mark, true, &["Test Lifecycle"], 3.0),
         true,
     );
     let mark = lst.mark();
     ctx.inst.start()?;
     ctx.ami()?;
-    let found = wait_browse(has("P14 Lifecycle"), 15.0);
+    let found = wait_browse(has("Test Lifecycle"), 15.0);
     ctx.c.same(
         "mDNS startup: announced",
         names(&found),
-        strings(&["P14 Lifecycle"]),
+        strings(&["Test Lifecycle"]),
     );
     ctx.c.same(
         "mDNS startup: unsolicited announcement",
-        heard(&lst, mark, false, &["P14 Lifecycle"], 3.0),
+        heard(&lst, mark, false, &["Test Lifecycle"], 3.0),
         true,
     );
     Ok(())

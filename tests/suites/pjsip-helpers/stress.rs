@@ -200,7 +200,7 @@ pub fn run(ctx: &mut Ctx, seconds: f64) -> Result<()> {
     sh.ari(
         "endpoint/2005",
         &[
-            ("context", "p11-phones"),
+            ("context", "test-phones"),
             ("allow", "!all,ulaw"),
             ("aors", "2005"),
             ("auth", "2005-auth"),

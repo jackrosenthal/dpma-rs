@@ -33,9 +33,9 @@ fn main() -> ExitCode {
             fixtures::sim_setup(inst)?;
             setup::install_snippet(
                 inst,
-                "res_digium_phone_p12.conf",
+                "res_digium_phone_handlers.conf",
                 "res_digium_phone.conf",
-                common::P12_CONF.as_bytes(),
+                common::PHONES_CONF.as_bytes(),
             )
         })
     });
