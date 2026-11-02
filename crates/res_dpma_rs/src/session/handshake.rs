@@ -45,7 +45,7 @@ pub(crate) fn set_common_password(out: &mut Outgoing, session: &Arc<Session>) ->
         dpma_log!("failed to get pkey during common password generation");
         return Err(());
     };
-    if key.rsa().is_err() {
+    if key.rsa().is_none() {
         dpma_log!("failed to get rsa during common password generation");
         return Err(());
     }

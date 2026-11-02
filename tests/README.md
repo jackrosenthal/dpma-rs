@@ -211,11 +211,12 @@ dpma-tests has three binaries (`cargo run -p dpma-tests --bin <name> --
 | Binary | What it does |
 |---|---|
 | `dpma-sim` | The phone simulator: SIP MESSAGE over UDP or TCP, handshake (legacy and chain forms), encryption, chunking, every request type, events, and a self-test (`dpma_tests::sim`) |
-| `dpma-mkpki` | Makes the test PKI in `dev/sim/pki` (`$DPMA_PKI`; existing files are kept, `--force` regenerates them) and installs its trust material into the instance: `root-ca.pem` as `etc/asterisk/dpma/phone_ca.pem` and `appserver.pem` as `etc/asterisk/dpma/appserver.pem`.  `--check` verifies every certificate with `openssl verify` (`dpma_tests::mkpki`). |
+| `dpma-mkpki` | Makes the test PKI in `dev/sim/pki` (`$DPMA_PKI`; existing files are kept, `--force` regenerates them) and installs its trust material into the instance: `root-ca.pem` as `etc/asterisk/dpma/phone_ca.pem` and `appserver.pem` as `etc/asterisk/dpma/appserver.pem`.  `--check` checks that every certificate verifies, or is rejected, as the module's rules expect, with the simulator's own X.509 code (issuer names, signatures, CA flags, validity periods) (`dpma_tests::mkpki`). |
 | `dpma-ami` | Sends an AMI action and prints the response and the events that follow it, or listens for events (`dpma_tests::ami`) |
 
 Everything is written from the decompile of the original module,
-independently of the module's crates, and nothing comes from the
+independently of the module's crates (the simulator shares only the
+RustCrypto primitive crates with them), and nothing comes from the
 original binary: all certificates and keys are generated locally (real
 phones do not accept the test AppServer certificate).
 
@@ -248,9 +249,9 @@ majors`); then one job per major version, on `ubuntu-24.04`, with
 `DPMA_SLOT=1` and `LOGDIR=test-logs`:
 
 1. Rust 1.99 (the MSRV) with clippy through `rustup`, then `cargo xtask
-   ci setup`: Asterisk's build dependencies, `pkg-config` and the
-   OpenSSL headers, libclang for bindgen, and the suites' tools
-   (`openssl`, `iproute2`, `util-linux`, `binutils`) through `apt-get`;
+   ci setup`: Asterisk's build dependencies (`libssl-dev` among them,
+   which Asterisk needs), libclang for bindgen, and the suites' tools
+   (`iproute2`, `util-linux`, `binutils`) through `apt-get`;
    and `kernel.apparmor_restrict_unprivileged_userns=0`, since Ubuntu
    23.10 and later restrict the unprivileged user namespaces that
    `apps-discovery` needs.

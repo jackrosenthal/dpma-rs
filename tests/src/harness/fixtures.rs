@@ -93,7 +93,10 @@ pub fn prepare(inst: &Instance, setup: impl FnOnce(&Instance) -> Result<()>) -> 
 
 /// The module defaults to the certificates embedded in the original, so a
 /// suite that installed the test PKI must point `phone_ca_file` and
-/// `appserver_certificate` at it.
+/// `appserver_certificate` at it.  The settings go into the file's
+/// `[general]` section (the module reads the first section of that name
+/// only), or into a new one at the end when the file has none; a file that
+/// already sets `phone_ca_file` is left alone.
 fn use_test_trust(inst: &Instance) -> Result<()> {
     let dpma = inst.etc.join("dpma");
     let ca = dpma.join("phone_ca.pem");
@@ -103,13 +106,35 @@ fn use_test_trust(inst: &Instance) -> Result<()> {
     let appserver = dpma.join("appserver.pem");
     let conf = ConfFile::new(&inst.conf("res_digium_phone.conf"));
     let mut data = conf.read()?;
-    if !data.ends_with(b"\n") {
-        data.push(b'\n');
+    if data.find(b"\nphone_ca_file=").is_some() {
+        // Already done (sim_setup, then prepare).
+        return Ok(());
     }
-    data.extend_from_slice(
-        format!("[general]\nphone_ca_file={}\nappserver_certificate={}\n", ca.display(), appserver.display())
-            .as_bytes(),
-    );
+    let settings = format!("phone_ca_file={}\nappserver_certificate={}\n", ca.display(), appserver.display());
+    let mut pos = 0;
+    let mut general = None;
+    for line in data.split_inclusive(|&c| c == b'\n') {
+        pos += line.len();
+        if line.trim_ascii().eq_ignore_ascii_case(b"[general]") {
+            general = Some(pos);
+            break;
+        }
+    }
+    match general {
+        Some(at) => {
+            let mut text = settings.into_bytes();
+            if !data[..at].ends_with(b"\n") {
+                text.insert(0, b'\n');
+            }
+            data.splice(at..at, text);
+        }
+        None => {
+            if !data.is_empty() && !data.ends_with(b"\n") {
+                data.push(b'\n');
+            }
+            data.extend_from_slice(format!("[general]\n{}", settings).as_bytes());
+        }
+    }
     conf.write(data)
 }
 
@@ -126,11 +151,14 @@ pub fn check_devtest(inst: &Instance) -> Result<()> {
     Ok(())
 }
 
-/// The simulator setup: the test PKI ([`install_sim_pki`]) and the test
-/// configuration ([`install_sim_conf`]).
+/// The simulator setup: the test PKI ([`install_sim_pki`]), the test
+/// configuration ([`install_sim_conf`]), and `phone_ca_file` and
+/// `appserver_certificate` pointed at the test PKI (so that `cargo xtask
+/// instance sim-setup` alone gives a working setup too).
 pub fn sim_setup(inst: &Instance) -> Result<()> {
     install_sim_pki(inst)?;
-    install_sim_conf(inst)
+    install_sim_conf(inst)?;
+    use_test_trust(inst)
 }
 
 /// Makes the test PKI if needed (in [`sim::default_pki_dir`]) and installs

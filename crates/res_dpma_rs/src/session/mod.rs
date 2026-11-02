@@ -32,8 +32,7 @@ pub use store::{
 };
 
 use dpma_ast::msg::Msg;
-use openssl::pkey::{PKey, Public};
-use openssl::x509::X509;
+use dpma_proto::cert::{Certificate, PublicKey};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -54,9 +53,10 @@ pub struct SessionState {
     /// AstDB and verified again on restore (+0xe10).
     pub client_cert_pem: Vec<u8>,
     /// The verified phone certificate (+0xe18).
-    pub certificate: Option<X509>,
-    /// Its public key; None when OpenSSL could not decode it.
-    pub public_key: Option<PKey<Public>>,
+    pub certificate: Option<Certificate>,
+    /// Its public key; None when the original's OpenSSL 1.1.1t could not
+    /// decode it.
+    pub public_key: Option<PublicKey>,
     /// Intermediate certificate serial, 0 for legacy certificates (+0xe20).
     pub intermediate_serial: i64,
     /// Authentication flags (`config::auth`) in force for this session

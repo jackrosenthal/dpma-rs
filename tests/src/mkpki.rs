@@ -28,7 +28,7 @@
 //! |---|---|---|
 //! | `legacy` | legacy | HandshakeResponse |
 //! | `chain` | legacy, intermediate-ca, phone | HandshakeResponse with `Handshake-Version: 1` |
-//! | `chain-expired`, `legacy-expired` | as above, expired | Accepted (OpenSSL errors 9 and 10 are ignored) |
+//! | `chain-expired`, `legacy-expired` | as above, expired | Accepted (the original ignores the verification errors "certificate is not yet valid" and "certificate has expired") |
 //! | `weak` | weak | Accepted (512-bit keys and SHA-1 must work) |
 //! | `rogue` | rogue | No reply; an auth incident |
 //! | `two`, `four` | 2 or 4 certificates | No reply ("Expected two certificates in the chain, found 1" or "3") |
@@ -38,7 +38,6 @@
 //! `<etc>/dpma/appserver.pem`.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{anyhow, Context, Result};
@@ -509,126 +508,96 @@ pub fn install(pki_dir: &Path, etc: &Path, quiet: bool) -> Result<()> {
     Ok(())
 }
 
-/// Verifies every certificate with the `openssl verify` command; the
-/// expected outcome follows the module's rules (expiry ignored, 512-bit
-/// keys accepted).  Prints one line per case and returns the number of
-/// unexpected outcomes.
+/// Whether `cert` may issue certificates: basicConstraints with CA:TRUE
+/// and, when keyUsage is present, keyCertSign.
+fn is_ca(cert: &Certificate) -> bool {
+    let tbs = &cert.tbs_certificate;
+    let bc = matches!(tbs.get::<BasicConstraints>(), Ok(Some((_, bc))) if bc.ca);
+    let ku = match tbs.get::<KeyUsage>() {
+        Ok(Some((_, ku))) => ku.0.contains(KeyUsages::KeyCertSign),
+        Ok(None) => true,
+        Err(_) => false,
+    };
+    bc && ku
+}
+
+/// Builds a chain from `leaf` through `untrusted` certificates to one of
+/// `anchors` (self-signed CAs): issuer names and signatures
+/// ([`crate::sim::pki::verify_directly_issued_by`]), CA status of every
+/// issuer, and, when `check_time` is set, every certificate's validity
+/// period.  Returns why it fails.
+fn chain_verifies(
+    leaf: &Certificate,
+    untrusted: &[Certificate],
+    anchors: &[Certificate],
+    check_time: bool,
+) -> std::result::Result<(), String> {
+    use crate::sim::pki::{verify_directly_issued_by, within_validity};
+    let mut cur = leaf.clone();
+    for _ in 0..=untrusted.len() {
+        if check_time && !within_validity(&cur) {
+            return Err("certificate has expired or is not yet valid".into());
+        }
+        if let Some(a) = anchors.iter().find(|a| verify_directly_issued_by(&cur, a).is_ok()) {
+            if !is_ca(a) || verify_directly_issued_by(a, a).is_err() {
+                return Err("the trust anchor is not a self-signed CA".into());
+            }
+            if check_time && !within_validity(a) {
+                return Err("the trust anchor has expired or is not yet valid".into());
+            }
+            return Ok(());
+        }
+        let Some(next) = untrusted.iter().find(|u| is_ca(u) && verify_directly_issued_by(&cur, u).is_ok()) else {
+            return Err("unable to get local issuer certificate".into());
+        };
+        cur = next.clone();
+    }
+    Err("chain too long".into())
+}
+
+/// Checks the PKI: every certificate verifies, or does not, as the
+/// module's rules expect (expiry ignored, 512-bit keys and SHA-1
+/// accepted), by the simulator's own X.509 code ([`chain_verifies`]:
+/// issuer names, signatures, CA flags, and validity periods).  Prints one
+/// line per case and returns the number of unexpected outcomes.
 pub fn check(dir: &Path) -> Result<usize> {
-    let d = |f: &str| dir.join(f).display().to_string();
-    let mut cases: Vec<(&str, Vec<String>, bool)> = vec![
-        (
-            "legacy",
-            vec!["-CAfile".into(), d("root-ca.pem"), d("legacy.pem")],
-            true,
-        ),
-        (
-            "chain",
-            vec![
-                "-CAfile".into(),
-                d("root-ca.pem"),
-                "-untrusted".into(),
-                d("intermediate-ca.pem"),
-                d("phone.pem"),
-            ],
-            true,
-        ),
-        (
-            "intermediate",
-            vec!["-CAfile".into(), d("root-ca.pem"), d("intermediate-ca.pem")],
-            true,
-        ),
-        (
-            "chain-expired",
-            vec![
-                "-no_check_time".into(),
-                "-CAfile".into(),
-                d("root-ca.pem"),
-                "-untrusted".into(),
-                d("intermediate-ca.pem"),
-                d("phone-expired.pem"),
-            ],
-            true,
-        ),
-        (
-            "chain-expired (time checked)",
-            vec![
-                "-CAfile".into(),
-                d("root-ca.pem"),
-                "-untrusted".into(),
-                d("intermediate-ca.pem"),
-                d("phone-expired.pem"),
-            ],
-            false,
-        ),
-        (
-            "legacy-expired",
-            vec![
-                "-no_check_time".into(),
-                "-CAfile".into(),
-                d("root-ca.pem"),
-                d("legacy-expired.pem"),
-            ],
-            true,
-        ),
-        (
-            "rogue",
-            vec!["-CAfile".into(), d("root-ca.pem"), d("rogue.pem")],
-            false,
-        ),
-        (
-            "phone without intermediate",
-            vec!["-CAfile".into(), d("root-ca.pem"), d("phone.pem")],
-            false,
-        ),
-        (
-            "appserver",
-            vec!["-CAfile".into(), d("appserver-ca.pem"), d("appserver.pem")],
-            true,
-        ),
-        (
-            "appserver against phone CA",
-            vec!["-CAfile".into(), d("root-ca.pem"), d("appserver.pem")],
-            false,
-        ),
+    let cert = |f: &str| -> Result<Certificate> {
+        let path = dir.join(f);
+        let pem = std::fs::read(&path).with_context(|| path.display().to_string())?;
+        parse_certificate(&pem)
+    };
+    let (root, inter, appserver_ca) = (cert("root-ca.pem")?, cert("intermediate-ca.pem")?, cert("appserver-ca.pem")?);
+    // (label, certificate, untrusted chain, trust anchor, check time,
+    // expected to verify)
+    type Case<'a> = (&'a str, Certificate, Vec<Certificate>, &'a Certificate, bool, bool);
+    let mut cases: Vec<Case> = vec![
+        ("legacy", cert("legacy.pem")?, vec![], &root, true, true),
+        ("chain", cert("phone.pem")?, vec![inter.clone()], &root, true, true),
+        ("intermediate", inter.clone(), vec![], &root, true, true),
+        ("chain-expired", cert("phone-expired.pem")?, vec![inter.clone()], &root, false, true),
+        ("chain-expired (time checked)", cert("phone-expired.pem")?, vec![inter.clone()], &root, true, false),
+        ("legacy-expired", cert("legacy-expired.pem")?, vec![], &root, false, true),
+        ("rogue", cert("rogue.pem")?, vec![], &root, true, false),
+        ("phone without intermediate", cert("phone.pem")?, vec![], &root, true, false),
+        ("appserver", cert("appserver.pem")?, vec![], &appserver_ca, true, true),
+        ("appserver against phone CA", cert("appserver.pem")?, vec![], &root, true, false),
     ];
     if dir.join("weak.pem").exists() {
-        cases.push((
-            "weak (auth level 0)",
-            vec![
-                "-auth_level".into(),
-                "0".into(),
-                "-CAfile".into(),
-                d("root-ca.pem"),
-                d("weak.pem"),
-            ],
-            true,
-        ));
+        cases.push(("weak (512-bit, SHA-1)", cert("weak.pem")?, vec![], &root, true, true));
     }
     let mut failures = 0;
-    let error_line = regex::Regex::new(r"error \d+ at \d+ depth")?;
-    for (label, args, want) in cases {
-        let out = Command::new("openssl")
-            .arg("verify")
-            .args(&args)
-            .output()
-            .context("running openssl")?;
-        let ok = out.status.success();
-        let text = String::from_utf8_lossy(&out.stdout).into_owned()
-            + &String::from_utf8_lossy(&out.stderr);
-        let reason = text
-            .lines()
-            .find(|l| error_line.is_match(l))
-            .map(|l| l.rsplit(':').next().unwrap_or("").trim().to_string());
-        let detail = reason.unwrap_or_else(|| if ok { "OK".into() } else { "failed".into() });
-        let good = ok == want;
+    for (label, leaf, untrusted, anchor, check_time, want) in cases {
+        let r = chain_verifies(&leaf, &untrusted, std::slice::from_ref(anchor), check_time);
+        let good = r.is_ok() == want;
         if !good {
             failures += 1;
         }
         println!(
-            "{:<4} {:<30} {} ({detail})",
+            "{:<4} {:<30} {} ({})",
             if good { "ok" } else { "FAIL" },
             label,
-            if ok { "verifies" } else { "rejected" }
+            if r.is_ok() { "verifies" } else { "rejected" },
+            r.err().unwrap_or_else(|| "OK".into())
         );
     }
     Ok(failures)

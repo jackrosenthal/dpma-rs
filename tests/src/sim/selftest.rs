@@ -1,8 +1,8 @@
 //! The simulator's self-test (no server needed) and the cross-check
 //! vectors.
 //!
-//! [`run`] checks: known-answer key, IV, and ciphertext (checked against
-//! OpenSSL's `EVP_BytesToKey` loaded at run time when it is available),
+//! [`run`] checks: known-answer key, IV, and ciphertext (and
+//! `EVP_BytesToKey` against fixed known answers, [`BYTES_TO_KEY_KATS`]),
 //! stream encryption, header fields, `set_hex` and `ast_base64decode`
 //! quirks, both directions of framing (the server side emulated from
 //! `phone_msg_outgoing_send` and `incoming_check_finalize`), the CR/LF
@@ -56,15 +56,15 @@ pub const KAT_PASSWORD: [u8; 40] = {
 };
 /// The known-answer salt: bytes 1 to 8.
 pub const KAT_SALT: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
-/// Key for [`KAT_PASSWORD`] and [`KAT_SALT`] (computed with OpenSSL's
-/// `EVP_BytesToKey`).
+/// Key for [`KAT_PASSWORD`] and [`KAT_SALT`] (`EVP_BytesToKey`, computed
+/// independently with Python's hashlib).
 pub const KAT_KEY: &str = "600d4ffb274b57fc61281e5709e7f660";
 /// IV for [`KAT_PASSWORD`] and [`KAT_SALT`].
 pub const KAT_IV: &str = "1886e7fef5d8004f796243b3de6a68aa";
 /// The known-answer plaintext.
 pub const KAT_PLAIN: &[u8] = b"<config></config>";
-/// [`KAT_PLAIN`] encrypted (from `openssl enc -aes-128-cbc -K <key> -iv
-/// <iv>`), base64.
+/// [`KAT_PLAIN`] encrypted with AES-128-CBC under [`KAT_KEY`] and
+/// [`KAT_IV`] (computed independently of this code), base64.
 pub const KAT_CIPHER_B64: &str = "AUjOV390vW2DtV+JXPqenXE+oRcQpCc41+4TU6Vr6MA=";
 
 /// `tests/data/vectors.json`, the vectors dpma-proto checks.
@@ -129,71 +129,35 @@ pub fn vectors_text() -> String {
     serde_json::to_string_pretty(&make_vectors()).unwrap_or_default() + "\n"
 }
 
-/// `EVP_BytesToKey` through OpenSSL's libcrypto, loaded at run time, as
-/// an independent check; `None` when libcrypto cannot be loaded.
-pub struct Libcrypto {
-    lib: libloading::Library,
-}
-
-type EvpFn = unsafe extern "C" fn() -> *const std::ffi::c_void;
-type BytesToKeyFn = unsafe extern "C" fn(
-    *const std::ffi::c_void,
-    *const std::ffi::c_void,
-    *const u8,
-    *const u8,
-    i32,
-    i32,
-    *mut u8,
-    *mut u8,
-) -> i32;
-
-impl Libcrypto {
-    /// Loads libcrypto (`libcrypto.so.3`, `.so.1.1`, or `.so`).
-    pub fn load() -> Option<Libcrypto> {
-        for name in ["libcrypto.so.3", "libcrypto.so.1.1", "libcrypto.so"] {
-            // SAFETY: loading OpenSSL's libcrypto runs its initializers,
-            // which have no preconditions.
-            if let Ok(lib) = unsafe { libloading::Library::new(name) } {
-                let l = Libcrypto { lib };
-                if l.bytes_to_key(b"x", b"12345678").is_some() {
-                    return Some(l);
-                }
-            }
-        }
-        None
-    }
-
-    /// `EVP_BytesToKey(EVP_aes_128_cbc(), EVP_sha1(), salt, password,
-    /// 1)`; `salt` must be 8 bytes.
-    pub fn bytes_to_key(&self, password: &[u8], salt: &[u8]) -> Option<([u8; 16], [u8; 16])> {
-        if salt.len() != 8 {
-            return None;
-        }
-        // SAFETY: the symbols have the declared C signatures in every
-        // OpenSSL version that has them; EVP_aes_128_cbc and EVP_sha1
-        // return static objects; the salt is 8 bytes as EVP_BytesToKey
-        // reads, and key and iv have room for the 16 bytes each it writes
-        // for AES-128-CBC.
-        unsafe {
-            let aes: libloading::Symbol<EvpFn> = self.lib.get(b"EVP_aes_128_cbc\0").ok()?;
-            let sha1: libloading::Symbol<EvpFn> = self.lib.get(b"EVP_sha1\0").ok()?;
-            let btk: libloading::Symbol<BytesToKeyFn> = self.lib.get(b"EVP_BytesToKey\0").ok()?;
-            let mut key = [0u8; 16];
-            let mut iv = [0u8; 16];
-            let n = btk(
-                aes(),
-                sha1(),
-                salt.as_ptr(),
-                password.as_ptr(),
-                i32::try_from(password.len()).ok()?,
-                1,
-                key.as_mut_ptr(),
-                iv.as_mut_ptr(),
-            );
-            (n == 16).then_some((key, iv))
-        }
-    }
-}
+/// Known answers for `EVP_BytesToKey(EVP_aes_128_cbc(), EVP_sha1(), salt,
+/// password, 1)`: password and salt (hex), key and IV.  Computed
+/// independently with Python's hashlib from the definition in the
+/// original's OpenSSL 1.1.1t (`crypto/evp/evp_key.c`: D1 = SHA1(password
+/// || salt), D2 = SHA1(D1 || password || salt), key = D1[0..16], IV =
+/// D1[16..20] || D2[0..12]).
+pub const BYTES_TO_KEY_KATS: [(&str, &str, &str, &str); 6] = [
+    ("", "3132333435363738", "7c222fb2927d828af22f592134e89324", "80637c0d7a6e3c10173302c9578ee71c"),
+    ("78", "3132333435363738", "947788df997e7a3a3a974204486b5233", "9abdf89b8358e0c4a989f89694f12309"),
+    (
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324252627",
+        "0102030405060708",
+        "600d4ffb274b57fc61281e5709e7f660",
+        "1886e7fef5d8004f796243b3de6a68aa",
+    ),
+    (
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "ffffffffffffffff",
+        "989fbd16297ef75e5a9d5c63f7096c99",
+        "b455563de0606deaeaa55baeb093dafe",
+    ),
+    (
+        "61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+        "0000000000000000",
+        "e6014ae359ac8fcd57c02182e8d51e5e",
+        "5f2651aa7220d151f186f26f39aab36b",
+    ),
+    ("64706d612d7273", "0011223344556677", "d2b10809b051799e8eab22c1eb1504fd", "21a3a94d58740b75adbc09594e6ff47c"),
+];
 
 fn random_bytes(n: usize) -> Vec<u8> {
     let mut v = vec![0u8; n];
@@ -266,20 +230,16 @@ fn crypto_checks(c: &mut Checker) {
         key[..] == d1[..16] && iv[..] == want_iv[..],
         "",
     );
-    match Libcrypto::load() {
-        None => c.skip("EVP_BytesToKey against libcrypto", "not loadable"),
-        Some(lib) => {
-            let same = (0..20).all(|_| {
-                let (pw, salt) = (random_bytes(40), random_bytes(8));
-                lib.bytes_to_key(&pw, &salt) == Some(evp_bytes_to_key(&pw, &salt))
-            });
-            c.check(
-                "EVP_BytesToKey equals libcrypto's (20 random inputs)",
-                same,
-                "",
-            );
-        }
-    }
+    let kats_ok = BYTES_TO_KEY_KATS.iter().all(|(pw, salt, key, iv)| {
+        let (pw, salt) = (hex::decode(pw).unwrap_or_default(), hex::decode(salt).unwrap_or_default());
+        let (k, i) = evp_bytes_to_key(&pw, &salt);
+        hex::encode(k) == *key && hex::encode(i) == *iv
+    });
+    c.check(
+        "EVP_BytesToKey known answers (6 vectors)",
+        kats_ok,
+        "",
+    );
 
     let ct = encrypt(&KAT_PASSWORD, &KAT_SALT, KAT_PLAIN);
     c.check(
@@ -870,9 +830,9 @@ struct FakeState {
 /// finishing chunk's sequence equals the chunk count minus one, bodies
 /// concatenated and decoded once with `ast_base64decode`, header fields
 /// decrypted with the same salt), then answers with [`server_frame`]
-/// framing.  It verifies chains with signatures only (no OpenSSL policy)
-/// and knows Handshake, PingRequest, TokenRequest, ConfigRequest, and
-/// events.
+/// framing.  It verifies chains with signatures only (none of the
+/// original's chain rules) and knows Handshake, PingRequest,
+/// TokenRequest, ConfigRequest, and events.
 pub struct FakeServer {
     sock: Arc<UdpSocket>,
     /// The server's UDP port.

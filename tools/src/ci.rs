@@ -5,12 +5,12 @@
 //! root.  It installs
 //!
 //! - Asterisk's build dependencies: the basic set of Asterisk's
-//!   `contrib/scripts/install_prereq`, OpenSSL, `curl` for the downloads,
-//!   and `bzip2` and `patch` for the bundled pjproject;
-//! - `pkg-config` and the OpenSSL headers for the openssl crate, and
-//!   libclang for bindgen;
-//! - what the test suites use: `openssl`, `iproute2`, `util-linux`
-//!   (`unshare` and `nsenter`), and `binutils`;
+//!   `contrib/scripts/install_prereq` (`libssl-dev` among them, which
+//!   Asterisk needs), `pkg-config`, `curl` for the downloads, and `bzip2`
+//!   and `patch` for the bundled pjproject;
+//! - libclang for bindgen;
+//! - what the test suites use: `iproute2`, `util-linux` (`unshare` and
+//!   `nsenter`), and `binutils`;
 //!
 //! and allows unprivileged user namespaces, which apps-discovery's network
 //! namespace needs (`unshare -rn`): Ubuntu 23.10 and later restrict them
@@ -34,7 +34,7 @@ use crate::build::{run, Build};
 use crate::suites::{self, cargo};
 
 /// The Ubuntu packages the job needs.
-pub const PACKAGES: [&str; 17] = [
+pub const PACKAGES: [&str; 16] = [
     "build-essential",
     "pkg-config",
     "curl",
@@ -48,7 +48,6 @@ pub const PACKAGES: [&str; 17] = [
     "libxml2-dev",
     "libssl-dev",
     "libclang-dev",
-    "openssl",
     "iproute2",
     "util-linux",
     "binutils",

@@ -3,67 +3,188 @@
 //!
 //! The CA store is built from a PEM bundle of CA certificates: by default
 //! the three embedded in the original, or the `phone_ca_file` when set.
+//!
+//! # The verifier
+//!
+//! The original links OpenSSL 1.1.1t statically and verifies with
+//! `X509_verify_cert` and a callback that ignores the validity period.
+//! This module does what 1.1.1t does, following its source
+//! (`crypto/x509/x509_vfy.c`, `crypto/x509v3/v3_purp.c`, `v3_ncons.c`,
+//! `crypto/asn1/tasn_dec.c`, `crypto/pem/pem_lib.c`), in
+//! [`crate::x509`]:
+//!
+//! **Reading.**  Certificates are read with 1.1.1t's PEM reader and BER
+//! decoder (see [`crate::x509`]'s `pem` and `asn1` modules for exactly
+//! what they tolerate).  Names compare by 1.1.1t's canonical form (case
+//! and white space folded, string types unified).  The extensions 1.1.1t
+//! interprets (basicConstraints, keyUsage, extendedKeyUsage, nsCertType,
+//! subject and authority key identifiers, subjectAltName,
+//! nameConstraints, CRL distribution points, proxyCertInfo, and the RFC
+//! 3779 extensions) are decoded the same way; one that occurs twice or
+//! does not decode makes the certificate invalid (`EXFLAG_INVALID`), and an
+//! invalid certificate never links into a chain.
+//!
+//! **Checks made** (in 1.1.1t's order; the first failure is the error
+//! logged):
+//!
+//! 1. Chain building (`build_chain`), trusted store first: an issuer is a
+//!    certificate whose subject equals the subject's issuer name, whose
+//!    authority key identifier (if the subject has one) matches its key
+//!    identifier, serial number, and issuer name, and whose key type
+//!    matches the subject's signature algorithm (`x509_likely_issued`);
+//!    among several, the first valid now is preferred.  The phone's
+//!    certificates are searched after the store, each used once.  The
+//!    chain must end at a certificate from the store that is self-signed
+//!    (self-issued, with a matching key identifier and key type) and not
+//!    invalid: that is the trust anchor.  A self-signed phone certificate
+//!    is accepted only if the same certificate is in the store.  Chains
+//!    longer than 101 are refused.  Errors: unable to get local issuer
+//!    certificate (20), unable to get issuer certificate (2), self signed
+//!    certificate (18), self signed certificate in certificate chain (19),
+//!    certificate chain too long (22).
+//! 2. Extensions (`check_chain_extensions`): no unknown critical extension
+//!    (34) and no proxy certificate (40) anywhere; every issuer must be a
+//!    CA (24): basicConstraints with CA:TRUE (and keyUsage, if present,
+//!    with keyCertSign) for an intermediate; for the top of the chain also
+//!    a self-signed v1 certificate without basicConstraints, a
+//!    certificate whose keyUsage has keyCertSign, or a Netscape CA type;
+//!    path length constraints of the issuers (25).
+//! 3. Signatures and times (`internal_verify`): every signature except the
+//!    trust anchor's own, with the issuer's key (6, 7), after checking the
+//!    issuer's keyUsage allows certificate signing (32; in practice
+//!    already refused by step 2); the signature algorithm in the
+//!    certificate must equal the one in its signed part.  Every
+//!    certificate's notBefore and notAfter must be `YYMMDDHHMMSSZ` or
+//!    `YYYYMMDDHHMMSSZ` with valid values (13, 14); not yet valid (9) and
+//!    expired (10) are ignored by the original's callback.
+//! 4. Name constraints of the issuers on the subject names, email
+//!    addresses, subjectAltNames, and (for the phone certificate) host
+//!    name-like commonNames (47, 48, 49, 51, 53), as `v3_ncons.c` does.
+//!
+//! The security level is the default -1, so key sizes and digests are not
+//! restricted: 512-bit RSA keys and MD5 and SHA-1 signatures verify.
+//!
+//! **Left out**, with the reasons:
+//!
+//! - Signature algorithms other than RSA PKCS#1 v1.5 with MD5, SHA-1,
+//!   SHA-224, SHA-256, SHA-384, or SHA-512 (1.1.1t also verifies RSA with
+//!   MD4, MDC2, RIPEMD-160, SHA-3, and RSASSA-PSS, and DSA, ECDSA, Ed25519,
+//!   and Ed448): they fail as certificate signature failure (7).  A
+//!   phone's key must be RSA anyway (the common password is encrypted to
+//!   it), and the original's built-in CAs have RSA keys and sign with
+//!   SHA-1 and SHA-256.
+//! - Public keys other than RSA are not decoded, only recognized by
+//!   algorithm: such a key counts as decodable, as a well-formed one is
+//!   for 1.1.1t.  A malformed DSA or EC key would make 1.1.1t refuse the
+//!   certificate as an issuer, which here fails at its signature instead.
+//! - RFC 3779 path validation: a phone certificate with an IP address or
+//!   AS number extension is refused (Unsupported extension feature, 45)
+//!   where 1.1.1t checks the resources against the issuers'.
+//! - Encrypted PEM blocks: 1.1.1t asks for a pass phrase on the process's
+//!   terminal (or reads standard input); here the read fails as it fails
+//!   in 1.1.1t when no pass phrase can be read.
+//! - The order of same-named certificates in the store: 1.1.1t sorts the
+//!   store with the C library's `qsort`; this keeps `phone_ca_file`'s order
+//!   (what a stable sort, such as glibc's merge sort, gives).
+//! - Not applicable to the original's call, so not implemented: CRLs,
+//!   purposes and trust settings (none are set), policies, host, email,
+//!   and IP checks, DANE, Suite B, the X509_STRICT checks, partial
+//!   chains, and the original's messages for allocation failures ("Unable
+//!   create context", "Could not initialize store context").
+//!
+//! **Error texts.**  The original logs `X509_verify_cert_error_string`
+//! texts for verification failures and `ERR_error_string_n` texts for
+//! unreadable certificates; both are 1.1.1t's here (see
+//! [`crate::errstack`]).
+//!
+//! **Why not x509-cert's decoder.**  The `x509-cert` crate decodes DER
+//! only, so it refuses certificates 1.1.1t reads (BER lengths and strings,
+//! booleans other than 0x00 and 0xFF, times before 1970, OIDs over 39
+//! octets, version numbers beyond v3), and it does not check what 1.1.1t
+//! checks while decoding (the tags and UTF-8 of name values, the lengths
+//! of NULL and BOOLEAN parameters), so it would accept some certificates
+//! 1.1.1t refuses.  It also re-encodes the signed part instead of keeping
+//! it as it came.  So certificates are decoded with a reimplementation of
+//! 1.1.1t's decoder; the signatures use the `rsa`, `sha1`, `sha2`, and
+//! `md-5` crates, and the tests build their certificates with
+//! `x509-cert`'s builder.
 
+use crate::errstack::{self, Errs};
+use crate::x509::pem::{self, Bio};
+use crate::x509::verify;
 use crate::{LogLevel, ProtoError, Result};
 use dpma_bytes::{bformat, ByteSlice};
-use foreign_types::{ForeignType, ForeignTypeRef};
-use openssl::pkey::{PKey, Public};
-use openssl::stack::Stack;
-use openssl::x509::store::{X509Store, X509StoreBuilder};
-use openssl::x509::{X509StoreContext, X509StoreContextRef, X509};
-use openssl_sys as ffi;
-use std::os::raw::{c_char, c_int, c_ulong, c_void};
 
-// libcrypto functions that openssl-sys does not declare.
-extern "C" {
-    fn ERR_error_string_n(e: c_ulong, buf: *mut c_char, len: usize);
-    fn X509_STORE_CTX_set_verify_cb(
-        ctx: *mut ffi::X509_STORE_CTX,
-        cb: Option<unsafe extern "C" fn(c_int, *mut ffi::X509_STORE_CTX) -> c_int>,
-    );
-    fn X509_STORE_CTX_get0_param(ctx: *mut ffi::X509_STORE_CTX) -> *mut ffi::X509_VERIFY_PARAM;
-}
+pub use crate::rsakey::RsaKey;
+pub use crate::x509::key::PublicKey;
+pub use crate::x509::Certificate;
 
 /// `X509_V_ERR_CERT_NOT_YET_VALID`.
 pub const ERR_CERT_NOT_YET_VALID: i32 = 9;
 /// `X509_V_ERR_CERT_HAS_EXPIRED`.
 pub const ERR_CERT_HAS_EXPIRED: i32 = 10;
 
-/// The trusted CA certificates phones are verified against.
+/// The trusted CA certificates phones are verified against (the original's
+/// `X509_STORE`).
 pub struct CaStore {
-    store: X509Store,
-    count: usize,
+    certs: Vec<Certificate>,
 }
 
 impl CaStore {
-    /// Build a store from a PEM bundle (every certificate in it).  An empty
-    /// or unreadable bundle is an error.
+    /// Build a store from a PEM bundle: every certificate in it, read with
+    /// 1.1.1t's PEM reader, which skips text and blocks with other labels
+    /// around the certificates.  Reading stops at the end of the text; any
+    /// other failure (a malformed block or certificate) is an error, as is
+    /// a bundle without certificates.
     pub fn from_pem(pem: &[u8]) -> Result<CaStore> {
-        let certs = X509::stack_from_pem(pem).map_err(|e| ProtoError::Invalid(format!("Error parsing CA certificates: {}", e)))?;
+        let mut bio = Bio::new(pem);
+        let mut certs = Vec::new();
+        loop {
+            let mut errs = Errs::new();
+            match pem::read_bio_x509(&mut bio, &mut errs) {
+                Some(c) => certs.push(c),
+                None => {
+                    let last = errs.last();
+                    if errstack::lib(last) == errstack::LIB_PEM && errstack::reason(last) == errstack::pem::R_NO_START_LINE
+                    {
+                        break;
+                    }
+                    let text = errs.0.iter().map(|e| errstack::error_string(e.code)).collect::<Vec<_>>().join(", ");
+                    return Err(ProtoError::Invalid(format!("Error parsing CA certificates: {}", text)));
+                }
+            }
+        }
         if certs.is_empty() {
             return Err(ProtoError::Invalid("No CA certificates found".into()));
         }
         CaStore::from_certs(&certs)
     }
 
-    /// Build a store from certificates (`X509_STORE_add_cert` each).
-    pub fn from_certs(certs: &[X509]) -> Result<CaStore> {
-        let err = |e: openssl::error::ErrorStack| ProtoError::Crypto(e.to_string());
-        let mut b = X509StoreBuilder::new().map_err(err)?;
+    /// Build a store from certificates (`X509_STORE_add_cert` each; an
+    /// exact duplicate is not added again).
+    pub fn from_certs(certs: &[Certificate]) -> Result<CaStore> {
+        let mut store: Vec<Certificate> = Vec::new();
         for c in certs {
-            b.add_cert(c.clone()).map_err(err)?;
+            if !store.iter().any(|s| s.same(c)) {
+                store.push(c.clone());
+            }
         }
-        Ok(CaStore { store: b.build(), count: certs.len() })
+        Ok(CaStore { certs: store })
     }
 
     /// Number of certificates loaded.
     pub fn len(&self) -> usize {
-        self.count
+        self.certs.len()
     }
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+}
+
+/// Read the certificates in a PEM text (as [`CaStore::from_pem`] does).
+pub fn certificates_from_pem(pem: &[u8]) -> Result<Vec<Certificate>> {
+    Ok(CaStore::from_pem(pem)?.certs)
 }
 
 /// Who presented the certificate; only used in the original's log
@@ -77,14 +198,15 @@ pub struct ClientInfo<'a> {
 }
 
 /// A phone certificate that passed verification.
+#[derive(Debug, Clone)]
 pub struct VerifiedClient {
     /// The certificate that was verified (the last one in the body); its
     /// key encrypts the common password.
-    pub certificate: X509,
-    /// Its public key (`X509_get_pubkey`); `None` if OpenSSL cannot decode
+    pub certificate: Certificate,
+    /// Its public key (`X509_get_pubkey`); `None` if 1.1.1t cannot decode
     /// it, which the original only notices when it generates the common
     /// password ("failed to get pkey during common password generation").
-    pub public_key: Option<PKey<Public>>,
+    pub public_key: Option<PublicKey>,
     /// The intermediate certificate's serial number as the original
     /// stores it (session +0xe20): 0 for the legacy form.  It is read from
     /// the second certificate, or, while the value read is 0, from the
@@ -106,15 +228,14 @@ impl VerifiedClient {
 /// puts in its log message (which has already been logged).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CertError {
-    /// No certificate could be read (OpenSSL error string).
+    /// No certificate could be read (`ERR_error_string_n` text).
     Unreadable(String),
     /// More than one certificate, but not three; the count excludes the
     /// first certificate, as in the original's message.
     WrongChainLength(usize),
-    /// The intermediate's serial number could not be read or is negative.
+    /// The intermediate's serial number is negative (`ERR_error_string_n`
+    /// text).
     NoSerial(String),
-    /// The verification context could not be set up.
-    Context(String),
     /// Verification failed (`X509_verify_cert_error_string`).
     Verify(String),
 }
@@ -131,7 +252,6 @@ impl CertError {
             CertError::NoSerial(e) => {
                 bformat!("<{}>: Unable to get serial number of intermediate cert: {}\n", contact, e)
             }
-            CertError::Context(e) => bformat!("<{}>: Could not initialize store context: {}\n", contact, e),
             CertError::Verify(e) => bformat!("<{}>: Client cert failed to verify: {}\n", contact, e),
         }
     }
@@ -148,62 +268,6 @@ fn log(level: LogLevel, line: u32, msg: &[u8]) {
     crate::log(level, "phone_message.c", line, "session_verify_cert", msg);
 }
 
-/// `ERR_get_error()` formatted with `ERR_error_string_n` (256 bytes).
-fn openssl_error_string() -> String {
-    let mut buf = [0 as c_char; 256];
-    unsafe {
-        let e = ffi::ERR_get_error();
-        ERR_error_string_n(e, buf.as_mut_ptr(), buf.len());
-        std::ffi::CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned()
-    }
-}
-
-/// `PEM_read_bio_X509` on the body: the first read, then reads until one
-/// fails, exactly as the original's loop (a bad first certificate does
-/// not stop the later reads).
-fn read_certs(pem: &[u8]) -> std::result::Result<(Option<X509>, Vec<X509>), ()> {
-    let len = c_int::try_from(pem.len()).map_err(|_| ())?;
-    unsafe {
-        ffi::init();
-        let bio = ffi::BIO_new_mem_buf(pem.as_ptr() as *const c_void, len);
-        if bio.is_null() {
-            return Err(());
-        }
-        let read = || {
-            let x = ffi::PEM_read_bio_X509(bio, std::ptr::null_mut(), None, std::ptr::null_mut());
-            if x.is_null() {
-                None
-            } else {
-                Some(X509::from_ptr(x))
-            }
-        };
-        let first = read();
-        let mut rest = Vec::new();
-        while let Some(x) = read() {
-            rest.push(x);
-        }
-        ffi::BIO_free_all(bio);
-        Ok((first, rest))
-    }
-}
-
-/// The verify callback (FUN_00148210): ignore validity-period errors.
-unsafe extern "C" fn verify_cb(ok: c_int, ctx: *mut ffi::X509_STORE_CTX) -> c_int {
-    let err = ffi::X509_STORE_CTX_get_error(ctx);
-    if err == ERR_CERT_NOT_YET_VALID || err == ERR_CERT_HAS_EXPIRED {
-        1
-    } else {
-        ok
-    }
-}
-
-/// `strtoll(BN_bn2dec(serial), NULL, 10)`: saturates at the `i64` range.
-fn serial_of(cert: &X509) -> Option<i64> {
-    let dec = cert.serial_number().to_bn().ok()?.to_dec_str().ok()?;
-    let s: &str = &dec;
-    Some(s.parse::<i64>().unwrap_or(if s.starts_with('-') { i64::MIN } else { i64::MAX }))
-}
-
 /// Restore the line breaks at PEM boundaries that a Handshake body lost
 /// on the way (deviation, port plan section 8, item 12).
 ///
@@ -212,10 +276,10 @@ fn serial_of(cert: &X509) -> Option<i64> {
 /// line, or right before one, the reassembled body has, e.g.,
 /// `-----BEGIN CERTIFICATE-----MIIB...`, `...==-----END CERTIFICATE-----`,
 /// or `-----END CERTIFICATE----------BEGIN CERTIFICATE-----`, which
-/// OpenSSL's PEM reader does not accept.  This puts a line break before
-/// every `-----BEGIN ` and `-----END ` marker line that does not start the
-/// text or a line, and after every such line that is not followed by one
-/// or by the end of the text.  Well-formed PEM text is returned unchanged.
+/// the PEM reader does not accept.  This puts a line break before every
+/// `-----BEGIN ` and `-----END ` marker line that does not start the text
+/// or a line, and after every such line that is not followed by one or by
+/// the end of the text.  Well-formed PEM text is returned unchanged.
 pub fn restore_pem_newlines(pem: impl AsRef<[u8]>) -> Vec<u8> {
     const DASHES: &[u8] = b"-----";
     let pem = pem.as_ref();
@@ -249,6 +313,14 @@ pub fn restore_pem_newlines(pem: impl AsRef<[u8]>) -> Vec<u8> {
     }
 }
 
+/// Seconds since the epoch, as `time(NULL)`.
+fn now() -> i64 {
+    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => i64::try_from(d.as_secs()).unwrap_or(i64::MAX),
+        Err(e) => -i64::try_from(e.duration().as_secs()).unwrap_or(i64::MAX),
+    }
+}
+
 /// Verify the PEM certificate(s) a phone sent in its Handshake body
 /// (`session_verify_cert`, FUN_00148230), logging as the original does.
 ///
@@ -256,113 +328,82 @@ pub fn restore_pem_newlines(pem: impl AsRef<[u8]>) -> Vec<u8> {
 /// Otherwise exactly three: the first is ignored (it is the legacy
 /// certificate for older servers), the second is the intermediate (its
 /// serial is reported), and the last is the phone certificate, verified
-/// with the second and third as untrusted chain.  Validity-period errors
-/// (`X509_V_ERR_CERT_NOT_YET_VALID`, `X509_V_ERR_CERT_HAS_EXPIRED`) are
-/// ignored.  The verification security level is 0 so that 512-bit keys
-/// and SHA-1 signatures verify as they do under the original's OpenSSL
-/// 1.1.
+/// with the second and third as untrusted chain.  See the module
+/// documentation for what verification checks.
 pub fn verify_client_chain(
     store: &CaStore,
     pem: impl AsRef<[u8]>,
     client: &ClientInfo,
 ) -> std::result::Result<VerifiedClient, CertError> {
-    let pem = pem.as_ref();
+    verify_client_chain_at(store, pem, client, now())
+}
+
+/// [`verify_client_chain`] at the time `now` (seconds since the epoch).
+pub fn verify_client_chain_at(
+    store: &CaStore,
+    pem: impl AsRef<[u8]>,
+    client: &ClientInfo,
+    now: i64,
+) -> std::result::Result<VerifiedClient, CertError> {
     let who = || {
         let mac: &[u8] = client.mac.unwrap_or(b"(null)");
         bformat!("Contact: {} MAC: {} UA: {}", client.contact, mac, client.user_agent)
     };
-    unsafe { ffi::ERR_clear_error() };
-    let result = verify_inner(store, pem, client, &who);
-    unsafe { ffi::ERR_clear_error() };
-    result
-}
-
-fn verify_inner(
-    store: &CaStore,
-    pem: &[u8],
-    client: &ClientInfo,
-    who: &dyn Fn() -> Vec<u8>,
-) -> std::result::Result<VerifiedClient, CertError> {
     let fail = |line: u32, e: CertError| {
         log(LogLevel::Dpma, line, &e.log_message(client.contact));
         Err(e)
     };
-    let Ok((first, rest)) = read_certs(pem) else {
-        return fail(0x208, CertError::Unreadable(openssl_error_string()));
-    };
-
+    // The original copies the body with strlen and reads it from a memory
+    // BIO.  Its error queue is taken to be empty here (see errstack).
+    let body = crate::cbuf::c_bytes(pem.as_ref());
+    let mut errs = Errs::new();
+    let mut bio = Bio::new(body);
+    let first = pem::read_bio_x509(&mut bio, &mut errs);
+    let mut chain: Option<Vec<Certificate>> = None;
+    let mut serial: i64 = 0;
     // The serial number is read from the second certificate (and the
     // following ones while it reads as 0) as the certificates are read.
-    let mut serial: i64 = 0;
-    for c in &rest {
-        if serial != 0 {
-            break;
-        }
-        match serial_of(c) {
-            Some(s) if s >= 0 => {
-                serial = s;
-                log(
-                    LogLevel::Debug(1),
-                    0x22f,
-                    &bformat!("{} Intermediate cert serial number: {}\n", who(), s),
-                );
+    while let Some(x) = pem::read_bio_x509(&mut bio, &mut errs) {
+        let s = x.serial_i64();
+        chain.get_or_insert_with(Vec::new).push(x);
+        if serial == 0 {
+            if s < 0 {
+                return fail(0x22b, CertError::NoSerial(errstack::error_string(errs.get())));
             }
-            _ => return fail(0x22b, CertError::NoSerial(openssl_error_string())),
+            serial = s;
+            log(LogLevel::Debug(1), 0x22f, &bformat!("{} Intermediate cert serial number: {}\n", who(), s));
         }
     }
-
-    let legacy = rest.is_empty();
-    let cert = if legacy {
-        log(LogLevel::Debug(1), 0x235, &bformat!("{} Using legacy certificate\n", who()));
-        match first {
-            Some(c) => c,
-            None => return fail(0x23a, CertError::Unreadable(openssl_error_string())),
+    let (cert, untrusted, legacy) = match &chain {
+        None => {
+            log(LogLevel::Debug(1), 0x235, &bformat!("{} Using legacy certificate\n", who()));
+            match &first {
+                Some(c) => (c, None, true),
+                None => return fail(0x23a, CertError::Unreadable(errstack::error_string(errs.get()))),
+            }
         }
-    } else if rest.len() != 2 {
-        return fail(0x23f, CertError::WrongChainLength(rest.len()));
-    } else {
-        rest[1].clone()
+        Some(c) if c.len() != 2 => return fail(0x23f, CertError::WrongChainLength(c.len())),
+        Some(c) => (&c[1], Some(c.as_slice()), false),
     };
-
-    let mut chain = Stack::new().map_err(|_| CertError::Context(openssl_error_string()))?;
-    for c in &rest {
-        let _ = chain.push(c.clone());
-    }
-    let Ok(mut ctx) = X509StoreContext::new() else {
-        let e = openssl_error_string();
-        log(LogLevel::Dpma, 0x246, &bformat!("<{}>: Unable create context: {}\n", client.contact, e));
-        return Err(CertError::Context(e));
-    };
-    let verified = ctx.init(&store.store, &cert, &chain, |ctx: &mut X509StoreContextRef| {
-        unsafe {
-            X509_STORE_CTX_set_verify_cb(ctx.as_ptr(), Some(verify_cb));
-            ffi::X509_VERIFY_PARAM_set_auth_level(X509_STORE_CTX_get0_param(ctx.as_ptr()), 0);
-        }
-        let ok = ctx.verify_cert().unwrap_or(false);
-        Ok((ok, ctx.error().error_string().to_string()))
-    });
-    match verified {
-        Err(_) => {
-            let e = ctx.error().error_string().to_string();
-            fail(0x24b, CertError::Context(e))
-        }
-        Ok((false, e)) => fail(0x258, CertError::Verify(e)),
-        Ok((true, _)) => Ok(VerifiedClient {
-            public_key: cert.public_key().ok(),
-            certificate: cert,
+    match verify::verify_cert(&store.certs, cert, untrusted, now) {
+        Ok(()) => Ok(VerifiedClient {
+            public_key: cert.public_key().cloned(),
+            certificate: cert.clone(),
             intermediate_serial: serial,
             legacy,
         }),
+        Err(code) => fail(0x258, CertError::Verify(verify::error_string(code).to_string())),
     }
 }
 
 /// Load a phone public key saved in AstDB (`session_load_rsa_key`, in
 /// FUN_0014b450): `PEM_read_bio_RSA_PUBKEY`, which reads the first
-/// `PUBLIC KEY` block and skips any other PEM blocks.  A key under 512
-/// bits is logged and dropped (`Ok(None)`); the original then keeps the
-/// session without a key.  Unreadable input is an error (the caller logs
-/// "Failed to load rsa key").
-pub fn load_public_key(pem: impl AsRef<[u8]>) -> Result<Option<PKey<Public>>> {
+/// `PUBLIC KEY` block (an RSA or RSASSA-PSS `SubjectPublicKeyInfo`) and
+/// skips any other PEM blocks.  A key under 512 bits is logged and dropped
+/// (`Ok(None)`); the original then keeps the session without a key.
+/// Unreadable input is an error (the caller logs "Failed to load rsa
+/// key").
+pub fn load_public_key(pem: impl AsRef<[u8]>) -> Result<Option<PublicKey>> {
     let pem = pem.as_ref();
     let log = |line: u32, msg: &str| {
         crate::log(LogLevel::Dpma, "phone_message.c", line, "session_load_rsa_key", format!("{}\n", msg).as_bytes());
@@ -372,324 +413,28 @@ pub fn load_public_key(pem: impl AsRef<[u8]>) -> Result<Option<PKey<Public>>> {
         log(0x1a8, msg);
         return Err(ProtoError::Invalid(msg.into()));
     }
-    let rsa = openssl::rsa::Rsa::public_key_from_pem(pem).map_err(|e| ProtoError::Crypto(e.to_string()))?;
-    if rsa.size() < 0x40 {
+    let mut errs = Errs::new();
+    let key = pem::read_bio_pubkey_der(&mut Bio::new(pem), &mut errs)
+        .and_then(|der| crate::x509::key::d2i_pubkey(&der, &mut errs));
+    let key = match key {
+        Some(k) if k.rsa().is_some() => k,
+        _ => return Err(ProtoError::Crypto(errstack::error_string(errs.peek()))),
+    };
+    if key.rsa().is_some_and(|k| k.size() < 0x40) {
         log(0x1bd, "failed to load client public rsa key - less than 512 bits");
         return Ok(None);
     }
-    PKey::from_rsa(rsa).map(Some).map_err(|e| ProtoError::Crypto(e.to_string()))
+    Ok(Some(key))
 }
 
-/// PEM encoding of a public key (`-----BEGIN PUBLIC KEY-----`), readable
-/// by [`load_public_key`].
-pub fn public_key_pem(key: &PKey<Public>) -> Result<String> {
-    let pem = key.public_key_to_pem().map_err(|e| ProtoError::Crypto(e.to_string()))?;
-    String::from_utf8(pem).map_err(|e| ProtoError::Invalid(e.to_string()))
-}
-
-#[cfg(test)]
-pub(crate) mod testpki {
-    //! A throwaway PKI generated inside the tests (nothing from the
-    //! original binary).
-    use openssl::asn1::{Asn1Integer, Asn1Time};
-    use openssl::bn::BigNum;
-    use openssl::hash::MessageDigest;
-    use openssl::pkey::{PKey, Private};
-    use openssl::rsa::Rsa;
-    use openssl::x509::extension::BasicConstraints;
-    use openssl::x509::{X509Builder, X509NameBuilder, X509};
-
-    pub struct Issued {
-        pub cert: X509,
-        pub key: PKey<Private>,
-    }
-
-    pub struct Opts {
-        pub bits: u32,
-        pub serial: i64,
-        pub ca: bool,
-        pub not_before_days: i64,
-        pub not_after_days: i64,
-        pub md: MessageDigest,
-    }
-
-    impl Default for Opts {
-        fn default() -> Opts {
-            Opts { bits: 1024, serial: 1, ca: false, not_before_days: -1, not_after_days: 365, md: MessageDigest::sha256() }
-        }
-    }
-
-    /// Issue a certificate for `cn`; self-signed when `issuer` is `None`.
-    pub fn issue(cn: &str, issuer: Option<&Issued>, o: Opts) -> Issued {
-        let key = PKey::from_rsa(Rsa::generate(o.bits).unwrap()).unwrap();
-        let mut name = X509NameBuilder::new().unwrap();
-        name.append_entry_by_text("CN", cn).unwrap();
-        let name = name.build();
-        let mut b = X509Builder::new().unwrap();
-        b.set_version(2).unwrap();
-        let serial = BigNum::from_dec_str(&o.serial.to_string()).unwrap();
-        b.set_serial_number(&Asn1Integer::from_bn(&serial).unwrap()).unwrap();
-        b.set_subject_name(&name).unwrap();
-        b.set_issuer_name(issuer.map(|i| i.cert.subject_name()).unwrap_or(&name)).unwrap();
-        b.set_pubkey(&key).unwrap();
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
-        b.set_not_before(&Asn1Time::from_unix(now + o.not_before_days * 86400).unwrap()).unwrap();
-        b.set_not_after(&Asn1Time::from_unix(now + o.not_after_days * 86400).unwrap()).unwrap();
-        if o.ca {
-            b.append_extension(BasicConstraints::new().critical().ca().build().unwrap()).unwrap();
-        }
-        b.sign(issuer.map(|i| &i.key).unwrap_or(&key), o.md).unwrap();
-        Issued { cert: b.build(), key }
-    }
-
-    pub fn pem(certs: &[&X509]) -> String {
-        certs.iter().map(|c| String::from_utf8(c.to_pem().unwrap()).unwrap()).collect()
-    }
+/// PEM encoding of an RSA public key (`-----BEGIN PUBLIC KEY-----`, an
+/// rsaEncryption `SubjectPublicKeyInfo`), readable by [`load_public_key`].
+pub fn public_key_pem(key: &PublicKey) -> Result<String> {
+    let rsa = key.rsa().ok_or_else(|| ProtoError::Invalid("not an RSA key".into()))?;
+    Ok(pem::encode("PUBLIC KEY", &rsa.spki_der()))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::testpki::*;
-    use super::*;
-    use crate::testlog;
-    use openssl::hash::MessageDigest;
-
-    const CLIENT: ClientInfo =
-        ClientInfo { contact: b"sip:phone@127.0.0.1:5060", mac: Some(b"000fd3000001"), user_agent: b"Digium D65 2_9_17" };
-
-    struct Pki {
-        root: Issued,
-        inter: Issued,
-        phone: Issued,
-        legacy: Issued,
-    }
-
-    fn pki() -> Pki {
-        let root = issue("Test Root", None, Opts { ca: true, serial: 1, ..Default::default() });
-        let inter = issue("Test Intermediate", Some(&root), Opts { ca: true, serial: 4660, ..Default::default() });
-        let phone = issue("000fd3000001", Some(&inter), Opts { serial: 77, ..Default::default() });
-        let legacy = issue("legacy 000fd3000001", Some(&root), Opts { serial: 5, ..Default::default() });
-        Pki { root, inter, phone, legacy }
-    }
-
-    fn store(p: &Pki) -> CaStore {
-        CaStore::from_pem(&p.root.cert.to_pem().unwrap()).unwrap()
-    }
-
-    #[test]
-    fn shareable_between_threads() {
-        fn send_sync<T: Send + Sync>() {}
-        send_sync::<CaStore>();
-        send_sync::<VerifiedClient>();
-    }
-
-    #[test]
-    fn ca_store_loading() {
-        let p = pki();
-        let other = issue("Other Root", None, Opts { ca: true, ..Default::default() });
-        let s = CaStore::from_pem(pem(&[&p.root.cert, &other.cert]).as_bytes()).unwrap();
-        assert_eq!(s.len(), 2);
-        assert!(!s.is_empty());
-        assert!(CaStore::from_pem(b"").is_err());
-        assert!(CaStore::from_pem(b"not a certificate").is_err());
-    }
-
-    #[test]
-    fn legacy_form() {
-        let p = pki();
-        let (r, logs) = testlog::capture(|| verify_client_chain(&store(&p), pem(&[&p.legacy.cert]), &CLIENT));
-        let v = r.unwrap();
-        assert!(v.legacy);
-        assert_eq!(v.intermediate_serial, 0);
-        assert_eq!(v.handshake_version(), None);
-        assert_eq!(v.certificate.to_der().unwrap(), p.legacy.cert.to_der().unwrap());
-        assert!(v.public_key.unwrap().public_eq(&p.legacy.key));
-        assert_eq!(
-            logs,
-            vec!["Contact: sip:phone@127.0.0.1:5060 MAC: 000fd3000001 UA: Digium D65 2_9_17 Using legacy certificate\n"]
-        );
-    }
-
-    #[test]
-    fn chain_form() {
-        let p = pki();
-        let body = pem(&[&p.legacy.cert, &p.inter.cert, &p.phone.cert]);
-        let (r, logs) = testlog::capture(|| verify_client_chain(&store(&p), &body, &CLIENT));
-        let v = r.unwrap();
-        assert!(!v.legacy);
-        assert_eq!(v.intermediate_serial, 4660);
-        assert_eq!(v.handshake_version(), Some("1"));
-        assert_eq!(v.certificate.to_der().unwrap(), p.phone.cert.to_der().unwrap());
-        assert_eq!(
-            logs,
-            vec!["Contact: sip:phone@127.0.0.1:5060 MAC: 000fd3000001 UA: Digium D65 2_9_17 Intermediate cert serial number: 4660\n"]
-        );
-        // The first certificate is ignored entirely, even if it is junk
-        // signed by nobody we trust.
-        let junk = issue("junk", None, Opts::default());
-        let body = pem(&[&junk.cert, &p.inter.cert, &p.phone.cert]);
-        assert!(verify_client_chain(&store(&p), &body, &CLIENT).is_ok());
-        // Text around and between the PEM blocks is skipped.
-        let body = format!("garbage\n{}\nmore\n{}{}trailer", pem(&[&p.legacy.cert]), pem(&[&p.inter.cert]), pem(&[&p.phone.cert]));
-        assert!(verify_client_chain(&store(&p), &body, &CLIENT).is_ok());
-    }
-
-    #[test]
-    fn pem_newlines_restored() {
-        let p = pki();
-        // Well-formed text (LF or CRLF) and text without markers are
-        // unchanged.
-        for body in [pem(&[&p.legacy.cert]), pem(&[&p.legacy.cert, &p.inter.cert, &p.phone.cert])] {
-            assert_eq!(restore_pem_newlines(&body), body.as_bytes());
-            let crlf = body.replace('\n', "\r\n");
-            assert_eq!(restore_pem_newlines(&crlf), crlf.as_bytes());
-        }
-        for s in ["", "hello", "-----", "a-----b", "-----BEGIN", "-----BEGIN CERT", "x-----BEGIN CERT\n-----", "-----END-----"] {
-            assert_eq!(restore_pem_newlines(s), s.as_bytes());
-        }
-        // Each kind of lost line break: after a BEGIN line, before an END
-        // line, and between an END line and the next BEGIN line.
-        assert_eq!(
-            restore_pem_newlines("-----BEGIN CERTIFICATE-----AAAA\nBBBB-----END CERTIFICATE-----"),
-            "-----BEGIN CERTIFICATE-----\nAAAA\nBBBB\n-----END CERTIFICATE-----".as_bytes()
-        );
-        assert_eq!(
-            restore_pem_newlines("-----END A-----\r\n-----BEGIN B----------END B----------BEGIN C-----x"),
-            "-----END A-----\r\n-----BEGIN B-----\n-----END B-----\n-----BEGIN C-----\nx".as_bytes()
-        );
-        assert_eq!(restore_pem_newlines("junk-----BEGIN A-----"), b"junk\n-----BEGIN A-----");
-        // Every line break at a PEM boundary lost (chunks ending right
-        // before and after each BEGIN and END line): both forms verify
-        // again.
-        for body in [pem(&[&p.legacy.cert]), pem(&[&p.legacy.cert, &p.inter.cert, &p.phone.cert])] {
-            let broken = body.replace("-----\n", "-----").replace("\n-----", "-----");
-            assert!(verify_client_chain(&store(&p), &broken, &CLIENT).is_err());
-            let fixed = restore_pem_newlines(&broken);
-            assert_eq!(fixed, body.trim_end_matches('\n').as_bytes());
-            assert!(verify_client_chain(&store(&p), &fixed, &CLIENT).is_ok());
-        }
-    }
-
-    #[test]
-    fn wrong_chain_lengths() {
-        let p = pki();
-        let s = store(&p);
-        let (r, logs) = testlog::capture(|| verify_client_chain(&s, pem(&[&p.inter.cert, &p.phone.cert]), &CLIENT));
-        assert_eq!(r.err(), Some(CertError::WrongChainLength(1)));
-        assert_eq!(logs.last().unwrap(), "<sip:phone@127.0.0.1:5060>: Expected two certificates in the chain, found 1");
-        let four = pem(&[&p.legacy.cert, &p.inter.cert, &p.phone.cert, &p.phone.cert]);
-        assert_eq!(verify_client_chain(&s, &four, &CLIENT).err(), Some(CertError::WrongChainLength(3)));
-    }
-
-    #[test]
-    fn unreadable() {
-        let p = pki();
-        let s = store(&p);
-        for body in ["", "hello", "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"] {
-            let (r, logs) = testlog::capture(|| verify_client_chain(&s, body, &ClientInfo { contact: b"c", mac: None, user_agent: b"ua" }));
-            assert!(matches!(r, Err(CertError::Unreadable(_))), "{:?}", body);
-            assert_eq!(logs[0], "Contact: c MAC: (null) UA: ua Using legacy certificate\n");
-            assert!(logs[1].starts_with("<c>: Unable to read client cert: error:"), "{}", logs[1]);
-        }
-    }
-
-    #[test]
-    fn expired_and_not_yet_valid_accepted() {
-        let p = pki();
-        let expired = issue("old phone", Some(&p.root), Opts { not_before_days: -400, not_after_days: -30, ..Default::default() });
-        assert!(verify_client_chain(&store(&p), pem(&[&expired.cert]), &CLIENT).is_ok());
-        let future = issue("new phone", Some(&p.root), Opts { not_before_days: 30, not_after_days: 400, ..Default::default() });
-        assert!(verify_client_chain(&store(&p), pem(&[&future.cert]), &CLIENT).is_ok());
-        // An expired intermediate and root, too.
-        let root = issue("Old Root", None, Opts { ca: true, not_before_days: -900, not_after_days: -1, ..Default::default() });
-        let inter = issue("Old Inter", Some(&root), Opts { ca: true, serial: 9, not_before_days: -900, not_after_days: -1, ..Default::default() });
-        let phone = issue("phone", Some(&inter), Opts { not_before_days: -900, not_after_days: -1, ..Default::default() });
-        let s = CaStore::from_certs(std::slice::from_ref(&root.cert)).unwrap();
-        let v = verify_client_chain(&s, pem(&[&phone.cert, &inter.cert, &phone.cert]), &CLIENT).unwrap();
-        assert_eq!(v.intermediate_serial, 9);
-    }
-
-    #[test]
-    fn small_keys_and_sha1_accepted() {
-        let root = issue("Weak Root", None, Opts { ca: true, bits: 512, md: MessageDigest::sha1(), ..Default::default() });
-        let inter = issue("Weak Inter", Some(&root), Opts { ca: true, bits: 512, serial: 3, md: MessageDigest::sha1(), ..Default::default() });
-        let phone = issue("phone", Some(&inter), Opts { bits: 512, md: MessageDigest::sha1(), ..Default::default() });
-        let s = CaStore::from_certs(std::slice::from_ref(&root.cert)).unwrap();
-        let v = verify_client_chain(&s, pem(&[&phone.cert, &inter.cert, &phone.cert]), &CLIENT).unwrap();
-        // The common password can be encrypted to a 512-bit key.
-        let pass = crate::crypto::new_common_password().unwrap();
-        let b64 = crate::crypto::encrypt_common_password(v.public_key.as_ref().unwrap(), &pass).unwrap();
-        assert_eq!(crate::crypto::decrypt_common_password(&phone.key, &b64).unwrap(), pass);
-        let legacy = issue("legacy", Some(&root), Opts { bits: 512, md: MessageDigest::sha1(), ..Default::default() });
-        assert!(verify_client_chain(&s, pem(&[&legacy.cert]), &CLIENT).is_ok());
-    }
-
-    #[test]
-    fn wrong_ca_rejected() {
-        let p = pki();
-        let other = issue("Other Root", None, Opts { ca: true, ..Default::default() });
-        let s = CaStore::from_certs(std::slice::from_ref(&other.cert)).unwrap();
-        let (r, logs) = testlog::capture(|| verify_client_chain(&s, pem(&[&p.legacy.cert]), &CLIENT));
-        assert_eq!(r.err(), Some(CertError::Verify("unable to get local issuer certificate".into())));
-        assert_eq!(logs[1], "<sip:phone@127.0.0.1:5060>: Client cert failed to verify: unable to get local issuer certificate\n");
-        let body = pem(&[&p.legacy.cert, &p.inter.cert, &p.phone.cert]);
-        assert!(matches!(verify_client_chain(&s, &body, &CLIENT), Err(CertError::Verify(_))));
-        // A phone certificate signed by a different intermediate.
-        let p2 = pki();
-        let body = pem(&[&p.legacy.cert, &p.inter.cert, &p2.phone.cert]);
-        assert!(matches!(verify_client_chain(&store(&p), &body, &CLIENT), Err(CertError::Verify(_))));
-        // The intermediate alone is not trusted as a root.
-        let s = CaStore::from_certs(std::slice::from_ref(&p.inter.cert)).unwrap();
-        assert!(verify_client_chain(&s, pem(&[&p.legacy.cert]), &CLIENT).is_err());
-    }
-
-    #[test]
-    fn serial_quirks() {
-        let p = pki();
-        // A zero serial on the intermediate makes the original read the
-        // next certificate's serial.
-        let inter0 = issue("Inter0", Some(&p.root), Opts { ca: true, serial: 0, ..Default::default() });
-        let phone = issue("phone", Some(&inter0), Opts { serial: 99, ..Default::default() });
-        let (r, logs) = testlog::capture(|| verify_client_chain(&store(&p), pem(&[&p.legacy.cert, &inter0.cert, &phone.cert]), &CLIENT));
-        assert_eq!(r.unwrap().intermediate_serial, 99);
-        assert_eq!(logs.len(), 2);
-        assert!(logs[0].ends_with("Intermediate cert serial number: 0\n"));
-        assert!(logs[1].ends_with("Intermediate cert serial number: 99\n"));
-        // A negative serial is an error.
-        let neg = issue("InterNeg", Some(&p.root), Opts { ca: true, serial: -5, ..Default::default() });
-        let (r, logs) = testlog::capture(|| verify_client_chain(&store(&p), pem(&[&p.legacy.cert, &neg.cert, &phone.cert]), &CLIENT));
-        assert!(matches!(r, Err(CertError::NoSerial(_))));
-        assert!(logs[0].starts_with("<sip:phone@127.0.0.1:5060>: Unable to get serial number of intermediate cert: "));
-    }
-
-    #[test]
-    fn public_keys() {
-        let p = pki();
-        let public = p.phone.cert.public_key().unwrap();
-        let pem_text = public_key_pem(&public).unwrap();
-        assert!(pem_text.starts_with("-----BEGIN PUBLIC KEY-----\n"));
-        let k = load_public_key(&pem_text).unwrap().unwrap();
-        assert!(k.public_eq(&public));
-        // Other PEM blocks before the key are skipped; a certificate alone
-        // is not a public key.
-        let mixed = format!("{}{}", pem(&[&p.phone.cert]), pem_text);
-        assert!(load_public_key(&mixed).unwrap().unwrap().public_eq(&public));
-        assert!(load_public_key(pem(&[&p.phone.cert])).is_err());
-        let (r, logs) = testlog::capture(|| load_public_key(""));
-        assert!(r.is_err());
-        assert_eq!(logs, vec!["failed to load client public rsa key - is null\n"]);
-        // 512 bits is the minimum; smaller keys are dropped.
-        let k512 = PKey::from_rsa(openssl::rsa::Rsa::generate(512).unwrap()).unwrap();
-        let k512 = PKey::public_key_from_pem(&k512.public_key_to_pem().unwrap()).unwrap();
-        assert!(load_public_key(public_key_pem(&k512).unwrap()).unwrap().is_some());
-        // Build a 504-bit public key by hand (OpenSSL will not generate one).
-        let n = openssl::bn::BigNum::from_hex_str(&format!("C{}1", "0".repeat(124))).unwrap();
-        let e = openssl::bn::BigNum::from_u32(65537).unwrap();
-        let small = openssl::rsa::Rsa::from_public_components(n, e).unwrap();
-        assert_eq!(small.size(), 63);
-        let small_pem = String::from_utf8(small.public_key_to_pem().unwrap()).unwrap();
-        let (r, logs) = testlog::capture(|| load_public_key(&small_pem));
-        assert!(r.unwrap().is_none());
-        assert_eq!(logs, vec!["failed to load client public rsa key - less than 512 bits\n"]);
-    }
-}
+mod testpki;
+#[cfg(test)]
+mod tests;

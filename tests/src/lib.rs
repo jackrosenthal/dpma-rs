@@ -6,7 +6,7 @@
 //!
 //! | Module | What it is |
 //! |---|---|
-//! | [`sim`] | The phone simulator: SIP transport, handshake (legacy and chain forms), encryption, chunking and reassembly, every request type, events, and a self-test.  Independent of the module's crates (RustCrypto instead of OpenSSL), so it cross-checks them. |
+//! | [`sim`] | The phone simulator: SIP transport, handshake (legacy and chain forms), encryption, chunking and reassembly, every request type, events, and a self-test.  Independent of the module's crates (it shares only the RustCrypto primitive crates, not dpma-proto), so it cross-checks them. |
 //! | [`mkpki`] | The test PKI: phone CAs and certificates, negative variants, and the AppServer certificate; installs the trust material into an instance. |
 //! | [`ami`] | An AMI client that keeps every message's raw bytes. |
 //! | [`asterisk`] | The pinned Asterisk releases and the private instances: the instance manager behind `cargo xtask instance` and [`harness::Instance`]. |
@@ -23,8 +23,8 @@
 //! # Binaries
 //!
 //! - `dpma-sim`: the simulator from the command line (`dpma-sim --help`).
-//! - `dpma-mkpki`: makes and installs the test PKI, or checks it with
-//!   `openssl verify`.
+//! - `dpma-mkpki`: makes and installs the test PKI, or checks that its
+//!   certificates verify as the module's rules expect.
 //! - `dpma-ami`: sends an AMI action and prints the response and events.
 //!
 //! # Suites

@@ -46,8 +46,11 @@ You need:
   its `include/` and the pjproject headers from its bundled pjproject.
   The module is built for that release (and Asterisk declines a module
   whose build options, from `buildopts.h`, differ from its own).
-- The OpenSSL development files (headers and `pkg-config` data), for the
-  `openssl` crate.
+
+No OpenSSL is needed: the module's cryptography (AES-128-CBC, SHA-1,
+RSA, random numbers, and phone certificate verification) is Rust code,
+from the RustCrypto crates and dpma-rs's own reading and verification of
+X.509 certificates.
 
 Then:
 
@@ -58,8 +61,9 @@ cargo build --release
 
 The module is built as `target/release/libres_dpma_rs.so`.
 
-At run time the module uses the OpenSSL libraries and the libxml2 that
-Asterisk itself loads.
+At run time the module links only the C runtime (`libc`, `libgcc_s`)
+and uses the libxml2 that Asterisk itself loads; it does not use the
+OpenSSL libraries.
 
 ## Installing
 
@@ -205,6 +209,21 @@ deliberate exceptions:
     `phone_utils_*`, and others) that its helper modules use; dpma-rs
     has no helper modules and exports none, so the original's helpers
     cannot be used with it.
+17. Phone certificates are read and verified as by the original's
+    built-in OpenSSL 1.1.1t, with the same checks and log messages,
+    except for these, which the original's built-in CA certificates (RSA
+    keys, SHA-1 and SHA-256 signatures) do not call for: certificates
+    signed with algorithms other than RSA PKCS#1 v1.5 with MD5, SHA-1, or
+    SHA-2 (for example, ECDSA or RSASSA-PSS) fail with "certificate
+    signature failure"; a phone certificate with an RFC 3779 IP address or
+    AS number extension fails with "Unsupported extension feature"; and an
+    encrypted PEM block is unreadable (the original asks for a pass
+    phrase on Asterisk's terminal or standard input).  The OpenSSL error
+    that "Unable to read client cert" and the decryption failure messages
+    show is the error of that failure; the original's can be an error left
+    over from an earlier handshake on the same thread.  (dpma-rs used to
+    log OpenSSL 3's error texts, which differ from the original's 1.1.1t
+    texts.)
 
 Beyond these, a number of inputs that crash the original modules (for
 example, PJSIP AOR changes while a phone line has no PJSIP endpoint, or an

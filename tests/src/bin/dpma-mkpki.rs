@@ -5,7 +5,7 @@
 //! dpma-mkpki                 generate (keeping existing files) and install
 //! dpma-mkpki --force         regenerate everything
 //! dpma-mkpki --no-install    generate only
-//! dpma-mkpki --check         verify every certificate with `openssl verify`
+//! dpma-mkpki --check         check that every certificate verifies as expected
 //! ```
 //!
 //! The instance is `--instance DIR`, else the slot of `--slot N` or
@@ -43,7 +43,8 @@ struct Args {
     /// Do not install into an instance.
     #[arg(long)]
     no_install: bool,
-    /// Verify the certificates with openssl and exit.
+    /// Check that every certificate verifies, or not, as expected, and
+    /// exit.
     #[arg(long)]
     check: bool,
 }
