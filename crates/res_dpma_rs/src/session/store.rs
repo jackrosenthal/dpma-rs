@@ -8,7 +8,7 @@
 //!
 //! Phone certificates are verified against a CA store, and an AppServer
 //! certificate is sent in every HandshakeResponse.  Both default to the
-//! certificates embedded in the original; `phone_ca_file` and
+//! certificates embedded in the official DPMA; `phone_ca_file` and
 //! `appserver_certificate` override them with a file (read at load and
 //! reload).
 
@@ -20,9 +20,9 @@ use dpma_proto::cert::{CaStore, ClientInfo};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
-/// Buckets of the original's session container (`ao2_container_alloc_hash`
-/// with 0x101 buckets, case-insensitive djb2 of the id); listings follow
-/// its order.
+/// Buckets of the official DPMA's session container
+/// (`ao2_container_alloc_hash` with 0x101 buckets, case-insensitive djb2 of
+/// the id); listings follow its order.
 const BUCKETS: u32 = 0x101;
 
 /// The session container (0x5f4e40); None while not loaded.
@@ -36,7 +36,7 @@ static CLI: Mutex<Option<CliGroup>> = Mutex::new(None);
 
 /// Trust material read from the configured files.
 pub(crate) struct Trust {
-    /// `phone_ca_file` (the original's `castore`).
+    /// `phone_ca_file` (the official DPMA's `castore`).
     pub ca: Option<CaStore>,
     /// `appserver_certificate`: appended to every HandshakeResponse.
     pub appserver_pem: Vec<u8>,
@@ -89,7 +89,7 @@ pub fn load(_config_file: &[u8]) -> Result<(), ()> {
 }
 
 /// `phone_msg_reload` (FUN_00150420): refresh the global auth flags.  The
-/// trust material is read again too (the original's is built in); what
+/// trust material is read again too (the official DPMA's is built in); what
 /// cannot be read keeps its previous value.
 pub fn reload(_config_file: &[u8]) -> Result<(), ()> {
     set_global_auth_flags(crate::config::get().auth_flags);
@@ -134,7 +134,7 @@ pub fn find_by_mac(mac: &[u8]) -> Option<Arc<Session>> {
     })
 }
 
-/// Every session, in the original container's iteration order.
+/// Every session, in the iteration order of the official DPMA's container.
 pub fn all() -> Vec<Arc<Session>> {
     SESSIONS
         .lock()
@@ -213,7 +213,7 @@ pub fn global_auth_flags() -> u32 {
     GLOBAL_AUTH_FLAGS.load(Ordering::SeqCst)
 }
 
-/// The session id the original generates: `"%d%ld"` of the djb2 hash
+/// The session id the official DPMA generates: `"%d%ld"` of the djb2 hash
 /// (`h * 33 ^ c`, seed 5381, masked to 31 bits) of `"%ld%s"` (time,
 /// contact; at most 127 bytes) and `ast_random()`.
 fn new_session_id(time: i64, contact: &[u8]) -> Vec<u8> {
@@ -239,7 +239,7 @@ pub(crate) struct NewSession<'a> {
     pub origination_network: Option<&'a [u8]>,
 }
 
-/// `phone_msg_session_alloc` (FUN_0014b450) as both of the original's
+/// `phone_msg_session_alloc` (FUN_0014b450) as both of the official DPMA's
 /// callers use it: create a session, verify the phone certificate(s)
 /// (`session_verify_cert`, which logs its own failures), and link it into
 /// the container.  None on failure.

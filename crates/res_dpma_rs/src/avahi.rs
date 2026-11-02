@@ -1,7 +1,7 @@
 //! mDNS/DNS-SD announcement of the configuration server (phone_avahi.c,
 //! 0x173ba0..0x174390).
 //!
-//! The original registers one service through libavahi-client (and so
+//! The official DPMA registers one service through libavahi-client (and so
 //! needs a running avahi-daemon); this rewrite answers mDNS itself with
 //! the pure-Rust `mdns-sd` responder (plan section 8, item 8), so it
 //! announces with or without avahi-daemon.  What is announced is what
@@ -12,10 +12,10 @@
 //!   protocol, with port `strtol(mdns_port) & 0xffff` (default 5060);
 //! - TXT `serviceType=asterisk` and, when `mdns_address` is set,
 //!   `sipUrl=sip:proxy@<mdns_address>:<mdns_port>[;transport=<mdns_transport>]`
-//!   (cut to 255 bytes, as the original's `snprintf` into 256 bytes);
+//!   (cut to 255 bytes, as the official DPMA's `snprintf` into 256 bytes);
 //! - nothing when `service_discovery_enabled` is off, or when the name is
 //!   empty or longer than 63 bytes (Avahi rejects such a name, and the
-//!   original then announces nothing, silently).
+//!   official DPMA then announces nothing, silently).
 //!
 //! The lifecycle follows `avahi_start`, `avahi_reload`, and `avahi_stop`:
 //! the service is announced at load, withdrawn (goodbye packets) and
@@ -23,7 +23,7 @@
 //! withdrawn at unload.  The responder runs only while discovery is
 //! enabled, so with discovery off no mDNS socket is open.  When Asterisk
 //! exits without unloading its modules (`core stop now`), avahi-daemon
-//! withdraws the original's service as its client goes away; here an
+//! withdraws the official DPMA's service as its client goes away; here an
 //! Asterisk atexit handler withdraws it.
 //!
 //! Differences that come with leaving Avahi (see the hand-off notes):
@@ -39,8 +39,9 @@
 //! - `mdns-sd` takes the instance name as UTF-8 text, so a `service_name`
 //!   that is not valid UTF-8 is not announced; an error is logged instead
 //!   (user decision).  (Avahi passes the name over D-Bus, which accepts
-//!   only UTF-8; the original's behavior with such a name is not known.)
-//!   The TXT record carries `mdns_address` and `mdns_transport` as bytes.
+//!   only UTF-8; the official DPMA's behavior with such a name is not
+//!   known.)  The TXT record carries `mdns_address` and `mdns_transport` as
+//!   bytes.
 //! - Interfaces: those that are up, multicast-capable, and not point to
 //!   point.  avahi-daemon also never uses loopback interfaces; this
 //!   responder uses one only if multicast is enabled on it (never the case
@@ -87,8 +88,8 @@ fn strtol(s: &[u8]) -> i64 {
 }
 
 /// What to announce under the current configuration (read from the
-/// configuration object, as the original does; see `config::Settings`);
-/// None when discovery is disabled.
+/// configuration object, as the official DPMA does; see
+/// `config::Settings`); None when discovery is disabled.
 fn wanted() -> Option<Announcement> {
     let s = crate::config::settings();
     if !s.as_ref().is_none_or(|s| s.enable_discovery) {

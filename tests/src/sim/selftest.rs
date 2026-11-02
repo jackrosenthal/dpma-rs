@@ -132,9 +132,9 @@ pub fn vectors_text() -> String {
 /// Known answers for `EVP_BytesToKey(EVP_aes_128_cbc(), EVP_sha1(), salt,
 /// password, 1)`: password and salt (hex), key and IV.  Computed
 /// independently with Python's hashlib from the definition in the
-/// original's OpenSSL 1.1.1t (`crypto/evp/evp_key.c`: D1 = SHA1(password
-/// || salt), D2 = SHA1(D1 || password || salt), key = D1[0..16], IV =
-/// D1[16..20] || D2[0..12]).
+/// official DPMA's OpenSSL 1.1.1t (`crypto/evp/evp_key.c`: D1 =
+/// SHA1(password || salt), D2 = SHA1(D1 || password || salt), key =
+/// D1[0..16], IV = D1[16..20] || D2[0..12]).
 pub const BYTES_TO_KEY_KATS: [(&str, &str, &str, &str); 6] = [
     ("", "3132333435363738", "7c222fb2927d828af22f592134e89324", "80637c0d7a6e3c10173302c9578ee71c"),
     ("78", "3132333435363738", "947788df997e7a3a3a974204486b5233", "9abdf89b8358e0c4a989f89694f12309"),
@@ -831,7 +831,7 @@ struct FakeState {
 /// concatenated and decoded once with `ast_base64decode`, header fields
 /// decrypted with the same salt), then answers with [`server_frame`]
 /// framing.  It verifies chains with signatures only (none of the
-/// original's chain rules) and knows Handshake, PingRequest,
+/// official DPMA's chain rules) and knows Handshake, PingRequest,
 /// TokenRequest, ConfigRequest, and events.
 pub struct FakeServer {
     sock: Arc<UdpSocket>,

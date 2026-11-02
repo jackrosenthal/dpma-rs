@@ -1,4 +1,4 @@
-//! The endpoint identifier side: what the original distribution ships as
+//! The endpoint identifier side: what the official DPMA ships as
 //! res_pjsip_endpoint_identifier_dpma.so, "DPMA PJSIP Support" (decompile:
 //! `dev/analysis/decomp/helpers/res_pjsip_endpoint_identifier_dpma.c`).
 //!
@@ -11,18 +11,19 @@
 //! * Phone lines named after a PJSIP endpoint take their technology,
 //!   context, caller ID, auth section, authname, secret, and mailbox from
 //!   the PJSIP configuration: the lines pass run in every processing of the
-//!   phone configuration (the original's config handler), and sorcery
+//!   phone configuration (the official DPMA's config handler), and sorcery
 //!   observers on endpoints, AORs, and auths.
 //! * A REGISTER (contact created or updated) from a Digium or Sangoma user
 //!   agent records the contact URI as the last URI of the phone named after
 //!   the AOR.
-//! * `send_info` sends SIP INFO requests on calls (the original's "PJSIP"
-//!   info handler), and `endpoint_is_dphone` says whether an endpoint has a
-//!   contact with a phone user agent.
+//! * `send_info` sends SIP INFO requests on calls (the official DPMA's
+//!   "PJSIP" info handler), and `endpoint_is_dphone` says whether an
+//!   endpoint has a contact with a phone user agent.
 //!
 //! Lines and phones are reached through their objects (`users::objects`),
-//! as the original helper reaches them through res_digium_phone's exported
-//! API.  Log messages carry the original's file and function names.
+//! as the official DPMA's helper reaches them through res_digium_phone's
+//! exported API.  Log messages carry the official DPMA's file and function
+//! names.
 
 use super::{register_is_dphone, set_config_handler, set_info_handler, unregister_is_dphone};
 use crate::users::objects::{self, LineObj};
@@ -38,14 +39,15 @@ use std::ptr::null_mut;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::RwLock;
 
-/// The original's source file name, used in log messages.
+/// The official DPMA's source file name, used in log messages.
 const FILE: &str = "res_pjsip_endpoint_identifier_dpma.c";
 /// The default of res_digium_phone.conf's `pjsip_message_context`.
 const DEFAULT_CONTEXT: &str = "dpma_pjsip_message_context";
 /// The name of the config hook on res_digium_phone.conf.
 const HOOK: &str = "dpma_pjsip_hook";
 
-/// `ast_log` under the original's file name and the given function name.
+/// `ast_log` under the official DPMA's file name and the given function
+/// name.
 macro_rules! log {
     ($level:expr, $func:expr, $($arg:tt)*) => {
         dpma_ast::log::log($level, FILE, line!(), $func, &dpma_ast::bformat!($($arg)*))
@@ -71,7 +73,7 @@ struct Held(*mut sys::ast_sip_endpoint);
 unsafe impl Send for Held {}
 unsafe impl Sync for Held {}
 
-/// The original's `AO2_GLOBAL_OBJ_STATIC(g_endpoint)`.
+/// The official DPMA's `AO2_GLOBAL_OBJ_STATIC(g_endpoint)`.
 static ENDPOINT: RwLock<Held> = RwLock::new(Held(null_mut()));
 
 /// `ao2_global_obj_ref(g_endpoint)`: the endpoint with a reference, or
@@ -99,10 +101,10 @@ fn endpoint_replace(endpoint: *mut sys::ast_sip_endpoint) {
 // ---------------------------------------------------------------------
 
 /// A request carrying an X-Digium-User-Agent header comes from a phone
-/// talking to the module: it gets the DPMA endpoint.  (The original finds
-/// rdata->msg_info.msg by scanning rdata for msg_info.info, the word after
-/// it, so that it works with any layout of pjsip_rx_data; this reads the
-/// layout of the headers it is built with.)
+/// talking to the module: it gets the DPMA endpoint.  (The official DPMA
+/// finds rdata->msg_info.msg by scanning rdata for msg_info.info, the word
+/// after it, so that it works with any layout of pjsip_rx_data; this reads
+/// the layout of the headers it is built with.)
 unsafe extern "C" fn identify_endpoint(rdata: *mut sys::pjsip_rx_data) -> *mut sys::ast_sip_endpoint {
     dpma_ast::guard(null_mut(), || {
         let name = sys::pj_str_t { ptr: c"X-Digium-User-Agent".as_ptr() as *mut c_char, slen: 19 };
@@ -233,7 +235,7 @@ unsafe extern "C" fn aor_mailboxes(aor: *mut c_void, arg: *mut c_void, _flags: c
 }
 
 /// `phone_users_set_line_option` (the result is not used, as in the
-/// original).
+/// official DPMA).
 fn set_line_option(line: &LineObj, option: &[u8], value: &CStr) {
     let _ = line.set_option(option, value.to_bytes());
 }
@@ -353,8 +355,8 @@ fn list_contains(list: Option<&CStr>, item: &CStr) -> bool {
 /// `pjsip_aor_changed` (AOR updated or deleted): lines whose endpoint uses
 /// the AOR take their settings again.
 ///
-/// Deviation: the original reads the `aors` of a line's endpoint before
-/// checking that the endpoint exists, and so crashes (in
+/// Deviation: the official DPMA reads the `aors` of a line's endpoint
+/// before checking that the endpoint exists, and so crashes (in
 /// `ast_sorcery_objectset_create2`) whenever an AOR changes while any line
 /// has no PJSIP endpoint of its name; such lines are skipped here.
 unsafe extern "C" fn pjsip_aor_changed(aor: *const c_void) {
@@ -410,8 +412,8 @@ unsafe extern "C" fn pjsip_contact_update(contact: *const c_void) {
         const FUNC: &str = "pjsip_contact_update";
         let id = sys::ast_sorcery_object_get_id(contact);
         let user_agent = get_config_value(contact, c"user_agent");
-        // The original copies the URI with strdupa() unchecked; contacts
-        // always have one.
+        // The official DPMA copies the URI with strdupa() unchecked;
+        // contacts always have one.
         let uri = get_config_value(contact, c"uri").unwrap_or_default();
         if !verify_user_agent(user_agent.as_deref()) || id.is_null() {
             return;
@@ -428,7 +430,7 @@ unsafe extern "C" fn pjsip_contact_update(contact: *const c_void) {
             return;
         };
 
-        // The original tests the address (never NULL) rather than the
+        // The official DPMA tests the address (never NULL) rather than the
         // transport, so ";transport=" is always there, even when empty.
         let (addr, transport) = dpma_proto::uri::phone_utils_parse_uri(uri.as_bytes());
         let last_uri = dpma_ast::bformat!("pjsip:{};transport={}", addr, transport.unwrap_or_default());
@@ -515,7 +517,7 @@ unsafe fn internal_session_get_dialog(session: *const sys::ast_sip_session) -> *
 }
 
 /// Use Asterisk's `ast_sip_session_get_dialog()` when it has one (looked
-/// up at run time, as the original does).  True when found.
+/// up at run time, as the official DPMA does).  True when found.
 fn init_get_dialog() -> bool {
     // SAFETY: dlsym only looks the name up.
     let f = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c"ast_sip_session_get_dialog".as_ptr()) };
@@ -599,9 +601,9 @@ unsafe extern "C" fn send_info_task(obj: *mut c_void) -> c_int {
 /// on the channel's dialog with `headers` and, when `body` is not empty,
 /// the body with `content_type` ("type/subtype").  0 when sent, else -1.
 ///
-/// Deviation: the original dereferences the channel's PJSIP private data
-/// unchecked and would crash on a channel that is already hung up (NULL
-/// tech_pvt); this returns -1 instead.
+/// Deviation: the official DPMA dereferences the channel's PJSIP private
+/// data unchecked and would crash on a channel that is already hung up
+/// (NULL tech_pvt); this returns -1 instead.
 ///
 /// # Safety
 /// `chan` must be a live PJSIP channel the caller holds a reference on.
@@ -744,7 +746,7 @@ unsafe fn register() -> Result<(), (i32, &'static str)> {
 }
 
 /// `load_module`: AST_MODULE_LOAD_SUCCESS, or AST_MODULE_LOAD_FAILURE as
-/// the original returns on any error.
+/// the official DPMA returns on any error.
 pub(super) fn load() -> sys::ast_module_load_result {
     const FUNC: &str = "load_module";
     dpma_ast::guard(sys::AST_MODULE_LOAD_FAILURE, || unsafe {

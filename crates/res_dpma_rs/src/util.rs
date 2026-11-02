@@ -11,8 +11,8 @@ pub use dpma_ast::dpma_bytes::case_hash as str_case_hash;
 /// fold, every other byte is itself) that iterates in the same order as
 /// an ao2 hash container with `buckets` buckets hashed by
 /// `ast_str_case_hash` (bucket order, then insertion order within a
-/// bucket), so CLI listings come out in the same order as the original
-/// module's.
+/// bucket), so CLI listings come out in the same order as the official
+/// DPMA's.
 #[derive(Debug, Clone)]
 pub struct NamedMap<T> {
     buckets: u32,

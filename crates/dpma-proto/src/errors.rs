@@ -1,6 +1,6 @@
 //! Error codes and texts.
 //!
-//! Two independent sets exist in the original:
+//! Two independent sets exist in the official DPMA:
 //!
 //! * message errors, sent as `X-Digium-AppServer-Error-ID: <code>` with a
 //!   `<error msg="..." />` body by `phone_msg_outgoing_send` (table at
@@ -22,7 +22,7 @@ pub mod msg {
     pub const INVALID_CERTIFICATE: i32 = -400;
 }
 
-/// Text for a message error code, exactly as the original sends it
+/// Text for a message error code, exactly as the official DPMA sends it
 /// (including its spelling mistakes).
 pub fn msg_error_text(code: i32) -> &'static str {
     match code {

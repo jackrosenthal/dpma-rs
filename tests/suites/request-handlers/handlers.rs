@@ -618,7 +618,7 @@ pub fn file(ctx: &mut Ctx) -> Result<()> {
     // Subdirectories of file_directory are served; names with a ".."
     // component are refused like a missing file (plan section 8, item
     // 14), although the files exist.  Absolute names are looked up inside
-    // file_directory, as the original does ("<dir>//p12-small.txt").
+    // file_directory, as the official DPMA does ("<dir>//p12-small.txt").
     for fname in [
         "sub/p12-sub.txt",
         "./sub/./p12-sub.txt",

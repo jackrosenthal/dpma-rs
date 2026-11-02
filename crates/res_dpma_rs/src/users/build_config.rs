@@ -10,10 +10,10 @@
 //! `phone_user_get_application_settings` FUN_0016add0;
 //! `insert_display_rules` FUN_001558e0).
 //!
-//! The document is built as text with the original's format strings, one
-//! append per `ast_str_append` of the original, in the same order and
-//! under the same conditions.  The only libxml2 round trip is the one the
-//! original makes to merge a `contacts_display_rules` file.
+//! The document is built as text with the official DPMA's format strings,
+//! one append per `ast_str_append` of the official DPMA, in the same order
+//! and under the same conditions.  The only libxml2 round trip is the one
+//! the official DPMA makes to merge a `contacts_display_rules` file.
 
 use super::*;
 use crate::xmlutil;
@@ -21,11 +21,11 @@ use dpma_ast::dpma_bytes::{ByteSlice, ByteVec};
 use dpma_ast::{bformat, dpma_log};
 use dpma_ast::xml::Doc;
 
-/// Size of the original's escape buffers.
+/// Size of the official DPMA's escape buffers.
 const ESC_BUF: usize = 0x100;
 
-/// Allocated size of the `ast_str` the original's ConfigRequest handler
-/// builds the document in (`ast_str_create(0x400)`).
+/// Allocated size of the `ast_str` the official DPMA's ConfigRequest
+/// handler builds the document in (`ast_str_create(0x400)`).
 pub const INITIAL_BUF: usize = 0x400;
 
 fn esc(s: &[u8]) -> Vec<u8> {
@@ -33,9 +33,10 @@ fn esc(s: &[u8]) -> Vec<u8> {
 }
 
 /// The output buffer.  Besides the text it tracks the allocation size the
-/// original's `ast_str` would have, because `insert_display_rules` stores
-/// the merged document with `ast_str_set(buf, len, ...)`, which drops the
-/// last character when the buffer has to grow (see `insert_display_rules`).
+/// official DPMA's `ast_str` would have, because `insert_display_rules`
+/// stores the merged document with `ast_str_set(buf, len, ...)`, which
+/// drops the last character when the buffer has to grow (see
+/// `insert_display_rules`).
 struct Out<'a> {
     s: &'a mut Vec<u8>,
     cap: usize,
@@ -177,7 +178,7 @@ fn outbound_proxy(o: &mut Out, line: &Line) {
 }
 
 /// `add_internal_line_account`.  Returns the line, whose CustomPresence
-/// state the caller initializes (the original does it here).
+/// state the caller initializes (the official DPMA does it here).
 fn add_internal_line_account(o: &mut Out, phone: &Phone, line: &Line, net: &Network, index: i32, server_uuid: &[u8]) {
     ap!(o, "<account \n");
     if !server_uuid.is_empty() {
@@ -408,7 +409,7 @@ fn user_image(o: &mut Out, reg: &Registry, phone: &Phone, dir: &[u8], id: &str, 
 }
 
 /// `phone_user_build_config`.  Returns the internal lines whose
-/// CustomPresence state must be initialized, which the original does
+/// CustomPresence state must be initialized, which the official DPMA does
 /// while adding their accounts.
 fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], model: &[u8]) -> Vec<Vec<u8>> {
     let p = phone;
@@ -1079,7 +1080,7 @@ fn build_config(reg: &Registry, phone: &Phone, out: &mut Vec<u8>, dir: &[u8], mo
 /// `insert_display_rules`: merge the phone's `contacts_display_rules` file
 /// into the first contacts application of the document.
 ///
-/// The original parses the document with libxml2, adds the file's root
+/// The official DPMA parses the document with libxml2, adds the file's root
 /// element to `//config/appconfig[@id='contacts']`, and replaces the text
 /// with the formatted dump (`xmlDocDumpFormatMemory`, which also adds the
 /// XML declaration and normalizes the markup).  It stores the dump with
@@ -1110,7 +1111,7 @@ fn insert_display_rules(rules: &[u8], o: &mut Out, dir: &[u8]) {
 }
 
 /// `phone_user_read_config`: append the file `dir/file` to `out`, the way
-/// the original does (in 2047 byte reads, each cut at its first NUL).
+/// the official DPMA does (in 2047 byte reads, each cut at its first NUL).
 pub fn read_config(out: &mut Vec<u8>, dir: &[u8], file: &[u8]) -> Result<(), ()> {
     use std::io::Read;
     let path = crate::util::truncate(&bformat!("{}/{}", dir, file), 0x1000);
@@ -1146,19 +1147,19 @@ pub fn read_config(out: &mut Vec<u8>, dir: &[u8], file: &[u8]) -> Result<(), ()>
 }
 
 /// `phone_user_get_config`: put the configuration document of phone `phone`
-/// into `out` (replacing what is there, as the original's `ast_str_set`
-/// does), or, when the phone has `config_file` set, append that file from
-/// `file_dir`.  `file_dir` is the file directory
+/// into `out` (replacing what is there, as the official DPMA's
+/// `ast_str_set` does), or, when the phone has `config_file` set, append
+/// that file from `file_dir`.  `file_dir` is the file directory
 /// (`dpma_append_config_file_dir(buf, len, NULL, cfg)`, i.e., the
 /// `file_directory` setting); `model` is the requesting phone's model from
 /// its user agent (e.g., "D65"), which selects the `<model>_logo_file`.
-/// Calls `users::presence::user_application_sync` first, as the original
-/// does.  Err when the phone does not exist.
+/// Calls `users::presence::user_application_sync` first, as the official
+/// DPMA does.  Err when the phone does not exist.
 pub fn get_config(phone: &[u8], out: &mut Vec<u8>, file_dir: &[u8], model: &[u8]) -> Result<(), ()> {
     super::presence::user_application_sync(phone);
     let presence_lines = {
-        // The phone's lines are locked while they are read (the original
-        // locks each line in add_internal_line_account and
+        // The phone's lines are locked while they are read (the official
+        // DPMA locks each line in add_internal_line_account and
         // add_external_line_account): the PJSIP helper updates lines with
         // their lock held.
         let _lines = crate::users::objects::lock_phone_lines(phone);

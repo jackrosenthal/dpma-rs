@@ -2,7 +2,7 @@
 //! validation, what validation drops, reloads, and pruning on a new
 //! handshake.  Every reply must arrive over the transport the simulator
 //! uses, Session Timeout replies included (port plan section 8, item 11;
-//! the original sends those over UDP).  Over TCP, only what depends on
+//! the official DPMA sends those over UDP).  Over TCP, only what depends on
 //! the transport runs: chunking (the handshakes), the reply URI's
 //! transport (encrypted replies, Echo, -398 replies), and the PEM cuts.
 
@@ -240,7 +240,7 @@ pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
 
     // Handshake bodies in chunks that end right before and after every
     // BEGIN and END line: Asterisk strips those line breaks and the
-    // module restores them (port plan section 8, item 12; the original
+    // module restores them (port plan section 8, item 12; the official DPMA
     // rejects these).
     let c = &mut ctx.c;
     let ex = phone.handshake().bundle("legacy").pem_cuts().send()?;

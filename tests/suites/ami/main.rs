@@ -31,10 +31,10 @@
 //! | `reconfigure` | `digium_phones reconfigure` from the CLI and DigiumPhoneReconfigure(All) from AMI: texts, errors, and the `digium.config.update` events (one per phone); both bodies of the reconfigure message |
 //! | `reload` | A module reload that changes a phone's lines or removes a phone reconfigures only that phone |
 //! | `session-gone` | A queued request and an event for a phone whose session a new handshake replaced |
-//! | `expiry` | The AMI scheduler drops a request nobody answers when its expiry runs (port plan section 8, item 13; the original never runs its scheduler, so its requests never expire): with the delay shortened to 2 s (`dpmadev ami expiry`), the request is still queued after 1 s, then dropped and logged, a later answer fails, and nothing reaches the phone |
+//! | `expiry` | The AMI scheduler drops a request nobody answers when its expiry runs (port plan section 8, item 13; the official DPMA never runs its scheduler, so its requests never expire): with the delay shortened to 2 s (`dpmadev ami expiry`), the request is still queued after 1 s, then dropped and logged, a later answer fails, and nothing reaches the phone |
 //!
 //! AMI responses and events are compared byte for byte with what the
-//! original's `phone_ami.c` and `phone_request.c` write; replies and
+//! official DPMA's `phone_ami.c` and `phone_request.c` write; replies and
 //! events are checked as the simulated phone decrypts them.
 //!
 //! Everything is driven from the simulator: the TokenRequest records where
@@ -117,7 +117,7 @@ fn raw(
         .map(|m| m.raw().clone())
 }
 
-/// The original's reply: `"Response: %s\r\n%s\r\n"` with the ActionID
+/// The official DPMA's reply: `"Response: %s\r\n%s\r\n"` with the ActionID
 /// line (or nothing).
 fn resp(result: &str, action_id: Option<&str>) -> Vec<u8> {
     let id = action_id
@@ -1093,7 +1093,7 @@ fn reconfigure(ctx: &mut Ctx, st: &State) -> Result<()> {
     );
 
     // The two bodies of phone_user_send_reconfigure (the delete-token one
-    // has no caller in the original).
+    // has no caller in the official DPMA).
     let la = a.local_addr();
     let uri = format!("pjsip:{}:{}", la.ip(), la.port());
     let session = a.session().unwrap_or_default();

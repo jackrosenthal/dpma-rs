@@ -1,12 +1,12 @@
 //! Phone certificate verification (`load_castore`, `session_verify_cert`).
 //!
 //! The CA store is built from a PEM bundle of CA certificates: by default
-//! the three built into the original, or the `phone_ca_file` when set.  A
-//! phone sends its certificates in its Handshake body, and they are
+//! the three built into the official DPMA, or the `phone_ca_file` when set.
+//! A phone sends its certificates in its Handshake body, and they are
 //! verified against the store.
 //!
-//! The original verifies with OpenSSL 1.1.1t's `X509_verify_cert`.  This
-//! module does not reproduce OpenSSL: it decodes certificates with the
+//! The official DPMA verifies with OpenSSL 1.1.1t's `X509_verify_cert`.
+//! This module does not reproduce OpenSSL: it decodes certificates with the
 //! `x509-cert` crate (strict DER) and makes the checks that the
 //! certificates the module meets need.  Those are the built-in
 //! certificates, the chains genuine phones send (issued by Digium's or
@@ -20,10 +20,10 @@
 //! labels are skipped.  A block is readable when its base64 text (white
 //! space ignored) decodes to one DER certificate that `x509-cert` decodes,
 //! with its basicConstraints and keyUsage extensions, if present, decoding
-//! and occurring once.  Where the original logs OpenSSL's error text for a
-//! certificate it cannot read, this module logs [`PARSE_ERROR`] instead,
-//! whatever the reason.  A Handshake body is read as a C string, up to its
-//! first NUL, as the original reads it.
+//! and occurring once.  Where the official DPMA logs OpenSSL's error text
+//! for a certificate it cannot read, this module logs [`PARSE_ERROR`]
+//! instead, whatever the reason.  A Handshake body is read as a C string,
+//! up to its first NUL, as the official DPMA reads it.
 //!
 //! # Verification
 //!
@@ -32,7 +32,7 @@
 //! certificates that may complete its chain (see [`verify_client_chain`]).
 //! The checks follow, in order.  The first that fails is logged with the
 //! text OpenSSL's `X509_verify_cert_error_string` gives for it, which the
-//! original logs.
+//! official DPMA logs.
 //!
 //! 1. **The chain.**  From the phone's certificate on, the issuer of a
 //!    certificate is the first certificate, not yet in the chain, whose
@@ -76,7 +76,7 @@
 //!    limit).  Anything else is "certificate signature failure".  The trust
 //!    anchor's own signature is not checked.
 //!
-//! Validity periods are not checked: the original's verify callback
+//! Validity periods are not checked: the official DPMA's verify callback
 //! ignores OpenSSL's "certificate is not yet valid" and "certificate has
 //! expired".
 //!
@@ -101,14 +101,14 @@ use x509_cert::name::Name;
 
 pub use crate::rsakey::RsaKey;
 
-/// What is logged, where the original logs OpenSSL's error text, for a
+/// What is logged, where the official DPMA logs OpenSSL's error text, for a
 /// certificate that cannot be read: no `CERTIFICATE` PEM block, a block
 /// without an END line or whose base64 text does not decode, or a
 /// certificate `x509-cert` does not decode (see the module documentation).
 pub const PARSE_ERROR: &str = "certificate parse error";
 
 /// What is logged for an intermediate certificate with a negative serial
-/// number (where the original logs whatever OpenSSL error is queued).
+/// number (where the official DPMA logs whatever OpenSSL error is queued).
 pub const NEGATIVE_SERIAL: &str = "negative serial number";
 
 /// A certificate's public key.
@@ -172,7 +172,7 @@ impl Certificate {
         self.key.as_ref()
     }
 
-    /// The serial number as the original reads it,
+    /// The serial number as the official DPMA reads it,
     /// `strtoll(BN_bn2dec(serial))` (so a value too large saturates), or
     /// None when it is negative.
     fn serial(&self) -> Option<i64> {
@@ -241,8 +241,8 @@ fn pem_certificates(text: &[u8]) -> impl Iterator<Item = Option<Certificate>> + 
     })
 }
 
-/// The trusted CA certificates phones are verified against (the original's
-/// `X509_STORE`).
+/// The trusted CA certificates phones are verified against (the official
+/// DPMA's `X509_STORE`).
 pub struct CaStore {
     certs: Vec<Certificate>,
 }
@@ -262,9 +262,9 @@ impl CaStore {
     }
 }
 
-/// Who presented the certificate; only used in the original's log
+/// Who presented the certificate; only used in the official DPMA's log
 /// messages (session contact, MAC, and user agent).  A missing MAC prints
-/// as "(null)", as glibc prints the original's NULL pointer.
+/// as "(null)", as glibc prints the official DPMA's NULL pointer.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ClientInfo<'a> {
     pub contact: &'a [u8],
@@ -279,11 +279,11 @@ pub struct VerifiedClient {
     /// key encrypts the common password.
     pub certificate: Certificate,
     /// Its public key (`X509_get_pubkey`); `None` for an RSA key that does
-    /// not decode, which the original only notices when it generates the
-    /// common password ("failed to get pkey during common password
+    /// not decode, which the official DPMA only notices when it generates
+    /// the common password ("failed to get pkey during common password
     /// generation").
     pub public_key: Option<PublicKey>,
-    /// The intermediate certificate's serial number as the original
+    /// The intermediate certificate's serial number as the official DPMA
     /// stores it (session +0xe20): 0 for the legacy form.  It is read from
     /// the second certificate, or, while the value read is 0, from the
     /// ones after it.  A non-zero value makes the server send
@@ -300,13 +300,13 @@ impl VerifiedClient {
     }
 }
 
-/// Why verification failed (already logged as the original logs it).
+/// Why verification failed (already logged as the official DPMA logs it).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CertError {
     /// No certificate could be read.
     Unreadable,
     /// More than one certificate, but not three; the count excludes the
-    /// first certificate, as in the original's message.
+    /// first certificate, as in the official DPMA's message.
     WrongChainLength(usize),
     /// The intermediate's serial number is negative.
     NoSerial,
@@ -315,7 +315,7 @@ pub enum CertError {
 }
 
 impl CertError {
-    /// The message the original logs for this error (with its newline,
+    /// The message the official DPMA logs for this error (with its newline,
     /// except for the chain length message, which has none).
     pub fn log_message(&self, contact: &[u8]) -> Vec<u8> {
         match self {
@@ -351,7 +351,7 @@ fn log(level: LogLevel, line: u32, msg: &[u8]) {
 /// `-----BEGIN CERTIFICATE-----MIIB...`, `...==-----END CERTIFICATE-----`,
 /// or `-----END CERTIFICATE----------BEGIN CERTIFICATE-----`, which
 /// OpenSSL's PEM reader does not accept.  (This module's reader does, but
-/// the body is also saved in AstDB, where the original may read it.)
+/// the body is also saved in AstDB, where the official DPMA may read it.)
 /// This puts a line break before every `-----BEGIN ` and `-----END `
 /// marker line that does not start the text or a line, and after every
 /// such line that is not followed by one or by the end of the text.
@@ -390,7 +390,8 @@ pub fn restore_pem_newlines(pem: impl AsRef<[u8]>) -> Vec<u8> {
 }
 
 /// Verify the PEM certificate(s) a phone sent in its Handshake body
-/// (`session_verify_cert`, FUN_00148230), logging as the original does.
+/// (`session_verify_cert`, FUN_00148230), logging as the official DPMA
+/// does.
 ///
 /// The certificates are read in order; reading stops at the first block
 /// after the first that cannot be read.  One certificate is the legacy
@@ -413,7 +414,7 @@ pub fn verify_client_chain(
         log(LogLevel::Dpma, line, &e.log_message(client.contact));
         Err(e)
     };
-    // The original copies the body with strlen.
+    // The official DPMA copies the body with strlen.
     let mut certs = pem_certificates(crate::cbuf::c_bytes(pem.as_ref()));
     let first = certs.next().flatten();
     let mut chain: Option<Vec<Certificate>> = None;

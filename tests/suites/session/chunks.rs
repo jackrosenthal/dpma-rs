@@ -47,8 +47,8 @@ pub fn run(ctx: &mut Ctx, t: Transport, event_chunks: usize) -> Result<()> {
         .header_absent("ID");
 
     if udp {
-        // digium.assignment.update goes out as the original sends it: no
-        // event name, ID bootcReset, Error-ID -398, and the Session
+        // digium.assignment.update goes out as the official DPMA sends it:
+        // no event name, ID bootcReset, Error-ID -398, and the Session
         // Timeout error body after the event body.
         ami_cli(
             ctx,

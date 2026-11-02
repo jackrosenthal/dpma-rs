@@ -12,7 +12,7 @@
 //! extension `digium_phone_module`, which sends them back with
 //! `MessageSend(${TMP_RESPONSE_URI},proxy)`.
 //!
-//! The original also builds the same routing for chan_sip (sip.conf's
+//! The official DPMA also builds the same routing for chan_sip (sip.conf's
 //! `outofcall_message_context`, `SIP_RECVADDR`); chan_sip is not
 //! supported here, so only the PJSIP routing exists.
 
@@ -37,7 +37,8 @@ const VAR_RESPONSE_URI: &str = "X-Digium-AppServer-Response-URI";
 /// Message variable carrying the phone's full contact.
 const VAR_RESPONSE_FULLCONTACT: &str = "X-Digium-AppServer-Response-FullContact";
 
-/// The read queue (the original's `read_queue` list plus its alert pipe).
+/// The read queue (the official DPMA's `read_queue` list plus its alert
+/// pipe).
 struct ReadQueue {
     msgs: VecDeque<Msg>,
     /// Set by [`wake_reader`]; makes the next [`read_msg`] return None.
@@ -69,7 +70,7 @@ fn drain_queue() {
 
 /// `phone_network_handler2` init (FUN_00148040): register the message
 /// technology and create the read queue.  Called at the end of
-/// `session::load` (as the original does from `phone_msg_load`).
+/// `session::load` (as the official DPMA does from `phone_msg_load`).
 pub fn load() -> Result<(), ()> {
     {
         // The module's statics can outlive an unload (a Rust library is
@@ -87,7 +88,7 @@ pub fn load() -> Result<(), ()> {
 
 /// `network_handler_destroy` (FUN_00147d70): unregister the technology
 /// and drop queued messages.  A reader still waiting is woken (the
-/// original closes the alert pipe under it).
+/// official DPMA closes the alert pipe under it).
 pub fn unload() {
     msg::tech_unregister();
     drain_queue();
@@ -145,10 +146,11 @@ pub fn write_msg(msg: Msg) -> Result<(), ()> {
 /// FUN_0014be60: allocate an outgoing message for `response_uri`, with
 /// its context set from the URI scheme: `pjsip...` gets
 /// `pjsip_message_context` (its default when the setting is empty).  None
-/// for other schemes, including the original's `sip...` (chan_sip), which
-/// is not supported.
+/// for other schemes, including the official DPMA's `sip...` (chan_sip),
+/// which is not supported.
 pub fn new_outgoing(response_uri: &[u8]) -> Option<Msg> {
-    // The original compares prefixes (strncmp with "sip", then "pjsip").
+    // The official DPMA compares prefixes (strncmp with "sip", then
+    // "pjsip").
     if !response_uri.starts_with(b"pjsip") {
         return None;
     }
@@ -160,7 +162,7 @@ pub fn new_outgoing(response_uri: &[u8]) -> Option<Msg> {
 /// Called after every successful `config::load()` (`config_replace`):
 /// when `pjsip_message_context` changed, destroy the old routing context
 /// and build the new one (`msg_build_dialplan_routing(ctx, "pjsip")`).
-/// As in the original, the raw setting is compared, so an explicitly
+/// As in the official DPMA, the raw setting is compared, so an explicitly
 /// empty `pjsip_message_context` builds no routing.
 pub fn config_changed(old: Option<&General>, new: &General) {
     if let Some(old) = old {
@@ -224,7 +226,7 @@ fn build_dialplan_routing(context: &[u8], tech: &str) -> Result<(), ()> {
         for (i, (label, app, data)) in steps.iter().enumerate() {
             let data = (!data.is_empty()).then_some(data.as_bytes());
             let label = label.map(str::as_bytes);
-            // The original ignores the results.
+            // The official DPMA ignores the results.
             pbx::add_extension(context, true, exten.as_bytes(), i as i32 + 1, label, None, app.as_bytes(), data, REGISTRAR);
         }
     }

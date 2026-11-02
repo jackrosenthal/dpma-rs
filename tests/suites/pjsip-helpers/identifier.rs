@@ -4,7 +4,8 @@
 //! endpoint-is-dphone function, SIP INFO, MESSAGE identification and
 //! `pjsip_message_context` changes (config hook), unload/load cycles,
 //! and, last, an AOR update while a line has no endpoint (which crashes
-//! the original).  Its transcript must be the expected one byte for byte.
+//! the official DPMA).  Its transcript must be the expected one byte for
+//! byte.
 
 use std::time::Duration;
 

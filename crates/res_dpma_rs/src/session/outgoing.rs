@@ -56,8 +56,8 @@ pub fn send_maybe(out: &Outgoing, session: Option<&Arc<Session>>) -> Result<(), 
     }
 }
 
-/// The type the original logs: the response type, else the request type,
-/// else the event name, else "Error" for an error reply.
+/// The type the official DPMA logs: the response type, else the request
+/// type, else the event name, else "Error" for an error reply.
 fn message_type(out: &Outgoing) -> Option<&[u8]> {
     [&out.response_type, &out.request_type, &out.event_name]
         .into_iter()
@@ -264,8 +264,9 @@ pub fn send_and_destroy(tx: &Arc<Transaction>) {
 /// Deviation (port plan section 8, item 11): the reply goes over the
 /// transport of the request it answers, `;transport=<PJSIP_TRANSPORT>`
 /// appended to the Response-URI as for a transaction's replies.  The
-/// original uses the raw Response-URI, so over TCP it answers over UDP.
-/// The URI is not truncated (the original keeps it in a string field).
+/// official DPMA uses the raw Response-URI, so over TCP it answers over
+/// UDP.  The URI is not truncated (the official DPMA keeps it in a string
+/// field).
 pub fn send_timeout(msg: &Msg, session: &Arc<Session>) -> Result<(), ()> {
     let uri = msg.get_var(h::RESPONSE_URI).unwrap_or_default();
     let full_contact = msg.get_var(h::RESPONSE_FULLCONTACT).unwrap_or_default();
@@ -291,9 +292,9 @@ pub fn send_timeout(msg: &Msg, session: &Arc<Session>) -> Result<(), ()> {
 }
 
 /// `phone_msg_send_event` (FUN_0014e030): send an event with `body` to the
-/// session's phone.  `digium.assignment.update` goes out as the original
-/// sends it: no event name, ID `bootcReset`, and Error-ID -398.  The error
-/// text matches the original's error buffer.
+/// session's phone.  `digium.assignment.update` goes out as the official
+/// DPMA sends it: no event name, ID `bootcReset`, and Error-ID -398.  The
+/// error text matches the official DPMA's error buffer.
 pub fn send_event(session: &Arc<Session>, event: &[u8], body: &[u8]) -> Result<(), &'static str> {
     let mut out = Outgoing::new();
     {

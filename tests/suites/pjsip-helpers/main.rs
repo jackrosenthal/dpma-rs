@@ -1,5 +1,5 @@
 //! The pjsip-helpers suite: the module's PJSIP side, which does what the
-//! original distribution's two PJSIP helper modules do,
+//! official DPMA's two PJSIP helper modules do,
 //! `res_pjsip_endpoint_identifier_dpma` and
 //! `res_pjsip_dialog_info_digium_body_supplement`
 //! (`crates/res_dpma_rs/src/pjsip/`).  The Rust form of
@@ -19,9 +19,9 @@
 //! Prerequisites: the test instance running Asterisk 22, 23, or
 //! 24 with the default outbound endpoint the scratch configuration sets
 //! (`default_outbound_endpoint` in `pjsip.conf`'s `[global]`; without it
-//! the module fails to load, as the original did), and the devtest build
-//! of the module (the scenarios use the `dpmadev pjsip ...` and `dpmadev
-//! config` commands).
+//! the module fails to load, as the official DPMA did), and the devtest
+//! build of the module (the scenarios use the `dpmadev pjsip ...` and
+//! `dpmadev config` commands).
 //!
 //! The suite prepares the instance (fresh configuration, the test
 //! configuration below, the debug build installed, Asterisk started;
@@ -69,24 +69,24 @@
 //! SIP user agents saw.
 //!
 //! Until package P19 merged the helpers into the module, this suite ran
-//! the identifier scenario with the ORIGINAL
+//! the identifier scenario with the official DPMA's
 //! `res_pjsip_endpoint_identifier_dpma.so` (loaded against dpma-rs's
 //! res_digium_phone through its exported C API) and with dpma-rs's own
 //! helper, and diffed the two transcripts: they were identical up to the
-//! last step, where the original crashes Asterisk.
+//! last step, where the official DPMA crashes Asterisk.
 //! `expected-identifier.txt` is the transcript of the merged module
-//! (2026-11-01).  It is the original helper's transcript of that
+//! (2026-11-01).  It is the official DPMA helper's transcript of that
 //! time except for what the merge changes by design: one module
 //! (`res_dpma_rs.so`) where there were three, so the `module show`,
 //! `module unload`, and `module load` steps name one module and its use
-//! count is 0 (the original res_digium_phone's was 4: two dependent
+//! count is 0 (the official DPMA's was 4: two dependent
 //! helpers and two handler references); the `dpmadev pjsip ...` test
 //! commands (formerly `dpmadev exports ...`) print `pjsip_auth (object)`
 //! and `phone` where they printed the exported functions' names; and the
-//! last step, which the original does not survive.  Logs, line settings,
-//! last URIs, INFO requests, and MESSAGE routing are byte for byte the
-//! same.  The transcript is the same on Asterisk 22.11.0, 23.5.0, and
-//! 24.0.0-rc4.
+//! last step, which the official DPMA does not survive.  Logs, line
+//! settings, last URIs, INFO requests, and MESSAGE routing are byte for
+//! byte the same.  The transcript is the same on Asterisk 22.11.0, 23.5.0,
+//! and 24.0.0-rc4.
 //!
 //! The dialog-info transcript depends on timing (an intermediate NOTIFY
 //! may or may not be sent), so the `dialog-info` part only checks that the
@@ -125,16 +125,16 @@
 //!
 //! # Findings
 //!
-//! - The original's AOR observer (`pjsip_aor_changed`) reads the `aors`
-//!   of each line's endpoint before checking that the endpoint exists, so
-//!   any AOR update or deletion (ARI push configuration, realtime) crashes
-//!   Asterisk in `ast_sorcery_objectset_create2` whenever a line has no
-//!   PJSIP endpoint of its name (external lines, lines of other phones).
-//!   Ours skips such lines (deviation).
-//! - The original sends INFO on a channel's PJSIP session without
+//! - The official DPMA's AOR observer (`pjsip_aor_changed`) reads the
+//!   `aors` of each line's endpoint before checking that the endpoint
+//!   exists, so any AOR update or deletion (ARI push configuration,
+//!   realtime) crashes Asterisk in `ast_sorcery_objectset_create2` whenever
+//!   a line has no PJSIP endpoint of its name (external lines, lines of
+//!   other phones).  Ours skips such lines (deviation).
+//! - The official DPMA sends INFO on a channel's PJSIP session without
 //!   checking `ast_channel_tech_pvt()`; on a hung-up PJSIP channel it
 //!   would crash.  Ours returns -1.
-//! - The original fails to load (AST_MODULE_LOAD_FAILURE, which aborts
+//! - The official DPMA fails to load (AST_MODULE_LOAD_FAILURE, which aborts
 //!   Asterisk startup) when there is no default outbound endpoint
 //!   (`default_outbound_endpoint` in pjsip.conf `[global]`); ours does the
 //!   same.
@@ -196,16 +196,16 @@
 //! before P11), about a third of the reads did (empty password, authname
 //! falling back to the line name, empty caller ID).  Phase 2 adds
 //! res_dpma_rs and res_pjsip reloads and checks for deadlocks only (a
-//! full pass has its own intermediate states, as in the original): every
-//! CLI command and ARI request must answer within 20 seconds.
+//! full pass has its own intermediate states, as in the official DPMA):
+//! every CLI command and ARI request must answer within 20 seconds.
 //!
 //! # Changes from the Python and shell version
 //!
-//! - `scenario.py identifier --no-aor-update` (for running the original
-//!   helper, which crashes at the last step) and `setup.sh --remove` are
-//!   gone: the original helpers are no longer run, and the suite starts
-//!   from a fresh configuration (so `setup.sh`'s backup of `http.conf`
-//!   is gone too).
+//! - `scenario.py identifier --no-aor-update` (for running the official
+//!   DPMA's helper, which crashes at the last step) and `setup.sh --remove`
+//!   are gone: the official DPMA's helpers are no longer run, and the suite
+//!   starts from a fresh configuration (so `setup.sh`'s backup of
+//!   `http.conf` is gone too).
 //! - The transcripts go to `<instance>/pjsip-helpers/`, not to a new
 //!   temporary directory or `check.sh`'s `outdir`.
 //! - check.sh stopped at the first failing dialog-info condition; the two

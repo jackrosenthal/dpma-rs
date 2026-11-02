@@ -7,7 +7,7 @@
 //! response type is logged as "Received response of unknown type"; anything
 //! else goes to `request::handle_incoming`.
 //!
-//! The original stops the thread with `pthread_cancel` (it has a
+//! The official DPMA stops the thread with `pthread_cancel` (it has a
 //! `pthread_testcancel` after every transaction) plus a signal to break the
 //! wait.  Here a stop flag is checked instead, and `transport::wake_reader`
 //! interrupts a blocked `next_transaction`.
@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 const READ_TIMEOUT_MS: i32 = 10000;
 
 /// The `core show threads` name `ast_pthread_create_stack` gives the
-/// original's thread (created at res_digium_phone.c:308 in
+/// official DPMA's thread (created at res_digium_phone.c:308 in
 /// `start_DPMA_thread`).
 const START_LINE: i32 = 0x134;
 

@@ -66,7 +66,7 @@ pub unsafe fn unlock<T>(obj: *mut T) {
     sys::__ao2_unlock(obj.cast(), file, func, line, c"obj".as_ptr());
 }
 
-/// The hash function of the original module's phone, line, and other
+/// The hash function of the official DPMA's phone, line, and other
 /// containers: the key is the NUL-terminated name at the start of the
 /// object, hashed with a case-insensitive djb2.
 unsafe extern "C" fn name_hash(obj: *const c_void, flags: c_int) -> c_int {

@@ -187,7 +187,7 @@ fn chan_sip_parse_uri() {
     let r = parse_uri(format!("sip:host:port;transport=tcp{}", tail), S, true, true);
     assert_eq!((r.error, r.user.as_str(), r.pass.as_str(), r.hostport.as_str(), r.params.transport.as_str()), (false, "", "", "host:port", "tcp"));
     // Tests 10 and 11: a missing scheme is an error, but the parts are
-    // still filled in (and the original logs it).
+    // still filled in (and the official DPMA logs it).
     let (r, logs) = testlog::capture(|| parse_uri(format!("host:port;transport=tcp{}", tail), S, true, true));
     assert_eq!((r.error, r.user.as_str(), r.pass.as_str(), r.hostport.as_str(), r.params.transport.as_str()), (true, "", "", "host:port", "tcp"));
     assert_eq!(logs, vec![format!("No supported scheme found in 'host:port;transport=tcp{}' using the scheme[s] sip:,sips:\n", tail)]);
@@ -368,9 +368,9 @@ fn to_header_host_and_port() {
     assert_eq!(to_host_port("\"Phone\" <sip:1001@pbx.example.com>;tag=x"), Some(("pbx.example.com".into(), None)));
     assert_eq!(to_host_port("sip:u@[2001:db8::1]:5061;transport=tls"), Some(("2001:db8::1".into(), Some("5061".into()))));
     assert_eq!(to_host_port("sip:u@host:"), Some(("host".into(), Some("".into()))));
-    // The original's scheme list is "sip,sips" without colons, so "sip"
-    // also matches "sips:..." and the colon is left on the URI: without a
-    // user part the host and port come out wrong.
+    // The official DPMA's scheme list is "sip,sips" without colons, so
+    // "sip" also matches "sips:..." and the colon is left on the URI:
+    // without a user part the host and port come out wrong.
     assert_eq!(to_host_port("sips:u@host:5061"), Some(("host".into(), Some("5061".into()))));
     assert_eq!(to_host_port("<sip:host:5060>"), Some((":host:5060".into(), None)));
     assert_eq!(to_host_port("sips:[2001:db8::1]:5061"), Some(("s:[2001:db8::1]:5061".into(), None)));

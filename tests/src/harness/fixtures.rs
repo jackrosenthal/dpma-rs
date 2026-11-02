@@ -91,10 +91,10 @@ pub fn prepare(inst: &Instance, setup: impl FnOnce(&Instance) -> Result<()>) -> 
     check_devtest(inst)
 }
 
-/// The module defaults to the certificates embedded in the original, so a
-/// suite that installed the test PKI must point `phone_ca_file` and
-/// `appserver_certificate` at it, in `[general]` itself: the module, as
-/// the original, reads the first `[general]` only.
+/// The module defaults to the certificates embedded in the official DPMA,
+/// so a suite that installed the test PKI must point `phone_ca_file` and
+/// `appserver_certificate` at it, in `[general]` itself: the module, like
+/// the official DPMA, reads the first `[general]` only.
 fn use_test_trust(inst: &Instance) -> Result<()> {
     let dpma = inst.etc.join("dpma");
     let ca = dpma.join("phone_ca.pem");

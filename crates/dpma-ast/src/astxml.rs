@@ -1,6 +1,6 @@
 //! Asterisk's own XML API (`ast_xml_*`, main/xml.c).
 //!
-//! Most of the original module calls libxml2 directly (see `xml.rs`), but
+//! Most of the official DPMA calls libxml2 directly (see `xml.rs`), but
 //! the call methods of phone_method_internal_api.c (the phonebook entry
 //! method and the XML recording methods) use `ast_xml_open`,
 //! `ast_xml_find_element`, `ast_xml_doc_dump_file`, and friends, which

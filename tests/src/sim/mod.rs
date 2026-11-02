@@ -4,7 +4,7 @@
 //! It plays a Digium phone against an Asterisk instance: handshake with a
 //! certificate of the test PKI (legacy or chain form), AES-128-CBC
 //! encryption, chunking and reassembly, every request type, and events.
-//! It is written from the decompile of the original module (the phone
+//! It is written from the decompile of the official DPMA (the phone
 //! side of `phone_message.c`, `phone_crypto.c`, and `phone_request.c`)
 //! and is deliberately independent of the module's own crates (no
 //! dpma-proto: its protocol code is its own, and it shares only the

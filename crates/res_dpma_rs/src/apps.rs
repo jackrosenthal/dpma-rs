@@ -6,7 +6,7 @@
 //! `dpma_info_send` (phone_apps.c; load FUN_00173090, unload
 //! FUN_001730d0).
 //!
-//! DigiumControlPlayback is the original's variant of an older
+//! DigiumControlPlayback is the official DPMA's variant of an older
 //! app_controlplayback: `DigiumControlPlayback(filename[,skipms[,ff[,rew[,stop[,pause[,restart[,options]]]]]]])`
 //! with options `o(ms)` (start offset) and `u` (send the location INFO on
 //! fast forward and rewind).  It sets CPLAYBACKSTATUS (SUCCESS,
@@ -15,8 +15,8 @@
 //! plays the message with `#` and `*` as fast forward and rewind, and
 //! sets VOICEMAIL_PLAYBACKSTATUS (SUCCESS or FAILED).
 //!
-//! Both are registered without a module (as the original does), so they
-//! hold no module reference while they run.
+//! Both are registered without a module (as the official DPMA does), so
+//! they hold no module reference while they run.
 
 use dpma_ast::app::{self, AppOptions, WAITSTREAM_CB_FASTFORWARD, WAITSTREAM_CB_REWIND};
 use dpma_ast::types::AstChannel;
@@ -39,8 +39,8 @@ const OPT_CALLBACK: u32 = 1 << 2;
 static CPB_OPTS: AppOptions =
     AppOptions::new().option_arg(b'o', OPT_OFFSET as u64, 0).option(b'u', OPT_CALLBACK as u64);
 
-/// Register both applications (FUN_00173090).  The original ORs the two
-/// results, so both are attempted.
+/// Register both applications (FUN_00173090).  The official DPMA ORs the
+/// two results, so both are attempted.
 pub fn load() -> Result<(), ()> {
     let a = app::register(APP_CONTROLPLAYBACK, controlplayback_exec);
     let b = app::register(APP_VM_PLAYBACK, vm_play_exec);
@@ -127,11 +127,11 @@ unsafe fn controlplayback(chan: *mut AstChannel, data: &[u8]) -> c_int {
         _ => 3000,
     };
 
-    // Invalid keys are dropped (and logged).  The original remembers only
-    // the first character of the last valid key, in one stack byte that is
-    // otherwise uninitialized (taken as none here); an empty or missing
-    // fast forward key becomes `#` unless that character is `#`, and an
-    // empty or missing rewind key becomes `*` unless it is `*`.
+    // Invalid keys are dropped (and logged).  The official DPMA remembers
+    // only the first character of the last valid key, in one stack byte
+    // that is otherwise uninitialized (taken as none here); an empty or
+    // missing fast forward key becomes `#` unless that character is `#`,
+    // and an empty or missing rewind key becomes `*` unless it is `*`.
     let mut last: u8 = 0;
     for (arg, msg) in [
         (&mut fwd, "Invalid fast forward key specified."),

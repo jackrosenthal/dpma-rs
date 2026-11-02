@@ -137,7 +137,7 @@ pub fn handle_handshake(tx: Arc<Transaction>) -> i32 {
         store::invalidate(&session);
         return 0;
     }
-    // The original appends its built-in AppServer certificate here.
+    // The official DPMA appends its built-in AppServer certificate here.
     store::with_trust(|t| {
         if let Some(t) = t {
             out.append(&t.appserver_pem);

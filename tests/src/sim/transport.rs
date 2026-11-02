@@ -4,7 +4,7 @@
 //! handing MESSAGEs to a callback.
 //!
 //! Over TCP it also listens for UDP on the same port, as phones do: the
-//! original server answers a session that fails validation ("Session
+//! official DPMA answers a session that fails validation ("Session
 //! Timeout") at the bare Response-URI, without `;transport=tcp`, so over
 //! UDP; dpma-rs answers over TCP (port plan section 8, item 11).
 

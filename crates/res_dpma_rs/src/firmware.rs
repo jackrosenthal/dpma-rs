@@ -1,5 +1,5 @@
 //! The firmware package description, digium_phones_firmware.conf, found in
-//! the `firmware_package_directory` (the original module's
+//! the `firmware_package_directory` (the official DPMA's
 //! phone_firmware.c).  Each section is a phone model with the `version` and
 //! `file` of the firmware to load on it.
 
@@ -63,8 +63,8 @@ pub fn load() -> Result<(), ()> {
 }
 
 /// `firmwares_reload`.  A successful read replaces the packages (the
-/// original never dropped packages removed from the file); a failed read
-/// keeps the previous ones.
+/// official DPMA never dropped packages removed from the file); a failed
+/// read keeps the previous ones.
 pub fn reload() -> Result<(), ()> {
     let Some(pkgs) = read_config() else { return Ok(()) };
     let mut g = PACKAGES.write().unwrap();
@@ -96,8 +96,8 @@ pub fn all() -> Vec<Package> {
 /// element of a phone configuration document for a phone without
 /// `firmware=` options, listing every package for network `network` with
 /// URLs under `url_prefix` (the network's `file_url_prefix`).  Each piece
-/// goes through `append`, one call per piece of the original.  Nothing is
-/// emitted when the packages were never loaded.
+/// goes through `append`, one call per piece, as in the official DPMA.
+/// Nothing is emitted when the packages were never loaded.
 pub fn no_option_settings(append: &mut dyn FnMut(&[u8]), url_prefix: &[u8], network: &[u8]) {
     let g = PACKAGES.read().unwrap();
     let Some(map) = g.as_ref() else { return };

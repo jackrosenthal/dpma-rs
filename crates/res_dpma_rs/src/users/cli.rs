@@ -1,5 +1,5 @@
 //! `digium_phones show ...` and `digium_phones reconfigure ...` CLI
-//! commands for configured objects.  Output matches the original module.
+//! commands for configured objects.  Output matches the official DPMA's.
 
 use super::*;
 use dpma_ast::cli::{complete_from, CliArgs, CliCommand, CliResult, CompleteArgs};
@@ -84,9 +84,9 @@ fn complete_firmware(a: &CompleteArgs) -> Option<Vec<u8>> {
 }
 
 /// Print a list of names (each with `indent` before it) between a header
-/// and a count footer.  As in the original, only some of these commands
-/// check their argument count (`check_argc`); the others ignore extra
-/// words.
+/// and a count footer.  As in the official DPMA, only some of these
+/// commands check their argument count (`check_argc`); the others ignore
+/// extra words.
 fn show_list(
     a: &CliArgs,
     check_argc: bool,
@@ -308,7 +308,7 @@ fn show_phone(a: &CliArgs) -> CliResult {
     CliResult::Success
 }
 
-/// (No argument count check, as in the original.)
+/// (No argument count check, as in the official DPMA.)
 fn show_lines(a: &CliArgs) -> CliResult {
     let g = read();
     let Some(reg) = g.as_ref() else { return CliResult::Success };
@@ -329,7 +329,7 @@ fn show_line(a: &CliArgs) -> CliResult {
     if a.argc() != 4 {
         return CliResult::ShowUsage;
     }
-    // Locked while shown, as in the original (see users::objects).
+    // Locked while shown, as in the official DPMA (see users::objects).
     let _line = crate::users::objects::lock_lines([a.argv[3].as_slice()]);
     let g = read();
     let Some(reg) = g.as_ref() else { return CliResult::Success };
@@ -365,7 +365,7 @@ fn show_line(a: &CliArgs) -> CliResult {
         bwriteln!(o, "Secondary Server Port: {}", l.secondary_server_port);
         bwriteln!(o, "Secondary Server Transport: {}", l.secondary_server_transport.type_str());
         bwriteln!(o, "Secondary Media Encryption: {}", l.secondary_media_encryption);
-        // Deviation (plan section 8, item 15): the original prints the
+        // Deviation (plan section 8, item 15): the official DPMA prints the
         // secondary server port here (the field at +0x120, not authname's
         // at +0x128).
         bwriteln!(o, "AuthName: {}", l.authname);
@@ -452,7 +452,7 @@ fn show_page(a: &CliArgs) -> CliResult {
     CliResult::Success
 }
 
-/// (No argument count check, as in the original.)
+/// (No argument count check, as in the official DPMA.)
 fn show_firmwares(a: &CliArgs) -> CliResult {
     crate::firmware::cli_display(a);
     a.out("--- Configured Firmware Options ---\n");
@@ -521,15 +521,15 @@ fn show_application(a: &CliArgs) -> CliResult {
                 }
             );
             bwriteln!(o, "Login Extension: {}", q.login_exten);
-            // Deviation (plan section 8, item 15): the original shows the
-            // login extension here (it prints the login field when the
+            // Deviation (plan section 8, item 15): the official DPMA shows
+            // the login extension here (it prints the login field when the
             // logout field's pointer is set).
             bwriteln!(o, "Logout Extension: {}", q.logout_exten);
         }
         Some(AppKind::Status(s)) => {
             o.push_str("Status Application\n-------------------\n");
             bwriteln!(o, "Status: {}", dpma_ast::presence::state2str(s.status));
-            // Deviation (plan section 8, item 15): the original shows
+            // Deviation (plan section 8, item 15): the official DPMA shows
             // send486=yes as "No".
             bwriteln!(
                 o,
@@ -660,7 +660,7 @@ pub fn commands() -> Vec<CliCommand> {
         cmd!("digium_phones show lines", "Usage digium_phones show lines\n", show_lines),
         cmd!("digium_phones show line", "Usage digium_phones show line <line name>\n", show_line, complete_line),
         cmd!("digium_phones show alerts", "Usage digium_phones show alerts\n", show_alerts),
-        // The original's summary has this typo ("core show help").
+        // The official DPMA's summary has this typo ("core show help").
         CliCommand {
             command: "digium_phones show alert",
             summary: "digum_phones show alert",

@@ -269,7 +269,7 @@ pub fn unload() {
     CURRENT.write().unwrap().take();
 }
 
-/// The settings as the original's `struct dpma_config` holds them for
+/// The settings as the official DPMA's `struct dpma_config` holds them for
 /// `digium_phones show settings` and service discovery (phone_config.c,
 /// `dcfg_alloc` and its getters): each text cut to its buffer in that
 /// structure, and the getters' defaults for empty texts.

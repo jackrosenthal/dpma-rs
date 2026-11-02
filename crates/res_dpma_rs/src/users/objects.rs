@@ -1,22 +1,22 @@
-//! The astobj2 objects behind the original's `struct phone_line *` and
+//! The astobj2 objects behind the official DPMA's `struct phone_line *` and
 //! `struct phone_user *`, and the two containers holding them.
 //!
 //! The phone users configuration lives in `users::Registry`; the objects
 //! here are handles that name a registry line or phone.  Like the
-//! original's objects they start with the NUL-terminated name (128 bytes),
-//! are locked and reference counted with ao2, and live in hash containers
-//! of 257 buckets hashed and compared case-insensitively by name, so
-//! containers iterate in the same order as the registry's maps.  The PJSIP
-//! side (`crate::pjsip`) works on lines through them as the original's
-//! helper module does: it finds lines by name, walks the lines container,
-//! and updates a line under its lock.
+//! official DPMA's objects they start with the NUL-terminated name (128
+//! bytes), are locked and reference counted with ao2, and live in hash
+//! containers of 257 buckets hashed and compared case-insensitively by
+//! name, so containers iterate in the same order as the registry's maps.
+//! The PJSIP side (`crate::pjsip`) works on lines through them as the
+//! official DPMA's helper module does: it finds lines by name, walks the
+//! lines container, and updates a line under its lock.
 //!
 //! `sync` keeps the containers in step with the registry: it is called
 //! before the PJSIP lines pass runs and after every processing pass.  A
 //! line object that is no longer the registry's (unlinked, or swept by a
 //! reload, while somebody still holds it) carries its own copy of the
 //! line's settings, so changes made through it never reach the live
-//! configuration, as with the original's unlinked objects.
+//! configuration, as with the official DPMA's unlinked objects.
 //!
 //! Locking: a handle's state mutex may be held while taking the registry
 //! lock, never the other way round, and no ao2 lock is ever taken while
@@ -25,8 +25,8 @@
 //!
 //! Line locks: the PJSIP side's sorcery observers (on their own threads)
 //! update a line with several calls while holding the line object's ao2
-//! lock, as the original module's own code does.  Code that reads or
-//! writes lines where the original takes the line's lock takes it too,
+//! lock, as the official DPMA's own code does.  Code that reads or
+//! writes lines where the official DPMA takes the line's lock takes it too,
 //! through `lock_lines`, `lock_phone_lines`, or `lock_all_lines`, so it
 //! never sees a line half updated.  Rules: take line locks before the
 //! registry lock (never while holding it), find every object before
@@ -41,10 +41,10 @@ use std::os::raw::{c_char, c_void};
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
-/// Size of the name at the start of every object (the original's
+/// Size of the name at the start of every object (the official DPMA's
 /// `char name[0x80]`).
 pub const NAME_LEN: usize = 0x80;
-/// Buckets of the original's containers.
+/// Buckets of the official DPMA's containers.
 const BUCKETS: u32 = 257;
 
 /// `struct phone_line`.
@@ -182,7 +182,7 @@ impl LineObj {
         &self.key
     }
 
-    /// The container key: the name as the original's object holds it
+    /// The container key: the name as the official DPMA's object holds it
     /// (`phone_users_line_get_name`).
     pub fn name(&self) -> &std::ffi::CStr {
         // SAFETY: `c_name` always leaves a NUL in the buffer.
@@ -484,8 +484,8 @@ pub unsafe fn callback_all_lines(cb: ao2::CallbackFn) {
 
 /// `phone_users_process_line(line)`: apply the settings of the line's
 /// own sections in voicemail.conf, users.conf (app_voicemail), and
-/// res_digium_phone.conf again (`process_line_dp`).  As in the original,
-/// each mailbox is set with its line looked up by name and locked
+/// res_digium_phone.conf again (`process_line_dp`).  As in the official
+/// DPMA, each mailbox is set with its line looked up by name and locked
 /// (`set_mailbox`), and the res_digium_phone.conf sections are applied
 /// with this line locked; no two line locks are held at once.
 pub fn process_line(line: &LineObj) {

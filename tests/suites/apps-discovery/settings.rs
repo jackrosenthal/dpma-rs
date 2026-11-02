@@ -1,5 +1,5 @@
 //! `digium_phones show settings` for several `[general]` configurations,
-//! compared with the original's format strings.
+//! compared with the official DPMA's format strings.
 
 use anyhow::Result;
 use dpma_tests::harness::Ctx;

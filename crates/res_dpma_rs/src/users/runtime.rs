@@ -23,7 +23,7 @@
 //! Lookups return the phone's (or line's) name instead of a referenced
 //! object.  Functions that change phones do so under the registry write
 //! lock and then perform the side effects that leave the users layer
-//! (sessions, AstDB, messages, and their log lines) in the original's
+//! (sessions, AstDB, messages, and their log lines) in the official DPMA's
 //! order, after releasing it.
 
 use super::*;
@@ -36,7 +36,7 @@ use dpma_proto::uri::same_uri;
 const EVENT_CONFIG_UPDATE: &str = "digium.config.update";
 /// The event that `phone_user_send_event` turns into a "boot reset".
 const EVENT_ASSIGNMENT_UPDATE: &str = "digium.assignment.update";
-/// Transaction id of that message (as in the original's binary).
+/// Transaction id of that message (as in the official DPMA's binary).
 const BOOT_RESET_ID: &str = "bootcReset";
 /// Buffer size of tokens and of the AstDB value.
 const BUF: usize = 0x400;
@@ -47,7 +47,7 @@ const BUF: usize = 0x400;
 
 /// A side effect, performed in order after the registry lock is released.
 enum Fx {
-    /// A DPMA log line, with the original function's name.
+    /// A DPMA log line, with the official DPMA's function name.
     Log(&'static str, Vec<u8>),
     /// `phone_user_send_reconfigure(session, uri, 0)`.
     Reconfigure { session: Vec<u8>, uri: Vec<u8> },
@@ -362,7 +362,7 @@ pub struct TokenLookup {
     /// The phone the token belongs to.
     pub phone: Option<Vec<u8>>,
     /// No match, but the token's character sum equals the one of the
-    /// token issued before the phone's latest (the original's sixth
+    /// token issued before the phone's latest (the official DPMA's sixth
     /// parameter, cleared in that case; every 3.6.13 caller passes NULL).
     pub previous_token: bool,
 }
@@ -372,7 +372,7 @@ pub struct TokenLookup {
 /// from `mac`, `session_id`, and `uri`; `secret` is the global pin.  On a
 /// match the phone's location is recorded (`set_last_info`).
 ///
-/// Only `<phone><sep><last MAC>` is compared: the original builds four
+/// Only `<phone><sep><last MAC>` is compared: the official DPMA builds four
 /// candidate tokens (with hashes of "blah", the phone's pin, "none", the
 /// global pin, and the group pin) but compares each only up to its second
 /// separator, which is the same for all four.  So a token matches when it
@@ -487,8 +487,8 @@ pub fn for_last_token_mac(mac: &[u8]) -> Option<Vec<u8>> {
 /// the first phone with that MAC.  Failing that, the phone named
 /// `username`.
 pub fn username_for_token(username: &[u8], mac: &[u8]) -> Option<Vec<u8>> {
-    // The original locks each primary line while comparing it; take those
-    // line locks first, before the registry lock (see "Line locks" in
+    // The official DPMA locks each primary line while comparing it; take
+    // those line locks first, before the registry lock (see "Line locks" in
     // users::objects).
     let primaries: Vec<Vec<u8>> = if username.is_empty() {
         Vec::new()
@@ -524,7 +524,7 @@ pub fn line_find_authenticated(name: &[u8], secret: &[u8]) -> Option<Vec<u8>> {
     if name.is_empty() {
         return None;
     }
-    // The original compares under the line's lock (see "Line locks").
+    // The official DPMA compares under the line's lock (see "Line locks").
     let _line = crate::users::objects::lock_lines([name]);
     let g = read();
     let l = g.as_ref()?.lines.get(name)?;
@@ -554,7 +554,7 @@ pub fn has_line(phone: &[u8], line: &[u8]) -> bool {
 }
 
 /// `phone_mailbox_by_line`: the mailbox of line `line`, if it has one.
-/// The line's lock is held for the read, as in the original.
+/// The line's lock is held for the read, as in the official DPMA.
 pub fn mailbox_by_line(line: &[u8]) -> Option<Vec<u8>> {
     let _line = crate::users::objects::lock_lines([line]);
     let g = read();
@@ -608,7 +608,7 @@ pub fn send_reconfigure(session_id: &[u8], uri: &[u8], delete_token: bool) -> Re
 /// `event` with `body` to the phone's last known location and session.
 /// `digium.assignment.update` goes out instead as id `bootcReset` with
 /// message error -398 (Session Timeout) and no event name.  The error is
-/// the text the original writes to its caller's buffer.
+/// the text the official DPMA writes to its caller's buffer.
 pub fn send_event(phone: &[u8], event: &[u8], body: &[u8]) -> Result<(), &'static str> {
     let (name, uri, sid) = {
         let g = read();

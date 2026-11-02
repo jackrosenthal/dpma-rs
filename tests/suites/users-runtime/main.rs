@@ -331,7 +331,7 @@ fn incidents(ctx: &mut Ctx) -> Result<()> {
 
     // From the fifth failure on, the log line says ALERT and
     // DPMAShowIncidents reports the incident as blocking (" Yes", with the
-    // original's space).
+    // official DPMA's space).
     let ip = "192.0.2.5";
     let log = ctx.log();
     for n in 1..=5 {

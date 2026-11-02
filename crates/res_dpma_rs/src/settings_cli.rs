@@ -1,12 +1,12 @@
 //! The CLI commands registered at module load, before the full
 //! components: `digium_phones show settings` (FUN_00174570) and
 //! `digium_phones show version` (FUN_00174870) (phone_settings_cli.c;
-//! register FUN_00174950, unregister FUN_00174930).  The original's
+//! register FUN_00174950, unregister FUN_00174930).  The official DPMA's
 //! third command, `digium_phones license status` (FUN_001748c0), is
 //! intentionally not ported (no license handling in this rewrite).
 //!
-//! Each command's summary is its own command text, as in the original's
-//! `ast_cli_entry` table (DAT_005e9100).
+//! Each command's summary is its own command text, as in the official
+//! DPMA's `ast_cli_entry` table (DAT_005e9100).
 
 use crate::config::{self, auth};
 use dpma_ast::bformat;
@@ -35,8 +35,8 @@ fn config_auth_text(flags: u32) -> String {
     }
 }
 
-/// `digium_phones show settings` (FUN_00174570).  The original takes any
-/// number of arguments.  It reads the configuration object (see
+/// `digium_phones show settings` (FUN_00174570).  The official DPMA takes
+/// any number of arguments.  It reads the configuration object (see
 /// `config::Settings`); without one, the getters' defaults.
 fn cli_show_settings(a: &CliArgs) -> CliResult {
     let s = config::settings();

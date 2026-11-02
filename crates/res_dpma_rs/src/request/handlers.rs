@@ -104,19 +104,20 @@ fn session_id(tx: &Transaction) -> Vec<u8> {
     tx.session.as_ref().map(|s| s.id.clone()).unwrap_or_default()
 }
 
-/// `phone_msg_session_get_auth_flags` (FUN_00149f90), as the original's
-/// signed int (the handlers reject negative flags as an invalid session).
+/// `phone_msg_session_get_auth_flags` (FUN_00149f90), as the official
+/// DPMA's signed int (the handlers reject negative flags as an invalid
+/// session).
 fn session_auth_flags(tx: &Transaction) -> i32 {
     tx.session.as_ref().map_or(0, |s| s.auth_flags() as i32)
 }
 
 /// `dpma_config_password(dpma_config_get())`: the global pin as the
-/// original's configuration object holds it (at most 255 bytes).
+/// official DPMA's configuration object holds it (at most 255 bytes).
 fn config_password() -> Vec<u8> {
     crate::util::truncate(&crate::config::get().globalpin, 0x100)
 }
 
-/// Size of the original's path buffers.
+/// Size of the official DPMA's path buffers.
 const PATH_BUF: usize = 0x1000;
 
 /// `dpma_append_config_file_dir(buf, 0x1000, file, NULL)`: `file` inside
@@ -131,8 +132,8 @@ fn config_file_dir(file: &[u8]) -> Vec<u8> {
     }
 }
 
-/// The transaction's body as the original's handlers see it: a C string,
-/// so it ends at the first NUL.
+/// The transaction's body as the official DPMA's handlers see it: a C
+/// string, so it ends at the first NUL.
 fn body_cstr(tx: &Transaction) -> &[u8] {
     let b = &tx.body;
     &b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())]
@@ -175,11 +176,11 @@ const NULL_CONTACTS: &str = "<contacts group_name=\"null\" editable=\"0\" />\n";
 /// answered with error -98 (File Not Found).
 ///
 /// Deviation (plan section 8, item 14): a name with a `..` component is
-/// answered with the same error as a missing file.  The original opens
+/// answered with the same error as a missing file.  The official DPMA opens
 /// `<file_directory>/<name>` whatever the name, so `..` reaches any file
 /// the Asterisk process can read.  Every other name is served as the
-/// original serves it: names in subdirectories, and absolute names, which
-/// the join keeps inside `file_directory` (`file:///x.xml` reads
+/// official DPMA serves it: names in subdirectories, and absolute names,
+/// which the join keeps inside `file_directory` (`file:///x.xml` reads
 /// `<file_directory>//x.xml`).
 pub fn handle_file(tx: Arc<Transaction>) -> i32 {
     file_reply(&tx);
@@ -237,8 +238,8 @@ fn file_reply(tx: &Transaction) {
 }
 
 /// True for a FileRequest name with a `..` component, the only kind that
-/// can leave the file directory: the original joins every name to it with
-/// a `/`, so an absolute name stays inside.
+/// can leave the file directory: the official DPMA joins every name to it
+/// with a `/`, so an absolute name stays inside.
 fn escapes_file_dir(name: &[u8]) -> bool {
     name.split(|&c| c == b'/').any(|c| c == b"..")
 }
@@ -262,7 +263,7 @@ pub fn handle_config(tx: Arc<Transaction>) -> i32 {
     match phone_for_token(&tx) {
         None => set_error(&tx, errors::msg::INVALID_TOKEN),
         Some(phone) => {
-            // The original builds the document in an ast_str of 0x400
+            // The official DPMA builds the document in an ast_str of 0x400
             // bytes; get_config reproduces that buffer's behavior.
             let mut buf = Vec::with_capacity(crate::users::build_config::INITIAL_BUF);
             let dir = config_file_dir(b"");
@@ -278,7 +279,7 @@ pub fn handle_config(tx: Arc<Transaction>) -> i32 {
 /// `handle_request_verify` (FUN_00176750): check the `Config-Token`; error
 /// -192 (Invalid Token) when it is missing or does not match.  The session
 /// is marked configured whenever a token was presented, even one that
-/// does not match (as in the original).
+/// does not match (as in the official DPMA).
 pub fn handle_verify(tx: Arc<Transaction>) -> i32 {
     if tx.config_token.is_empty() {
         dpma_log!("Verify request with null token");
@@ -298,7 +299,7 @@ pub fn handle_verify(tx: Arc<Transaction>) -> i32 {
 // TokenRequest
 // ---------------------------------------------------------------------------
 
-/// Size of the original's buffer for the phone name.
+/// Size of the official DPMA's buffer for the phone name.
 const NAME_BUF: usize = 0x80;
 
 /// `handle_request_token` (FUN_00175d50): issue a configuration token.
@@ -345,9 +346,9 @@ fn token_reply(tx: &Transaction) {
     let flags = flags as u32;
     let global_pin = config_password();
 
-    // The original runs these lookups in a tangle of branches; each check
-    // is a pure lookup, so only their results matter: a configpass failure
-    // wins over the others.
+    // The official DPMA runs these lookups in a tangle of branches; each
+    // check is a pure lookup, so only their results matter: a configpass
+    // failure wins over the others.
     let configpass_ok = flags & auth::GLOBALPIN == 0
         || (!global_pin.is_empty() && tx.config_password == global_pin)
         || users::runtime::find_w_grouppin(&name, &tx.config_password).is_some();
@@ -418,7 +419,7 @@ fn userlist_reply(tx: &Transaction) {
 fn authenticate(credentials: &[u8]) -> Option<Vec<u8>> {
     let (user, secret) = match credentials.find_byte(b':') {
         Some(i) => (&credentials[..i], strip_blanks(&credentials[i + 1..])),
-        // The original passes NULL, which matches only an empty pin or
+        // The official DPMA passes NULL, which matches only an empty pin or
         // secret (and crashes on a set one); "" does the same without the
         // crash.
         None => (credentials, &b""[..]),
@@ -456,7 +457,7 @@ struct Forwarded {
 /// JSON request error) and `\r\n\r\n`.
 pub fn handle_http_or_asterisk(tx: Arc<Transaction>) -> i32 {
     append(&tx, crate::ami::messages::HTTP_PREAMBLE.as_bytes());
-    // The original's response buffer (ast_str_create(0x400)).
+    // The official DPMA's response buffer (ast_str_create(0x400)).
     let mut buf = Vec::with_capacity(0x400);
     let forwarded = asterisk_request(&tx, &mut buf);
     if !buf.is_empty() {
@@ -471,8 +472,8 @@ pub fn handle_http_or_asterisk(tx: Arc<Transaction>) -> i32 {
 }
 
 /// Keep the reply until AMI answers (`ami::messages::queue_request`: the
-/// original schedules the expiry, then links the queued message).  When
-/// that fails, the reply is sent at once with just the HTTP header.
+/// official DPMA schedules the expiry, then links the queued message).
+/// When that fails, the reply is sent at once with just the HTTP header.
 fn queue_for_ami(tx: &Arc<Transaction>, f: Forwarded) {
     if crate::ami::messages::queue_request(tx, &f.method).is_err() {
         crate::session::send_and_destroy(tx);
@@ -503,8 +504,8 @@ fn asterisk_request(tx: &Arc<Transaction>, buf: &mut Vec<u8>) -> Option<Forwarde
     };
 
     // The credentials run to the end of their line, without trailing
-    // blanks.  The original cuts the body in place to get them (a NUL at
-    // the marker, at the line break, and over the trailing blanks), and
+    // blanks.  The official DPMA cuts the body in place to get them (a NUL
+    // at the marker, at the line break, and over the trailing blanks), and
     // the request text then ends at the first of those cuts after it.
     body[auth] = 0;
     let cred_start = auth + marker.len();
@@ -545,7 +546,7 @@ fn xml_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<u
         return None;
     };
     let name = root.name();
-    // The original copies the attribute without checking it (a request
+    // The official DPMA copies the attribute without checking it (a request
     // without one crashes it); a missing one is treated as empty here.
     let method = root.attribute("method").unwrap_or_default();
     dpma_debug!(3, "Asterisk {} method '{}' is using XML body", name, method);
@@ -582,8 +583,8 @@ fn xml_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<u
 }
 
 /// `handle_request_json` (inlined in FUN_00176a60).  The request is parsed
-/// with Asterisk's JSON library (jansson), as the original does, so the
-/// same documents are accepted and AMI sees the same parameter text;
+/// with Asterisk's JSON library (jansson), as the official DPMA does, so
+/// the same documents are accepted and AMI sees the same parameter text;
 /// methods get the parameters as a `serde_json::Value`.
 fn json_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<u8>) -> Option<Forwarded> {
     use dpma_proto::errors::request as rq;
@@ -626,7 +627,7 @@ fn json_request(tx: &Arc<Transaction>, phone: &[u8], text: &[u8], buf: &mut Vec<
         }
         return Some(Forwarded { method });
     }
-    // The original passes the method name as the printf format of the
+    // The official DPMA passes the method name as the printf format of the
     // detail.
     error_response_json(buf, &method, rq::METHOD_NOT_FOUND, &method);
     None

@@ -7,7 +7,7 @@
 //!   ([`encrypt`], [`decrypt`], [`StreamEncryptor`]), base64 encoded
 //!   without line breaks ([`b64encode`]).
 //! - Salts: 8 bytes, sent as 16 uppercase hex digits ([`salt_hex`]) and
-//!   parsed like the original's `set_hex` ([`set_hex`]).
+//!   parsed like the official DPMA's `set_hex` ([`set_hex`]).
 //! - The common password of a HandshakeResponse: RSA PKCS#1 v1.5
 //!   ([`rsa_decrypt_common_password`]).
 //! - Asterisk's `ast_base64decode`, quirks included
@@ -50,7 +50,7 @@ pub fn evp_bytes_to_key(password: &[u8], salt: &[u8]) -> ([u8; 16], [u8; 16]) {
     (key, iv)
 }
 
-/// One AES-128-CBC stream with PKCS#7 padding, as the original's
+/// One AES-128-CBC stream with PKCS#7 padding, as the official DPMA's
 /// `init_encryption`, `encrypt_data`, and `encrypt_final`: [`update`]
 /// returns whole blocks only, [`finish`] the rest with the padding.
 ///
@@ -166,7 +166,7 @@ pub fn salt_hex(salt: &[u8]) -> String {
     hex::encode_upper(salt)
 }
 
-/// The original's `set_hex` with a size of 8: at most 16 hex digits,
+/// The official DPMA's `set_hex` with a size of 8: at most 16 hex digits,
 /// either case, the rest zero filled.
 pub fn set_hex(text: &[u8]) -> Result<[u8; 8]> {
     if text.len() > 16 {

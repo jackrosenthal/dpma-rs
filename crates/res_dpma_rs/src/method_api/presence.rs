@@ -5,9 +5,9 @@
 //!
 //! Each answers `{"response":{"method":M,"result":...}}` (replacing
 //! `out`) and returns 0, or puts the JSON error document in `out` and
-//! returns -1, as the original does.
+//! returns -1, as the official DPMA does.
 //!
-//! The original builds the documents with `ast_json_pack`, which fails
+//! The official DPMA builds the documents with `ast_json_pack`, which fails
 //! for text that is not valid UTF-8 (a sub-state or message in Latin-1,
 //! say); the failures are reproduced where they happen.
 
@@ -19,8 +19,8 @@ use dpma_proto::json::utf8;
 use serde_json::{json, Value};
 
 /// Replace `out` with the success document for `result`.  (A method name
-/// that is not UTF-8 makes the original's last `ast_json_pack` fail: then
-/// nothing is written, and the result is still 0.)
+/// that is not UTF-8 makes the official DPMA's last `ast_json_pack` fail:
+/// then nothing is written, and the result is still 0.)
 fn respond(c: &MethodCall, result: Value, out: &mut Vec<u8>) -> i32 {
     if let Some(method) = utf8(&c.method) {
         *out = dpma_proto::json::dump(&json!({"response": {"method": method, "result": result}})).into_bytes();
@@ -95,8 +95,8 @@ pub fn options_get_list(c: &MethodCall, _p: &Value, out: &mut Vec<u8>) -> i32 {
     presence::user_application_sync(&c.phone);
     let current = presence::get_current(&c.phone).and_then(|(o, _)| o).map(|o| o.id);
     let Some(options) = presence::options(&c.phone) else {
-        // The original always has the phone; its only failure here is the
-        // option iterator's allocation.
+        // The official DPMA always has the phone; its only failure here is
+        // the option iterator's allocation.
         return fail(c, err::PARSE, "presence option iterator", out);
     };
     let mut list: Vec<Value> = Vec::new();
