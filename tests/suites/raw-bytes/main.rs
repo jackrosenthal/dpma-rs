@@ -654,7 +654,7 @@ fn check_ami_phone(ctx: &mut Ctx, ami: &Ami, p: &Phone) -> Result<()> {
     // Latin-1 method names register; the registry shows them as they
     // came.
     let r = ami.action(
-        &[(b"Method", b"p18.m\xe9thode")],
+        &[(b"Method", b"test.m\xe9thode")],
         "DPMAMessageRegister",
         None,
     );
@@ -668,13 +668,13 @@ fn check_ami_phone(ctx: &mut Ctx, ami: &Ami, p: &Phone) -> Result<()> {
     );
     let out = cli(ctx, b"dpmadev method list");
     ctx.c
-        .contains("dpmadev method list", &out, &[&b"  p18.m\xe9thode\n"[..]]);
+        .contains("dpmadev method list", &out, &[&b"  test.m\xe9thode\n"[..]]);
 
     // Requests forwarded to AMI: the XML answer passes as bytes; a JSON
     // answer that is not UTF-8 fails (jansson), and the request waits.
-    ami.action(&[(b"Method", b"p18.raw")], "DPMAMessageRegister", None);
+    ami.action(&[(b"Method", b"test.raw")], "DPMAMessageRegister", None);
     let mut ex = p
-        .asterisk(method_request_xml("p18.raw", "Ren&#xE9;"))
+        .asterisk(method_request_xml("test.raw", "Ren&#xE9;"))
         .auth(phone_auth())
         .no_wait()
         .send()?;
@@ -686,7 +686,7 @@ fn check_ami_phone(ctx: &mut Ctx, ami: &Ami, p: &Phone) -> Result<()> {
         "DPMAMessage (XML)",
         &ev,
         &[
-            &b"Method: p18.raw\r\n"[..],
+            &b"Method: test.raw\r\n"[..],
             b"Format: XML\r\n",
             b"Parameters: Ren\xc3\xa9\r\n",
         ],
@@ -712,13 +712,13 @@ fn check_ami_phone(ctx: &mut Ctx, ami: &Ami, p: &Phone) -> Result<()> {
         ex.reply.as_ref().map(|r| r.payload.to_vec()),
         Some(cat(&[
             HTTP,
-            b"\r\n\r\n<response method=\"p18.raw\">\r\n<result><r>\xe9</r></result>\r\n</response>\r\n",
+            b"\r\n\r\n<response method=\"test.raw\">\r\n<result><r>\xe9</r></result>\r\n</response>\r\n",
         ])),
     );
 
     let mut ex = p
         .asterisk(method_request_json(
-            "p18.raw",
+            "test.raw",
             Some(&json!({"a": "\u{e9}"})),
         ))
         .auth(phone_auth())
@@ -768,7 +768,7 @@ fn check_ami_phone(ctx: &mut Ctx, ami: &Ami, p: &Phone) -> Result<()> {
         ex.reply.as_ref().map(|r| r.payload.to_vec()),
         Some(cat(&[
             HTTP,
-            b"\r\n\r\n{\"response\":{\"method\":\"p18.raw\",\"result\":\"Ren\xc3\xa9\"}}\r\n",
+            b"\r\n\r\n{\"response\":{\"method\":\"test.raw\",\"result\":\"Ren\xc3\xa9\"}}\r\n",
         ])),
     );
     Ok(())

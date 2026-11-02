@@ -33,7 +33,7 @@ pub fn run(ctx: &mut Ctx) -> Result<()> {
         )
         .matches("Output", r"(?m)^--- Total active sessions:[0-9]+ ---$");
 
-    let m = ami_action(ctx, "DPMAShowPhones", &[("ActionID", "p7-output")])?;
+    let m = ami_action(ctx, "DPMAShowPhones", &[("ActionID", "test-output")])?;
     ctx.c
         .ami("DPMAShowPhones", Some(&m))
         .eq("Response", "Success")

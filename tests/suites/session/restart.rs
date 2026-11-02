@@ -62,7 +62,7 @@ fn restart(ctx: &mut Ctx, label: &str) {
 }
 
 pub fn run(ctx: &mut Ctx) -> Result<()> {
-    let work = fixtures::TempDir::new("p7-restart")?;
+    let work = fixtures::TempDir::new("dpma-restart")?;
     let state = work.path().join("state.json");
 
     // A session, authenticated (so it is saved) and configured.
