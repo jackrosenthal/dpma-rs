@@ -35,10 +35,12 @@
 //!   crates into that cache first (`cargo fetch --locked`).
 //! - `--security-opt label=disable`, so that SELinux hosts let the
 //!   container read and write the mounts without relabeling them.
-//! - The work runs as the container user that the engine maps to the host
-//!   user ([`container_id`], from `/proc/self/uid_map` in the container):
-//!   root for a rootless engine, the host user's own IDs for a rootful
-//!   one.  So the files it writes into the mounts belong to the host user.
+//! - The work runs as the container user that is the host user: the
+//!   owner of a mount the xtask made, as the container sees it
+//!   ([`Container::host_user`]).  That is root for a rootless engine and
+//!   the host user's own IDs for a rootful one (or a rootless one with
+//!   `--userns=keep-id`), so the files the work writes into the mounts
+//!   belong to the host user.
 //!   `--cap-drop DAC_OVERRIDE` makes root, too, respect file permissions
 //!   as the host user would (methods-calls checks that a read-only
 //!   phonebook file cannot be written).
@@ -182,18 +184,16 @@ pub fn image_tag(pin: &Pin) -> Result<String> {
     Ok(format!("{IMAGE}:{}-{hash}", pin.version))
 }
 
-/// The ID inside a user namespace that maps to `host` outside, from an ID
-/// map (`/proc/<pid>/uid_map` or `gid_map`: lines of "inside outside
-/// count").
-pub fn container_id(map: &str, host: u32) -> Option<u32> {
-    let host = u64::from(host);
-    map.lines().find_map(|l| {
-        let mut f = l.split_whitespace().map(|x| x.parse::<u64>().ok());
-        let (inside, outside, count) = (f.next()??, f.next()??, f.next()??);
-        (outside..outside + count)
-            .contains(&host)
-            .then(|| u32::try_from(inside + host - outside).ok())?
-    })
+/// The ID that the kernel shows for an ID that the container's user
+/// namespace does not map (`/proc/sys/kernel/overflowuid`).
+const UNMAPPED: &str = "65534";
+
+/// The `UID:GID` of `stat -c %u:%g` output, unless either is unmapped.
+fn mapped_owner(stat: &str) -> Option<&str> {
+    let owner = stat.trim();
+    let (u, g) = owner.split_once(':')?;
+    let id = |s: &str| !s.is_empty() && s != UNMAPPED && s.bytes().all(|b| b.is_ascii_digit());
+    (id(u) && id(g)).then_some(owner)
 }
 
 /// A running test container (see the module documentation), removed when
@@ -288,26 +288,21 @@ impl Container {
         run(&mut self.exec(Some("0"), args))
     }
 
-    /// The `UID:GID` of the container user that is the host user.
+    /// The `UID:GID` of the container user that is the host user: the
+    /// owner of [`OUT`] (which the xtask made) as the container sees it.
     pub fn host_user(&self) -> Result<String> {
-        let map = |file: &str| -> Result<String> {
-            let out = self.exec(None, &["cat", file]).output()?;
-            if !out.status.success() {
-                bail!("reading {file} in the container failed ({})", out.status);
-            }
-            Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-        };
-        // SAFETY: getuid and getgid have no preconditions.
-        let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
-        match (
-            container_id(&map("/proc/self/uid_map")?, uid),
-            container_id(&map("/proc/self/gid_map")?, gid),
-        ) {
-            (Some(u), Some(g)) => Ok(format!("{u}:{g}")),
-            _ => bail!(
-                "no user of the container maps to your user and group IDs ({uid}:{gid}), so the \
-                 files it writes into the repository would not be yours (does the engine remap \
-                 user namespaces?)"
+        let out = self.exec(None, &["stat", "-c", "%u:%g", OUT]).output()?;
+        if !out.status.success() {
+            bail!("stat {OUT} in the container failed ({})", out.status);
+        }
+        let stat = String::from_utf8_lossy(&out.stdout);
+        match mapped_owner(&stat) {
+            Some(owner) => Ok(owner.to_string()),
+            None => bail!(
+                "no user of the container is you ({OUT} is owned by {} in it), so the files it \
+                 would write into the repository would not be yours (does the engine remap user \
+                 namespaces?)",
+                stat.trim()
             ),
         }
     }
@@ -414,16 +409,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn id_maps() {
-        // Rootless: the container's root is the host user.
-        let rootless = "         0       1000          1\n         1     165536      65536\n";
-        assert_eq!(container_id(rootless, 1000), Some(0));
-        assert_eq!(container_id(rootless, 165537), Some(2));
-        assert_eq!(container_id(rootless, 5), None);
-        // Rootful: the identity.
-        let rootful = "         0          0 4294967295\n";
-        assert_eq!(container_id(rootful, 1001), Some(1001));
-        assert_eq!(container_id("", 1000), None);
+    fn owners() {
+        assert_eq!(mapped_owner("0:0\n"), Some("0:0"));
+        assert_eq!(mapped_owner("1001:118\n"), Some("1001:118"));
+        assert_eq!(mapped_owner("65534:1000\n"), None);
+        assert_eq!(mapped_owner("1000:65534\n"), None);
+        assert_eq!(mapped_owner(""), None);
     }
 
     #[test]

@@ -100,9 +100,10 @@ afterwards:
   releases share; and `--original DIR`, read-only.  The container has no
   network, so the xtask fetches the crates into that cache on the host
   first (`cargo fetch --locked`).
-- **User:** the work runs as the container user that the engine maps to
-  your user (from `/proc/self/uid_map` in the container): root for a
-  rootless engine, your own user and group IDs for a rootful one.  So
+- **User:** the work runs as the container user that is you: the owner
+  of `target/container/<release>/` as the container sees it.  That is
+  root for a rootless engine and your own user and group IDs for a
+  rootful one (or for a rootless podman with `--userns=keep-id`).  So
   every file it writes into the repository and `target/` is yours.
   `--cap-drop DAC_OVERRIDE` makes root, too, respect file permissions as
   your user would (`methods-calls` checks that a read-only phonebook

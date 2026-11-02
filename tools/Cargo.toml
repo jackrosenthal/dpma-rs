@@ -10,6 +10,5 @@ publish = false
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 dpma-tests = { path = "../tests" }
-libc.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
