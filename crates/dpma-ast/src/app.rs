@@ -6,10 +6,11 @@
 //! Strings are passed as bytes (dialplan data need not be UTF-8) and cut
 //! at their first NUL byte, as C would see them.
 
+use crate::sys;
 use crate::types::AstChannel;
 use crate::vm::c_bytes;
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int, c_long, c_uint, c_void};
+use std::os::raw::{c_char, c_int, c_long, c_uint};
 use std::ptr;
 
 /// An application's `execute` callback.
@@ -17,44 +18,36 @@ pub type ExecFn = unsafe extern "C" fn(chan: *mut AstChannel, data: *const c_cha
 
 /// `ast_waitstream_fr_cb`: called by the playback functions with the
 /// position in milliseconds and one of the `WAITSTREAM_CB_*` values.
-pub type WaitstreamFrCb = unsafe extern "C" fn(chan: *mut AstChannel, ms: c_long, val: c_int);
+pub type WaitstreamFrCb = unsafe extern "C" fn(chan: *mut AstChannel, ms: c_long, val: sys::ast_waitstream_fr_cb_values);
 
 /// `AST_WAITSTREAM_CB_REWIND`.
-pub const WAITSTREAM_CB_REWIND: c_int = 1;
+pub const WAITSTREAM_CB_REWIND: sys::ast_waitstream_fr_cb_values = sys::AST_WAITSTREAM_CB_REWIND;
 /// `AST_WAITSTREAM_CB_FASTFORWARD`.
-pub const WAITSTREAM_CB_FASTFORWARD: c_int = 2;
+pub const WAITSTREAM_CB_FASTFORWARD: sys::ast_waitstream_fr_cb_values = sys::AST_WAITSTREAM_CB_FASTFORWARD;
 /// `AST_WAITSTREAM_CB_START`.
-pub const WAITSTREAM_CB_START: c_int = 3;
+pub const WAITSTREAM_CB_START: sys::ast_waitstream_fr_cb_values = sys::AST_WAITSTREAM_CB_START;
 
-/// `struct ast_app_option`.
+/// An option table as `AST_APP_OPTIONS` declares it: one
+/// `struct ast_app_option` per option letter (128).
 #[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AppOption {
-    pub flag: u64,
-    pub arg_index: c_uint,
-}
-
-/// An option table as `AST_APP_OPTIONS` declares it: one entry per
-/// option letter (128).
-#[repr(C)]
-pub struct AppOptions(pub [AppOption; 128]);
+pub struct AppOptions(pub [sys::ast_app_option; 128]);
 
 impl AppOptions {
     /// An empty table.
     pub const fn new() -> AppOptions {
-        AppOptions([AppOption { flag: 0, arg_index: 0 }; 128])
+        AppOptions([sys::ast_app_option { flag: 0, arg_index: 0 }; 128])
     }
 
     /// `AST_APP_OPTION(letter, flag)`.
     pub const fn option(mut self, letter: u8, flag: u64) -> AppOptions {
-        self.0[(letter & 0x7f) as usize] = AppOption { flag, arg_index: 0 };
+        self.0[(letter & 0x7f) as usize] = sys::ast_app_option { flag, arg_index: 0 };
         self
     }
 
     /// `AST_APP_OPTION_ARG(letter, flag, argno)`: the option's argument goes
     /// to slot `argno` of the argument array.
     pub const fn option_arg(mut self, letter: u8, flag: u64, argno: u32) -> AppOptions {
-        self.0[(letter & 0x7f) as usize] = AppOption { flag, arg_index: argno + 1 };
+        self.0[(letter & 0x7f) as usize] = sys::ast_app_option { flag, arg_index: argno + 1 };
         self
     }
 }
@@ -65,65 +58,21 @@ impl Default for AppOptions {
     }
 }
 
-extern "C" {
-    fn ast_register_application2(
-        app: *const c_char,
-        execute: ExecFn,
-        synopsis: *const c_char,
-        description: *const c_char,
-        module: *mut c_void,
-    ) -> c_int;
-    fn ast_unregister_application(app: *const c_char) -> c_int;
-    fn __ast_app_separate_args(
-        buf: *mut c_char,
-        delim: c_char,
-        remove_chars: c_int,
-        array: *mut *mut c_char,
-        arraylen: c_int,
-    ) -> c_uint;
-    fn ast_app_parse_options(
-        options: *const AppOption,
-        flags: *mut c_uint,
-        args: *mut *mut c_char,
-        optstr: *mut c_char,
-    ) -> c_int;
-    fn ast_control_streamfile(
-        chan: *mut AstChannel,
-        file: *const c_char,
-        fwd: *const c_char,
-        rev: *const c_char,
-        stop: *const c_char,
-        pause: *const c_char,
-        restart: *const c_char,
-        skipms: c_int,
-        offsetms: *mut c_long,
-    ) -> c_int;
-    fn ast_control_streamfile_w_cb(
-        chan: *mut AstChannel,
-        file: *const c_char,
-        fwd: *const c_char,
-        rev: *const c_char,
-        stop: *const c_char,
-        pause: *const c_char,
-        restart: *const c_char,
-        skipms: c_int,
-        offsetms: *mut c_long,
-        cb: Option<WaitstreamFrCb>,
-    ) -> c_int;
-}
-
 /// `ast_register_application2(name, execute, NULL, NULL, NULL)`: register
 /// an application with no synopsis, description, or owning module.
 /// Returns 0 on success, -1 when the name is taken.
 pub fn register(name: &str, execute: ExecFn) -> i32 {
     let n = crate::cstr(name);
-    unsafe { ast_register_application2(n.as_ptr(), execute, ptr::null(), ptr::null(), ptr::null_mut()) }
+    // SAFETY: Asterisk copies the name; the application is unregistered at
+    // unload.
+    unsafe { sys::ast_register_application2(n.as_ptr(), Some(execute), ptr::null(), ptr::null(), ptr::null_mut()) }
 }
 
 /// `ast_unregister_application(name)`.
 pub fn unregister(name: &str) -> i32 {
     let n = crate::cstr(name);
-    unsafe { ast_unregister_application(n.as_ptr()) }
+    // SAFETY: a valid C string.
+    unsafe { sys::ast_unregister_application(n.as_ptr()) }
 }
 
 /// A NUL-terminated, writable copy of `s` (cut at its first NUL).
@@ -145,7 +94,7 @@ pub fn separate_args(data: &[u8], delim: u8, remove_chars: bool, n: usize) -> (u
     let mut buf = buffer(data);
     let mut array: Vec<*mut c_char> = vec![ptr::null_mut(); n];
     unsafe {
-        let argc = __ast_app_separate_args(
+        let argc = sys::__ast_app_separate_args(
             buf.as_mut_ptr() as *mut c_char,
             delim as c_char,
             c_int::from(remove_chars),
@@ -162,13 +111,13 @@ pub fn separate_args(data: &[u8], delim: u8, remove_chars: bool, n: usize) -> (u
 pub fn parse_options(options: &AppOptions, optstr: &[u8], nargs: usize) -> (i32, u32, Vec<Option<Vec<u8>>>) {
     let mut buf = buffer(optstr);
     let mut args: Vec<*mut c_char> = vec![ptr::null_mut(); nargs.max(1)];
-    let mut flags: c_uint = 0;
+    let mut flags = sys::ast_flags { flags: 0 };
     unsafe {
         let res =
-            ast_app_parse_options(options.0.as_ptr(), &mut flags, args.as_mut_ptr(), buf.as_mut_ptr() as *mut c_char);
+            sys::ast_app_parse_options(options.0.as_ptr(), &mut flags, args.as_mut_ptr(), buf.as_mut_ptr() as *mut c_char);
         let mut out = collect(&args);
         out.truncate(nargs);
-        (res, flags, out)
+        (res, flags.flags as c_uint, out)
     }
 }
 
@@ -204,7 +153,7 @@ pub unsafe fn control_streamfile(
     let (fwd, rev, stop) = (opt_c(fwd), opt_c(rev), opt_c(stop));
     let (pause, restart) = (opt_c(pause), opt_c(restart));
     match cb {
-        None => ast_control_streamfile(
+        None => sys::ast_control_streamfile(
             chan,
             file.as_ptr(),
             opt_ptr(&fwd),
@@ -215,7 +164,7 @@ pub unsafe fn control_streamfile(
             skipms,
             offsetms,
         ),
-        Some(_) => ast_control_streamfile_w_cb(
+        Some(_) => sys::ast_control_streamfile_w_cb(
             chan,
             file.as_ptr(),
             opt_ptr(&fwd),

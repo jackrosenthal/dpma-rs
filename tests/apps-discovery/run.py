@@ -4,7 +4,7 @@ and DigiumVoicemailPlayback, `digium_phones show settings`, and the mDNS
 announcement.
 
 Needs a private instance prepared with dev/tests/apps-discovery/setup.sh,
-a devtest build of res_digium_phone installed, and Asterisk running.  The
+a devtest build of res_dpma_rs installed, and Asterisk running.  The
 mDNS checks run only inside the private network namespace of netns.sh
 (an instance whose only interface is lo), so that no announcement reaches
 a real network; run.sh does all of this.  Exit status 0 when every check
@@ -152,14 +152,14 @@ def near(a, b, tol=120):
 
 
 def test_controlplayback():
-    cli("core set debug 1 res_digium_phone")
+    cli("core set debug 1 res_dpma_rs")
     mark = log_mark()
     for tid, args, keys, gap, _ in CPB_CASES:
         originate("dcp", "dcp-" + tid, args, keys, gap)
         originate("acp", "acp-" + tid, args, keys, gap)
     res = results(["dcp-" + c[0] for c in CPB_CASES] + ["acp-" + c[0] for c in CPB_CASES])
     log = log_since(mark)
-    cli("core set debug 0 res_digium_phone")
+    cli("core set debug 0 res_dpma_rs")
     for tid, _, _, _, comparable in CPB_CASES:
         d, a = res["dcp-" + tid], res["acp-" + tid]
         check("DigiumControlPlayback %s ran" % tid, d is not None)
@@ -276,13 +276,13 @@ def set_general(options):
     text = re.sub(r"(?ms)^\[general\]\n.*?(?=^\[)", "[general]\n" + body + "\n", text, count=1)
     with open(CONF, "w", encoding="utf-8", errors="surrogateescape") as f:
         f.write(text)
-    cli("module reload res_digium_phone.so")
+    cli("module reload res_dpma_rs.so")
 
 
 def restore_conf():
     with open(CONF, "w") as f:
         f.write(ORIGINAL_CONF)
-    cli("module reload res_digium_phone.so")
+    cli("module reload res_dpma_rs.so")
 
 
 FILE_DIR = os.path.join(INST, "var", "lib", "asterisk", "digium_phones")
@@ -414,7 +414,7 @@ def test_mdns():
 
         # Same configuration again: withdrawn and announced again (as Avahi's group reset).
         mark = lst.mark()
-        cli("module reload res_digium_phone.so")
+        cli("module reload res_dpma_rs.so")
         time.sleep(3)
         recs = lst.since(mark)
         same("mDNS unchanged reload: goodbye", "P14 Renamed" in ptrs(recs, True), True)
@@ -465,21 +465,19 @@ def test_mdns():
         same("mDNS disabled: nothing announced", mdns_probe.browse(SERVICE, wait=0.7), {})
         same("mDNS disabled: no responder socket", asterisk_mdns_sockets(), [])
 
-        # Unload and load the module (with the PJSIP helpers that need it).
+        # Unload and load the module.
         set_general([("service_discovery_enabled", "yes"), ("service_name", "P14 Lifecycle")])
         wait_browse(lambda f: "P14 Lifecycle" in f)
-        helpers = ["res_pjsip_dialog_info_digium_body_supplement.so", "res_pjsip_endpoint_identifier_dpma.so"]
+        module = "res_dpma_rs.so"
         mark = lst.mark()
         # (AMI's Command refuses "module load" and "module unload".)
-        for m in helpers + ["res_digium_phone.so"]:
-            same("unload %s" % m, cli_raw("module unload %s" % m), "Unloaded %s\n" % m)
+        same("unload %s" % module, cli_raw("module unload %s" % module), "Unloaded %s\n" % module)
         time.sleep(1.5)
         same("mDNS unload: goodbye", "P14 Lifecycle" in ptrs(lst.since(mark), True), True)
         same("mDNS unload: nothing announced", mdns_probe.browse(SERVICE, wait=0.7), {})
         same("mDNS unload: no responder socket", asterisk_mdns_sockets(), [])
         mark = lst.mark()
-        for m in ["res_digium_phone.so"] + helpers[::-1]:
-            same("load %s" % m, cli_raw("module load %s" % m), "Loaded %s\n" % m)
+        same("load %s" % module, cli_raw("module load %s" % module), "Loaded %s\n" % module)
         found = wait_browse(lambda f: "P14 Lifecycle" in f)
         same("mDNS load: announced again", sorted(found), ["P14 Lifecycle"])
         time.sleep(1)
@@ -487,17 +485,13 @@ def test_mdns():
         # Again: the responder was started from the AMI session's thread
         # (the reload above), which keeps the module's image mapped after
         # an unload; the loader's dlclose must still succeed every time
-        # (crates/res_digium_phone/glue/module.c).
+        # (dpma_ast::module::reopen_if_restarted).
         pos = log_mark()
-        for m in helpers + ["res_digium_phone.so"]:
-            same("unload %s again" % m, cli_raw("module unload %s" % m), "Unloaded %s\n" % m)
-        for m in ["res_digium_phone.so"] + helpers[::-1]:
-            same("load %s again" % m, cli_raw("module load %s" % m), "Loaded %s\n" % m)
+        same("unload %s again" % module, cli_raw("module unload %s" % module), "Unloaded %s\n" % module)
+        same("load %s again" % module, cli_raw("module load %s" % module), "Loaded %s\n" % module)
         wait_browse(lambda f: "P14 Lifecycle" in f)
-        for m in helpers + ["res_digium_phone.so"]:
-            cli_raw("module unload %s" % m)
-        for m in ["res_digium_phone.so"] + helpers[::-1]:
-            cli_raw("module load %s" % m)
+        cli_raw("module unload %s" % module)
+        cli_raw("module load %s" % module)
         time.sleep(0.5)
         failed = [l for l in log_since(pos).split("\n") if "Failure in dlclose" in l]
         same("unload and load twice more: dlclose succeeds", failed, [])

@@ -1,19 +1,17 @@
-# Tests for the PJSIP helper modules (package P11)
+# Tests for the PJSIP side (the original's two helper modules)
 
-`res_pjsip_endpoint_identifier_dpma` is compared with the original binary
-(`res_digium_phone-24.0_3.6.13-x86_64/`, local testing only, never
-committed or redistributed) by running the same scenario with each in the
-same instance and diffing the transcripts.  The original
-`res_pjsip_dialog_info_digium_body_supplement` cannot load against this
-module (it needs `get_license_status`), so ours is checked against the
-decompile (below).
+res_dpma_rs does what the original distribution's two PJSIP helper
+modules do, `res_pjsip_endpoint_identifier_dpma` and
+`res_pjsip_dialog_info_digium_body_supplement` (`crates/res_dpma_rs/src/pjsip/`).
+These tests check that side of the module.
 
 | File | Purpose |
 |---|---|
 | `setup.sh` | Installs `conf/` into a private instance (`#include` lines; `--remove` undoes it) and enables HTTP for ARI on 127.0.0.1:15088+100*slot. |
 | `conf/` | PJSIP endpoints 2001 to 2003, phones and lines 2001 to 2005, the test dialplan, memory wizards for ARI push configuration, and an ARI user. |
 | `scenario.py` | `identifier` and `dialog-info` scenarios; prints a normalized transcript. |
-| `compare.sh` | Runs `identifier` with the original helper and with ours, diffs, then runs `dialog-info`. |
+| `check.sh` | Runs `identifier` and compares the transcript with `expected-identifier.txt`, then runs `dialog-info` and checks the supplemented NOTIFYs. |
+| `expected-identifier.txt` | The expected `identifier` transcript (see below). |
 | `stress.py` | Line locking stress test (observer threads versus readers and reloads). |
 | `sipua.py` | Minimal SIP UA: REGISTER, MESSAGE, a UAS that rings or answers and prints INFOs, and a dialog SUBSCRIBE that prints NOTIFY bodies. |
 
@@ -21,23 +19,46 @@ decompile (below).
 
 ```
 export ASTERISK_INCLUDE_DIR=$PWD/dev/asterisk-24/include CARGO_INCREMENTAL=0
-cargo build && cargo build -p res_digium_phone --features devtest
-export DPMA_SLOT=11
-dev/tests/pjsip-helpers/compare.sh /some/dir     # about 2 minutes
+cargo build && cargo build -p res_dpma_rs --features devtest
+export DPMA_SLOT=19
+dev/tests/pjsip-helpers/check.sh /some/dir       # about 2 minutes
 dev/tools/ast.sh install && dev/tools/ast.sh start
 dev/tests/pjsip-helpers/stress.py 15             # PASS / FAIL
 dev/tools/ast.sh stop
 ```
 
-`compare.sh` stops Asterisk at the end; the instance keeps the test
+`check.sh` stops Asterisk at the end; the instance keeps the test
 configuration (`setup.sh --remove` takes it out).
+
+## The expected transcript
+
+Until package P19 merged the helpers into the module, this suite ran the
+identifier scenario with the ORIGINAL `res_pjsip_endpoint_identifier_dpma.so`
+(loaded against dpma-rs's res_digium_phone through its exported C API)
+and with dpma-rs's own helper, and diffed the two transcripts: they were
+identical up to the last step, where the original crashes Asterisk.
+`expected-identifier.txt` is the transcript of the merged module
+(2026-11-01, slot 19).  It is the original helper's transcript of that
+time except for what the merge changes by design: one module
+(`res_dpma_rs.so`) where there were three, so the `module show`, `module
+unload`, and `module load` steps name one module and its use count is 0
+(the original res_digium_phone's was 4: two dependent helpers and two
+handler references); the `dpmadev pjsip ...` test commands (formerly
+`dpmadev exports ...`) print `pjsip_auth (object)` and `phone` where they
+printed the exported functions' names; and the last step, which the
+original does not survive.  Logs, line settings, last URIs, INFO
+requests, and MESSAGE routing are byte for byte the same.
+
+The dialog-info transcript depends on timing (an intermediate NOTIFY may
+or may not be sent), so `check.sh` only checks that the supplement adds
+the restricted caller to the Digium subscriber's NOTIFY and never to the
+other subscriber's.
 
 ## What the identifier scenario covers
 
-- Load: module use counts (res_digium_phone: the two helpers' dependencies
-  and the two handler references), the NOTICE about
+- Load: the module's use count, the NOTICE about
   `ast_sip_session_get_dialog()`, "Reconfiguring triggered by identifier
-  load", and the settings of lines 2001 to 2005 (`dpmadev exports line`):
+  load", and the settings of lines 2001 to 2005 (`dpmadev pjsip line`):
   tech, context, callerid, secret, authname, pjsip_auth, mailbox (the
   first of the endpoint's `mailboxes`, else of the first AOR that has
   some), and the `[2002]` line section winning over PJSIP after a full
@@ -51,19 +72,17 @@ configuration (`setup.sh --remove` takes it out).
   endpoint changes).
 - REGISTER from Digium and Sangoma user agents (the phone named after the
   AOR gets `pjsip:<host:port>;transport=<transport>` as its last URI,
-  `dpmadev exports lastinfo`) and from others (nothing);
-  `dpma_pjsip_endpoint_is_dphone`.
-- SIP INFO through `dpma_info_send` on a PJSIP channel (headers and JSON
-  body, and no body) and on a Local channel (-1).
+  `dpmadev pjsip lastinfo`) and from others (nothing);
+  `dpma_pjsip_endpoint_is_dphone` (`dpmadev pjsip isdphone`).
+- SIP INFO through `dpma_info_send` (`dpmadev pjsip info`) on a PJSIP
+  channel (headers and JSON body, and no body) and on a Local channel
+  (-1).
 - MESSAGEs with and without `X-Digium-User-Agent` to the `proxy` and
   `probe` extensions, then with `pjsip_message_context=dpma-p11-test` after
-  `module reload res_digium_phone.so` (the config hook moves the DPMA
-  endpoint to that context), and back.
-- Two unload/load cycles of res_digium_phone and both helpers.
+  `module reload res_dpma_rs.so` (the config hook moves the DPMA endpoint
+  to that context), and back.
+- Two unload/load cycles of the module.
 - Last: an AOR update while some line has no PJSIP endpoint.
-
-Result (2026-11-01, slot 11): the transcripts are identical except for the
-last step, where the original crashes Asterisk.
 
 ## Findings
 
@@ -117,11 +136,10 @@ body and the supplement's debug log.  Checked against the decompile
 
 ## stress.py
 
-Phase 1 races ARI updates of auth and endpoint 2005 (the helper's
-observers rewrite line 2005 under the line's ao2 lock) against
+Phase 1 races ARI updates of auth and endpoint 2005 (the PJSIP side's
+observers rewrite line 2005 under the line object's ao2 lock) against
 `dpmadev config 2003` reads of the line's account.  With the readers
 taking the line lock, no read sees a half-updated line; without it (as
 before P11), about a third of the reads did (empty password, authname
 falling back to the line name, empty caller ID).  Phase 2 adds
-res_digium_phone and res_pjsip reloads and checks for deadlocks only.
-It passes with our helper and with the original.
+res_dpma_rs and res_pjsip reloads and checks for deadlocks only.

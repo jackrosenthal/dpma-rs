@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Compare the CLI and AMI output of dpma-rs's res_digium_phone with the
-original binary's, byte for byte, for every command and action that
-needs no connected phone.
+"""Compare the CLI and AMI output of dpma-rs's res_dpma_rs with the
+original binary's (res_digium_phone), byte for byte, for every command
+and action that needs no connected phone.
 
     DPMA_SLOT=<n> python3 -I dev/tests/parity/run.py [-v] [--keep DIR]
         [--original DIR] [--capture ours|original] [--compare A B]
 
 Without --capture or --compare, the script stops the instance, gives it a
 fresh configuration (ast.sh reset-conf) and the test configuration below,
-and then, for each module: installs it (ours: "ast.sh install"; the
-original: res_digium_phone.so and its two PJSIP helpers copied from
---original, default res_digium_phone-24.0_3.6.13-x86_64/), starts
-Asterisk, captures, and stops Asterisk.  It ends by installing ours again
-and comparing the captures.  The original binaries go into the private
-instance only (DPMA_SLOT is required); never into the shared install.
+and then, for each side: installs it (ours: "ast.sh install", which also
+removes the original modules; the original: res_dpma_rs.so removed, then
+res_digium_phone.so and its two PJSIP helpers copied from --original,
+default res_digium_phone-24.0_3.6.13-x86_64/), starts Asterisk, captures,
+and stops Asterisk.  It ends by installing ours again (which removes the
+original modules) and comparing the captures.  The original binaries go
+into the private instance only (DPMA_SLOT is required); never into the
+shared install.
 
 The test configuration is dev/tests/config-xml's (phones, lines,
 external lines, networks, applications, alerts, ringtones, firmware
@@ -66,8 +68,11 @@ INST = os.path.join(ROOT, "dev/run/slot" + SLOT)
 ETC = os.path.join(INST, "etc/asterisk")
 MODDIR = os.path.join(INST, "lib/asterisk/modules")
 AMI_PORT = 15038 + 100 * int(SLOT)
+# The original modules, and ours, which replaces all three: only one side
+# may be in the module directory at a time.
 MODULES = ("res_digium_phone.so", "res_pjsip_endpoint_identifier_dpma.so",
            "res_pjsip_dialog_info_digium_body_supplement.so")
+OURS = "res_dpma_rs.so"
 
 TRANSLATIONS = """
 [p15-trans]
@@ -346,6 +351,10 @@ def compare(a, b):
 
 
 def install_original():
+    try:
+        os.remove(os.path.join(MODDIR, OURS))
+    except FileNotFoundError:
+        pass
     for m in MODULES:
         src = os.path.join(ARGS.original, m)
         dst = os.path.join(MODDIR, m)

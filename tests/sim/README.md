@@ -1,6 +1,6 @@
 # DPMA phone simulator and test harness
 
-Tools for testing res_digium_phone without Digium phones
+Tools for testing dpma-rs (res_dpma_rs) without Digium phones
 (dev/notes/port-plan.md, sections 6.3 and 6.4):
 
 | File | Purpose |
@@ -70,15 +70,16 @@ and `res_digium_phone.conf` (`--remove` takes them out):
 
 - `pjsip_dpma_sim.conf`: a TCP transport on the instance's SIP port; the
   endpoint `dpma-sim` with `message_context=dpma_pjsip_message_context`,
-  identified by `match=127.0.0.1` (the test-only stand-in for the endpoint
-  identifier helper, section 6.3); and `dpma-sim-loopback`, identified by
+  identified by `match=127.0.0.1` (a test-only stand-in for the module's
+  endpoint identifier, section 6.3); and `dpma-sim-loopback`, identified by
   `match=127.0.0.2`, whose messages go to a static test context.  With the
-  endpoint identifier helper loaded, the simulator's MESSAGEs (which carry
-  `X-Digium-User-Agent`) are identified by the helper instead, and the
+  module loaded, the simulator's MESSAGEs (which carry
+  `X-Digium-User-Agent`) are identified by its endpoint identifier (the
+  original's res_pjsip_endpoint_identifier_dpma helper) instead, and the
   `dpma-sim` identify is not needed; remove the include when testing other
   PJSIP clients: it matches every request from 127.0.0.1, REGISTERs
   included.  The loopback path needs `--no-digium-ua-header` while the
-  helper is loaded.
+  module is loaded.
 - `extensions_dpma_sim.conf`: `[dpma-sim-loopback]` logs every MESSAGE
   from 127.0.0.2 with its AppServer headers and answers Echo the way the
   module's `handle_request_echo` does (no module needed); `[dpma-sim-send]`
@@ -123,7 +124,7 @@ Global options (before the command):
 | `--transport udp\|tcp` | udp | |
 | `--mac` | `000fd3000001` | `X-Digium-AppServer-MACAddress` (colons removed) |
 | `--user-agent` | `Digium D65 2_9_17` | Sent as `User-Agent` and `X-Digium-User-Agent`; an empty one sends neither |
-| `--no-digium-ua-header` | off | Do not send `X-Digium-User-Agent`.  The PJSIP helper (res_pjsip_endpoint_identifier_dpma) gives every request with that header its own endpoint, whose context is `pjsip_message_context`; use this option for the loopback path while the helper is loaded. |
+| `--no-digium-ua-header` | off | Do not send `X-Digium-User-Agent`.  The module's endpoint identifier (the original's res_pjsip_endpoint_identifier_dpma helper) gives every request with that header its own endpoint, whose context is `pjsip_message_context`; use this option for the loopback path while the module is loaded. |
 | `--contact` | `sip:<mac>@<host>:<port>` | The Contact URI (the session is bound to it) |
 | `--origination-network` | none | Sends `X-Origination-Network` |
 | `--form legacy\|chain`, `--bundle` | chain | Handshake certificates |

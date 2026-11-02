@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Digium phone simulator for testing res_digium_phone (DPMA) without phones.
+"""Digium phone simulator for testing dpma-rs (res_dpma_rs) without phones.
 
 It plays the phone side of the DPMA AppServer protocol over SIP MESSAGE
 (UDP or TCP) against an Asterisk instance: handshake with a locally
@@ -1193,7 +1193,7 @@ class Phone:
         if self.opts.user_agent:
             common.insert(1, ("User-Agent", self.opts.user_agent))
             if self.opts.digium_ua_header:
-                # Phones send it; the PJSIP helper identifies them by it.
+                # Phones send it; the module's endpoint identifier finds them by it.
                 common.insert(2, ("X-Digium-User-Agent", self.opts.user_agent))
         # (An empty MAC, for tests of phones without one, still needs a
         # valid From user.)
@@ -1894,7 +1894,7 @@ def build_parser(script=False):
         ap = ScriptParser(prog="script", add_help=False)
     else:
         ap = argparse.ArgumentParser(
-            description="Simulate a Digium phone against res_digium_phone.",
+            description="Simulate a Digium phone against dpma-rs.",
             epilog="See dev/sim/README.md for the test configuration and scripts.")
         g = ap.add_argument_group("connection")
         g.add_argument("--slot", help="instance slot: SIP port 15060+100*slot, AMI port "
@@ -1910,8 +1910,8 @@ def build_parser(script=False):
         g.add_argument("--user-agent", default=DEFAULT_UA,
                        help="default %(default)r; '' sends no User-Agent headers")
         g.add_argument("--no-digium-ua-header", action="store_true",
-                       help="do not send X-Digium-User-Agent (by which the PJSIP helper "
-                            "res_pjsip_endpoint_identifier_dpma identifies phones)")
+                       help="do not send X-Digium-User-Agent (by which the module's endpoint "
+                            "identifier identifies phones)")
         g.add_argument("--contact", help="Contact URI (default sip:<mac>@<local address>)")
         g.add_argument("--origination-network", help="send X-Origination-Network")
         g.add_argument("--form", choices=("legacy", "chain"), default="chain",

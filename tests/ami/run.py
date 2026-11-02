@@ -9,7 +9,7 @@ Asterisk instance with the phone simulator.
 
 Prerequisites: the simulator setup (dev/sim/mkpki.py,
 dev/sim/install-conf.sh), the P13 phones (dev/tests/ami/setup.sh), a
-devtest build installed in the instance (cargo build -p res_digium_phone
+devtest build installed in the instance (cargo build -p res_dpma_rs
 --features devtest), and Asterisk running.
 
 --via phone (the default) drives everything from the simulator: the
@@ -543,7 +543,7 @@ def check_reload(a, b):
         drain(b)
         pos = log_size()
         write_conf(orig.replace("full_name=P13 Phone\nline=p13line\n", "full_name=P13 Phone\nline=p13line4\n"))
-        cli("module reload res_digium_phone.so")
+        cli("module reload res_dpma_rs.so")
         expect_reconfigure(a, "reload, lines changed")
         time.sleep(0.3)
         text = log_since(pos)
@@ -554,13 +554,13 @@ def check_reload(a, b):
 
         write_conf(orig.replace("full_name=P13 Phone\nline=p13line\n", "full_name=P13 Phone\nline=p13line4\n")
                    .replace("[p13phone2]\ntype=phone\n", "[p13phone2-gone]\ntype=phone\n"))
-        cli("module reload res_digium_phone.so")
+        cli("module reload res_dpma_rs.so")
         expect_reconfigure(b, "reload, phone removed")
         r = a.next_event(timeout=1)
         check("reload, phone removed: other phones untouched", r is None, r.describe() if r else "")
     finally:
         write_conf(orig)
-        cli("module reload res_digium_phone.so")
+        cli("module reload res_dpma_rs.so")
 
 
 def check_session_gone(ami, b):
@@ -615,7 +615,7 @@ def main():
     if not shutil.which("python3"):
         sys.exit("python3 not found")
     if "dpmadev ami queue" not in cli("core show help dpmadev ami"):
-        sys.exit("needs a devtest build of res_digium_phone running in slot %s" % SLOT)
+        sys.exit("needs a devtest build of res_dpma_rs running in slot %s" % SLOT)
     ami = RawAmi(AMI_PORT)
     # Requests left queued by an earlier run expire only after 300 s;
     # answer them.

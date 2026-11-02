@@ -3,11 +3,9 @@ resolver = "2"
 members = [
     "crates/dpma-ast",
     "crates/dpma-bytes",
-    "crates/dpma-build",
     "crates/dpma-proto",
-    "crates/res_digium_phone",
-    "crates/res_pjsip_endpoint_identifier_dpma",
-    "crates/res_pjsip_dialog_info_digium_body_supplement",
+    "crates/dpma-sys",
+    "crates/res_dpma_rs",
 ]
 
 [workspace.package]
@@ -19,11 +17,11 @@ rust-version = "1.99"
 
 [workspace.dependencies]
 dpma-ast = { path = "crates/dpma-ast" }
-dpma-build = { path = "crates/dpma-build" }
+dpma-sys = { path = "crates/dpma-sys" }
 dpma-bytes = { path = "crates/dpma-bytes" }
 dpma-proto = { path = "crates/dpma-proto" }
 bstr = { version = "1.13", default-features = false, features = ["std"] }
-cc = "1.2"
+bindgen = "0.73"
 openssl = "0.10"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 libc = "0.2"
