@@ -6,10 +6,10 @@
 //! (clearing the mark on what is still configured), then removes whatever is
 //! still marked.
 //!
-//! chan_sip is not supported (port plan, section 8, item 6): unlike the
-//! official DPMA, no lines are read from sip.conf or from users.conf
-//! `hassip` users, and there are no `digium_phones_sip` or
-//! `digium_phones_users_sip` config hooks.  PJSIP lines get their settings
+//! chan_sip is not supported: unlike the official DPMA, no lines are read
+//! from sip.conf or from users.conf `hassip` users, and there are no
+//! `digium_phones_sip` or `digium_phones_users_sip` config hooks.  PJSIP
+//! lines get their settings
 //! from the PJSIP side of the module (`crate::pjsip`, the official DPMA's
 //! res_pjsip_endpoint_identifier_dpma helper), whose lines pass runs in the
 //! middle of each pass (the official DPMA's config handler).

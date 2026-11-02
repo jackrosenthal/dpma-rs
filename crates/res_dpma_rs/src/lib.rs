@@ -3,10 +3,9 @@
 //! helper modules in one module.
 //!
 //! This file declares the module to Asterisk's loader and wires the
-//! subsystems together in the official DPMA's order (res_digium_phone.c:
-//! `load_module`, `load_full_components`, `unload_full_components`,
-//! `reload`), followed by the PJSIP side (`pjsip`), which Asterisk loaded
-//! after res_digium_phone as two helper modules.
+//! subsystems together in the official DPMA's order (res_digium_phone.c),
+//! followed by the PJSIP side (`pjsip`), which Asterisk loaded after
+//! res_digium_phone as helper modules.
 
 #![allow(clippy::result_unit_err)]
 

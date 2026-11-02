@@ -2,8 +2,8 @@
 //! components: `digium_phones show settings` (FUN_00174570) and
 //! `digium_phones show version` (FUN_00174870) (phone_settings_cli.c;
 //! register FUN_00174950, unregister FUN_00174930).  The official DPMA's
-//! third command, `digium_phones license status` (FUN_001748c0), is
-//! intentionally not ported (no license handling in this rewrite).
+//! `digium_phones license status` (FUN_001748c0) is intentionally not
+//! ported (no license handling in this rewrite).
 //!
 //! Each command's summary is its own command text, as in the official
 //! DPMA's `ast_cli_entry` table (DAT_005e9100).
@@ -112,8 +112,7 @@ fn cli_show_settings(a: &CliArgs) -> CliResult {
 }
 
 /// `digium_phones show version` (FUN_00174870; this rewrite prints its own
-/// version, plan section 8, item 5).  Like `show settings`, it takes any
-/// number of arguments.
+/// version).  Like `show settings`, it takes any number of arguments.
 fn cli_show_version(a: &CliArgs) -> CliResult {
     a.out(bformat!("dpma-rs version {}\n", crate::VERSION));
     CliResult::Success

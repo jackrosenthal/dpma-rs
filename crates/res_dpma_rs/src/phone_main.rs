@@ -3,9 +3,7 @@
 //!
 //! Waits until Asterisk is fully booted, logs "Digium Phone Module
 //! Started" (to the DPMA level, when the system verbosity is at least 2),
-//! then loops: `session::next_transaction(10000)`; a transaction with a
-//! response type is logged as "Received response of unknown type"; anything
-//! else goes to `request::handle_incoming`.
+//! then handles incoming transactions until it is stopped.
 //!
 //! The official DPMA stops the thread with `pthread_cancel` (it has a
 //! `pthread_testcancel` after every transaction) plus a signal to break the

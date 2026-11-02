@@ -3,9 +3,9 @@
 //!
 //! The official DPMA registers one service through libavahi-client (and so
 //! needs a running avahi-daemon); this rewrite answers mDNS itself with
-//! the pure-Rust `mdns-sd` responder (plan section 8, item 8), so it
-//! announces with or without avahi-daemon.  What is announced is what
-//! `av_create_service` (FUN_00173da0) registers:
+//! the pure-Rust `mdns-sd` responder, so it announces with or without
+//! avahi-daemon.  What is announced is what `av_create_service`
+//! (FUN_00173da0) registers:
 //!
 //! - instance `service_name` (default "Digium Phone Config Server") of
 //!   type `_digiumproxy._udp` in domain `local`, on every interface and
@@ -26,7 +26,7 @@
 //! withdraws the official DPMA's service as its client goes away; here an
 //! Asterisk atexit handler withdraws it.
 //!
-//! Differences that come with leaving Avahi (see the hand-off notes):
+//! Differences that come with leaving Avahi:
 //!
 //! - The SRV target and its address records are the responder's own host
 //!   name, `<hostname>-dpma.local`, rather than avahi-daemon's
@@ -37,11 +37,10 @@
 //! - On a name collision `mdns-sd` picks "<name> (2)" where Avahi's
 //!   `avahi_alternative_service_name` picks "<name> #2".
 //! - `mdns-sd` takes the instance name as UTF-8 text, so a `service_name`
-//!   that is not valid UTF-8 is not announced; an error is logged instead
-//!   (user decision).  (Avahi passes the name over D-Bus, which accepts
-//!   only UTF-8; the official DPMA's behavior with such a name is not
-//!   known.)  The TXT record carries `mdns_address` and `mdns_transport` as
-//!   bytes.
+//!   that is not valid UTF-8 is not announced; an error is logged instead.
+//!   (Avahi passes the name over D-Bus, which accepts only UTF-8; the
+//!   official DPMA's behavior with such a name is not known.)  The TXT
+//!   record carries `mdns_address` and `mdns_transport` as bytes.
 //! - Interfaces: those that are up, multicast-capable, and not point to
 //!   point.  avahi-daemon also never uses loopback interfaces; this
 //!   responder uses one only if multicast is enabled on it (never the case

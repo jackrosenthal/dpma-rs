@@ -65,7 +65,7 @@ fn key(name: &[u8]) -> Vec<u8> {
     dpma_ast::dpma_bytes::c_view(name).to_ascii_lowercase()
 }
 
-/// `phone_method_load` (FUN_00178c10): create the three registries.
+/// `phone_method_load` (FUN_00178c10): create the registries.
 pub fn load() -> Result<(), ()> {
     let mut g = REGISTRIES.write().unwrap();
     if g.is_some() {
@@ -407,8 +407,7 @@ mod devtest {
     }
 }
 
-/// Test hooks (feature "devtest"): list the registries, register test
-/// methods, look methods up, and invoke a JSON method for a phone.
+/// Test hooks (feature "devtest").
 #[cfg(feature = "devtest")]
 pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
     devtest::commands()

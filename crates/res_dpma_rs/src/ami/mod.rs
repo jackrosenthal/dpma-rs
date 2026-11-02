@@ -2,21 +2,12 @@
 //! FUN_00175840) plus the AMI scheduler and queued-message container
 //! (phone_ami.c, phone_request.c).
 //!
-//! The official DPMA registers seven actions in one place, all with
+//! The official DPMA registers its actions in one place, all with
 //! authority `call` (EVENT_FLAG_CALL).  `DPMALicenseStatus` is not
-//! implemented (no license handling in this rewrite); the other six are:
+//! implemented (no license handling in this rewrite).
 //!
-//! | Action              | Implemented in  |
-//! |---------------------|-----------------|
-//! | DPMAShowPhones      | `session::ami`  |
-//! | DPMAMessageRegister | `ami::messages` |
-//! | DPMAMessageResponse | `ami::messages` |
-//! | DPMAMessageSend     | `ami::messages` |
-//! | DPMAShowIncidents   | `auth`          |
-//! | DPMARemoveIncident  | `auth`          |
-//!
-//! Each of those modules returns its actions from an `actions()`
-//! function; this module registers them in the official DPMA's order.
+//! Each module with actions returns them from an `actions()` function;
+//! this module registers them in the official DPMA's order.
 //! Unlike the official DPMA, which unregisters only some of them at unload
 //! (leaving dangling handlers), every registered action is unregistered.
 

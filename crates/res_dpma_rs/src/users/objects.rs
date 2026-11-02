@@ -3,13 +3,12 @@
 //!
 //! The phone users configuration lives in `users::Registry`; the objects
 //! here are handles that name a registry line or phone.  Like the
-//! official DPMA's objects they start with the NUL-terminated name (128
-//! bytes), are locked and reference counted with ao2, and live in hash
-//! containers of 257 buckets hashed and compared case-insensitively by
-//! name, so containers iterate in the same order as the registry's maps.
-//! The PJSIP side (`crate::pjsip`) works on lines through them as the
-//! official DPMA's helper module does: it finds lines by name, walks the
-//! lines container, and updates a line under its lock.
+//! official DPMA's objects they start with the NUL-terminated name, are
+//! locked and reference counted with ao2, and live in hash containers
+//! hashed and compared case-insensitively by name, so containers iterate
+//! in the same order as the registry's maps.  The PJSIP side
+//! (`crate::pjsip`) works on lines through them, as the official DPMA's
+//! helper module does.
 //!
 //! `sync` keeps the containers in step with the registry: it is called
 //! before the PJSIP lines pass runs and after every processing pass.  A
@@ -27,8 +26,7 @@
 //! update a line with several calls while holding the line object's ao2
 //! lock, as the official DPMA's own code does.  Code that reads or
 //! writes lines where the official DPMA takes the line's lock takes it too,
-//! through `lock_lines`, `lock_phone_lines`, or `lock_all_lines`, so it
-//! never sees a line half updated.  Rules: take line locks before the
+//! so it never sees a line half updated.  Rules: take line locks before the
 //! registry lock (never while holding it), find every object before
 //! locking any (a thread holding line locks must not wait for the lines
 //! container's lock: `ao2_callback` holds it while the PJSIP lines pass
@@ -293,10 +291,9 @@ unsafe fn detach_line(obj: *mut LineObj, last: Option<Line>) {
     }
 }
 
-/// Bring both containers in step with the registry: link objects for new
-/// lines and phones, unlink those the registry no longer has (`swept`
-/// holds the settings of lines just removed), and refresh the cached
-/// `pjsip_auth` strings.  Must be called without the registry lock.
+/// Bring both containers in step with the registry (`swept` holds the
+/// settings of lines just removed).  Must be called without the registry
+/// lock.
 pub fn sync(swept: Vec<Line>) {
     let _g = lock(&SYNC);
     let lines_c = lines_container();
@@ -304,8 +301,6 @@ pub fn sync(swept: Vec<Line>) {
     if lines_c.is_null() || users_c.is_null() {
         return;
     }
-    // Snapshot the registry: (name, pjsip_auth) of each line, and the
-    // phone names.
     type Snapshot = (Vec<(Vec<u8>, Vec<u8>)>, Vec<Vec<u8>>);
     let (lines, phones): Snapshot = {
         let g = users::read();
