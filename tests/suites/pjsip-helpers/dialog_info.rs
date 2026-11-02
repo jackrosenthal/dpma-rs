@@ -1,7 +1,4 @@
-//! The dialog-info scenario (`scenario.py dialog-info`, the dialog-info
-//! supplement): NOTIFY bodies for dialog subscriptions from a Digium and
-//! another user agent while calls ring (early) and ring while in use,
-//! with plain and restricted caller ID; and its checks (`check.sh`).
+//! The dialog-info scenario (the dialog-info supplement) and its checks.
 //!
 //! Asterisk bug #2186 ("extstate: Include causing device channel details
 //! in legacy callbacks"): the new extension state API of 22.11.0, 23.5.0,
@@ -20,8 +17,7 @@ use crate::{restart, transcript_dir, Scenario, DIGIUM_UA};
 /// What the supplement adds for the restricted caller.
 const ANON: &str = "<remote><target uri=\"sip:anonymous@anonymous.invalid\" />";
 
-/// Whether `release` has Asterisk bug #2186: 22.11.x, 23.5.x, and
-/// 24.0.0-rc1 (fixed in 22.12.0, 23.6.0, and 24.0.0-rc2).
+/// Whether `release` has Asterisk bug #2186.
 pub fn has_bug_2186(release: &str) -> bool {
     release.starts_with("22.11.") || release.starts_with("23.5.") || release == "24.0.0-rc1"
 }
@@ -99,9 +95,6 @@ fn scenario(s: &mut Scenario) -> Result<()> {
     s.ast("core set debug 3 res_dpma_rs", true);
     let uas = s.uas("2002", "pw2002", "Acme Phone 1.0", 16.0, &[2])?;
     fixtures::sleep(1.0);
-    // (The supplement's "No domain in local uri" case cannot happen with
-    // Asterisk 24: a subscription's local URI is the Request-URI with the
-    // resource as its user.)
     let subs = [
         (
             "digium",

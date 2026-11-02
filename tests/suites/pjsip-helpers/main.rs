@@ -2,9 +2,7 @@
 //! official DPMA's two PJSIP helper modules do,
 //! `res_pjsip_endpoint_identifier_dpma` and
 //! `res_pjsip_dialog_info_digium_body_supplement`
-//! (`crates/res_dpma_rs/src/pjsip/`).  The Rust form of
-//! `tests/pjsip-helpers/` (`check.sh`, `scenario.py`, `sipua.py`,
-//! `stress.py`, and `setup.sh`).
+//! (`crates/res_dpma_rs/src/pjsip/`).
 //!
 //! ```text
 //! cargo xtask test pjsip-helpers
@@ -16,112 +14,23 @@
 //! cargo test -p dpma-tests --test pjsip-helpers -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
-//! Prerequisites: the test instance running Asterisk 22, 23, or
-//! 24 with the default outbound endpoint the scratch configuration sets
-//! (`default_outbound_endpoint` in `pjsip.conf`'s `[global]`; without it
-//! the module fails to load, as the official DPMA did), and the devtest
-//! build of the module (the scenarios use the `dpmadev pjsip ...` and
-//! `dpmadev config` commands).
+//! The suite prepares the instance (`--no-prepare` skips this) and runs
+//! each part after restarting Asterisk.
 //!
-//! The suite prepares the instance (fresh configuration, the test
-//! configuration below, the debug build installed, Asterisk started;
-//! `--no-prepare` skips this) and runs these parts (about thirty seconds
-//! in all), each after restarting Asterisk:
+//! The transcripts, which do not depend on ports, addresses, tags, thread
+//! IDs, or times, go to `<instance>/pjsip-helpers/`; `-v` also prints them
+//! as they are made.  When the identifier transcript differs, the check
+//! shows a unified diff (`-` expected, `+` now); to accept a new
+//! transcript, copy `identifier.txt` over the expected one.
 //!
-//! | Part | Was | Checks |
-//! |---|---|---|
-//! | `identifier` | `check.sh` (`scenario.py identifier`) | The identifier scenario's transcript is `tests/data/pjsip-helpers/expected-identifier.txt`, byte for byte |
-//! | `dialog-info` | `check.sh` (`scenario.py dialog-info`) | The dialog-info supplement adds the restricted caller to the Digium subscriber's NOTIFY and never to the other subscriber's; on releases with Asterisk bug #2186, that it adds nothing and logs "Bail.  No Channel" |
-//! | `stress` | `stress.py 5` | Line locking under concurrent observer updates, reads, and reloads (5 seconds per phase) |
-//!
-//! The transcripts go to `<instance>/pjsip-helpers/` (`identifier.txt`
-//! and `dialog-info.txt`); `-v` also prints them as they are made.  When
-//! the identifier transcript differs, the check shows a unified diff (`-`
-//! expected, `+` now); to accept a new transcript, copy `identifier.txt`
-//! over the expected one.
-//!
-//! # The test configuration
-//!
-//! The suite installs the snippets of `tests/data/pjsip-helpers/` into the
-//! instance (`#include` lines in `pjsip.conf`, `extensions.conf`,
-//! `res_digium_phone.conf`, `sorcery.conf`, and `ari.conf`) and an
-//! `http.conf` that enables the HTTP server, for ARI, on 127.0.0.1:15088:
-//!
-//! | File | Contents |
-//! |---|---|
-//! | `pjsip_p11.conf` | PJSIP endpoints 2001 to 2003: 2001 with two mailboxes (the line gets the first); 2002 with two auths (the line gets the first) and two AORs (the first has no mailboxes, so the line gets the first mailbox of the second); 2003 with an auth whose username differs from the endpoint name |
-//! | `res_digium_phone_p11.conf` | Phones 2001 (named after the AOR 2001, so it gets REGISTERs' last URIs) and 2003 (on network `p11-net`, so its configuration document has line accounts), and lines 2001 to 2005: `[2002]` has a line section, 2004 has no endpoint, and 2005 is created, changed, and deleted through ARI |
-//! | `extensions_p11.conf` | The test dialplan: 2002 with a hint, calls to 2002 from "Carol Caller" <3003> (3002) and with restricted name and number (3012), and the `dpma-p11-test` context for MESSAGEs |
-//! | `sorcery_p11.conf` | Memory wizards for PJSIP endpoints, AORs, and auths, so ARI push configuration creates, updates, and deletes them and the PJSIP side's sorcery observers run |
-//! | `ari_p11.conf` | The ARI user |
-//! | `expected-identifier.txt` | The expected identifier transcript (see below) |
-//!
-//! The SIP side uses [`dpma_tests::sipua`]: REGISTER, MESSAGE, a UAS that
-//! rings or answers and records INFOs, and a dialog SUBSCRIBE that
-//! records NOTIFY bodies.  ARI goes through [`dpma_tests::ari`].
-//!
-//! # The transcripts
-//!
-//! The scenarios write transcripts that do not depend on ports,
-//! addresses, tags, thread IDs, or times: CLI commands and their output
-//! (`> command`), the module's log lines (`log:`), the settings of lines
-//! (`dpmadev pjsip line`), ARI requests and their status, and what the
-//! SIP user agents saw.
-//!
-//! Until package P19 merged the helpers into the module, this suite ran
-//! the identifier scenario with the official DPMA's
-//! `res_pjsip_endpoint_identifier_dpma.so` (loaded against dpma-rs's
-//! res_digium_phone through its exported C API) and with dpma-rs's own
-//! helper, and diffed the two transcripts: they were identical up to the
-//! last step, where the official DPMA crashes Asterisk.
-//! `expected-identifier.txt` is the transcript of the merged module
-//! (2026-11-01).  It is the official DPMA helper's transcript of that
-//! time except for what the merge changes by design: one module
-//! (`res_dpma_rs.so`) where there were three, so the `module show`,
-//! `module unload`, and `module load` steps name one module and its use
-//! count is 0 (the official DPMA's was 4: two dependent
-//! helpers and two handler references); the `dpmadev pjsip ...` test
-//! commands (formerly `dpmadev exports ...`) print `pjsip_auth (object)`
-//! and `phone` where they printed the exported functions' names; and the
-//! last step, which the official DPMA does not survive.  Logs, line
-//! settings, last URIs, INFO requests, and MESSAGE routing are byte for
-//! byte the same.  The transcript is the same on Asterisk 22.11.0, 23.5.0,
-//! and 24.0.0-rc4.
+//! `expected-identifier.txt` is the official DPMA helper's transcript,
+//! byte for byte, except where merging the helpers into one module changes
+//! it by design, and except for the last step, which the official DPMA
+//! does not survive.
 //!
 //! The dialog-info transcript depends on timing (an intermediate NOTIFY
-//! may or may not be sent), so the `dialog-info` part only checks that the
-//! supplement adds the restricted caller to the Digium subscriber's NOTIFY
-//! and never to the other subscriber's.
-//!
-//! # What the identifier scenario covers
-//!
-//! - Load: the module's use count, the NOTICE about
-//!   `ast_sip_session_get_dialog()`, "Reconfiguring triggered by
-//!   identifier load", and the settings of lines 2001 to 2005 (`dpmadev
-//!   pjsip line`): tech, context, callerid, secret, authname, pjsip_auth,
-//!   mailbox (the first of the endpoint's `mailboxes`, else of the first
-//!   AOR that has some), and the `[2002]` line section winning over PJSIP
-//!   after a full pass.
-//! - `module reload res_pjsip.so` with a changed password and caller ID:
-//!   the endpoint observer's `loaded` callback reprocesses everything
-//!   ("Reconfiguring triggered by endpoint").
-//! - ARI push configuration of endpoint, auth, and AOR 2005: endpoint
-//!   created, updated, and deleted (the line is cleared, context
-//!   included), auth updated and deleted, AOR created (no observer: no
-//!   change until the endpoint changes).
-//! - REGISTER from Digium and Sangoma user agents (the phone named after
-//!   the AOR gets `pjsip:<host:port>;transport=<transport>` as its last
-//!   URI, `dpmadev pjsip lastinfo`) and from others (nothing);
-//!   `dpma_pjsip_endpoint_is_dphone` (`dpmadev pjsip isdphone`).
-//! - SIP INFO through `dpma_info_send` (`dpmadev pjsip info`) on a PJSIP
-//!   channel (headers and JSON body, and no body) and on a Local channel
-//!   (-1).
-//! - MESSAGEs with and without `X-Digium-User-Agent` to the `proxy` and
-//!   `probe` extensions, then with `pjsip_message_context=dpma-p11-test`
-//!   after `module reload res_dpma_rs.so` (the config hook moves the DPMA
-//!   endpoint to that context), and back.
-//! - Two unload/load cycles of the module.
-//! - Last: an AOR update while some line has no PJSIP endpoint.
+//! may or may not be sent), so the `dialog-info` part checks only what the
+//! supplement adds.
 //!
 //! # Findings
 //!
@@ -144,18 +53,12 @@
 //! - After an observer update, a line's tech, context, callerid, secret,
 //!   authname, pjsip_auth, and mailbox come from PJSIP even when its
 //!   res_digium_phone.conf section sets them (`process_pjsip_line_info`
-//!   applies the section first, then clears and sets those seven); a full
-//!   pass applies the section last.  Kept (both helpers do this).
+//!   applies the section first, then clears and sets those); a full pass
+//!   applies the section last.  Kept (both helpers do this).
 //!
 //! # The dialog-info supplement
 //!
-//! The `dialog-info` scenario subscribes to `dialog` events for 2002 as
-//! 2001 with a Digium user agent and with another one, rings 2002 from
-//! "Carol Caller" <3003> (early), then answers a call and rings a second
-//! one with restricted caller ID (ringing while in use), recording every
-//! NOTIFY body and the supplement's debug log.  Checked against the
-//! decompile
-//! (`dev/analysis/decomp/helpers/res_pjsip_dialog_info_digium_body_supplement.c`):
+//! Checked against the official DPMA's decompile:
 //!
 //! - Other user agents ("Not a digium or sangoma phone") and states
 //!   without a ringing channel ("No Channel") are left alone.
@@ -171,45 +74,10 @@
 //!   and `<remote>` from its connected line, with
 //!   `sip:anonymous@anonymous.invalid` and display "anonymous" for a
 //!   restricted number and name, and the local URI's domain otherwise.
-//! - Asterisk bug #2186 ("extstate: Include causing device channel
-//!   details in legacy callbacks"): the new extension state API of
-//!   22.11.0, 23.5.0, and 24.0.0-rc1 leaves the device that caused an
-//!   update, here the ringing one, out of the extension state data, so
-//!   the supplement finds no ringing channel ("Bail.  No Channel") and
-//!   adds nothing, and the generator's early NOTIFY has no `<remote>`.
-//!   Fixed in 22.12.0, 23.6.0, and 24.0.0-rc2.  On releases with the bug
-//!   (22.11.x, 23.5.x, and 24.0.0-rc1, detected by the release number
-//!   from `asterisk -V`) the `dialog-info` part expects exactly
-//!   that; on the others, the supplement.  So moving a pin to a fixed
-//!   release brings back the full check.
 //! - "No domain in local uri" cannot happen with Asterisk 24 (a
 //!   subscription's local URI is the Request-URI with the resource as its
 //!   user), and the "Created dialog node" branch cannot either (the
 //!   generator always adds `<dialog>`).
-//!
-//! # The stress part
-//!
-//! Phase 1 races ARI updates of auth and endpoint 2005 (the PJSIP side's
-//! observers rewrite line 2005 under the line object's ao2 lock) against
-//! `dpmadev config 2003` reads of the line's account.  With the readers
-//! taking the line lock, no read sees a half-updated line; without it (as
-//! before P11), about a third of the reads did (empty password, authname
-//! falling back to the line name, empty caller ID).  Phase 2 adds
-//! res_dpma_rs and res_pjsip reloads and checks for deadlocks only (a
-//! full pass has its own intermediate states, as in the official DPMA):
-//! every CLI command and ARI request must answer within 20 seconds.
-//!
-//! # Changes from the Python and shell version
-//!
-//! - `scenario.py identifier --no-aor-update` (for running the official
-//!   DPMA's helper, which crashes at the last step) and `setup.sh --remove`
-//!   are gone: the official DPMA's helpers are no longer run, and the suite
-//!   starts from a fresh configuration (so `setup.sh`'s backup of
-//!   `http.conf` is gone too).
-//! - The transcripts go to `<instance>/pjsip-helpers/`, not to a new
-//!   temporary directory or `check.sh`'s `outdir`.
-//! - check.sh stopped at the first failing dialog-info condition; the two
-//!   conditions are now two checks.
 
 mod dialog_info;
 mod identifier;
@@ -266,9 +134,7 @@ const CONF: [(&str, &str, &str); 5] = [
 /// The HTTP (ARI) port.
 pub const HTTP_PORT: u16 = 15088;
 
-/// Installs the test configuration (`setup.sh`): the snippets and their
-/// `#include` lines, and an `http.conf` that enables the HTTP server on
-/// 127.0.0.1:15088 ([`HTTP_PORT`]).  Asterisk must be restarted afterwards
+/// Installs the test configuration.  Asterisk must be restarted afterwards
 /// (`sorcery.conf` is read at startup only).
 fn install_conf(inst: &Instance) -> Result<()> {
     for (main, snippet, text) in CONF {
@@ -317,8 +183,7 @@ pub fn norm(text: &str) -> String {
     CHAN.replace_all(&t, "${1}/${2}-ID${3}").into_owned()
 }
 
-/// A scenario's transcript and the means to make it: the instance's CLI
-/// and log, SIP user agents, and ARI.
+/// A scenario's transcript and the means to make it.
 pub struct Scenario {
     /// The instance.
     pub inst: Instance,
@@ -407,9 +272,7 @@ impl Scenario {
 
     /// Waits until Asterisk's logger thread is quiet (`messages.log` has
     /// not grown for 0.1 s), then adds the module's log lines since the
-    /// mark (the PJSIP side's, "Reconfiguring triggered", and "P11
-    /// probe"), without times, thread IDs, and source line numbers, as
-    /// `log:` lines; moves the mark.
+    /// mark as `log:` lines; moves the mark.
     pub fn log_show(&mut self) {
         let size = || std::fs::metadata(&self.inst.messages_log).map_or(0, |m| m.len());
         let mut last = size();
@@ -449,8 +312,7 @@ impl Scenario {
         SipUa::new("127.0.0.1", self.inst.sip_port)
     }
 
-    /// `sipua.py register`: a REGISTER of `user` with `agent`
-    /// (`REGISTER <user> <status>`).
+    /// A REGISTER of `user` with `agent` (`REGISTER <user> <status>`).
     pub fn register(&mut self, user: &str, password: &str, agent: &str) -> Result<()> {
         let status = self.sip_ua()?.register(user, password, agent, 300);
         let line = format!("REGISTER {user} {}", sipua::status_text(&status));
@@ -458,9 +320,8 @@ impl Scenario {
         Ok(())
     }
 
-    /// `sipua.py message`: a MESSAGE to `exten`, with
-    /// `X-Digium-User-Agent: <digium_ua>` when given (`MESSAGE <exten>
-    /// <kind> <status>`).
+    /// A MESSAGE to `exten`, with `X-Digium-User-Agent: <digium_ua>` when
+    /// given (`MESSAGE <exten> <kind> <status>`).
     pub fn message(&mut self, exten: &str, digium_ua: Option<&str>) -> Result<()> {
         let status = self
             .sip_ua()?
@@ -475,9 +336,9 @@ impl Scenario {
         Ok(())
     }
 
-    /// `sipua.py uas` in the background: registers `user` with `agent`,
-    /// then for `seconds` answers the INVITEs numbered in `answer` and
-    /// leaves the others ringing.
+    /// A UAS in the background: registers `user` with `agent`, then for
+    /// `seconds` answers the INVITEs numbered in `answer` and leaves the
+    /// others ringing.
     pub fn uas(
         &self,
         user: &str,
@@ -494,8 +355,7 @@ impl Scenario {
     }
 
     /// Adds what a background UAS printed (its `events`), as `<label>: `
-    /// lines: `REGISTER <user> <status>`, `INVITE <n> answered|ringing`,
-    /// and each INFO (`sipua.py uas`).
+    /// lines.
     pub fn collect_uas(&mut self, events: Vec<UaEvent>, user: &str, label: &str) {
         let mut lines = Vec::new();
         for e in events {
@@ -511,9 +371,9 @@ impl Scenario {
         self.emit(&format!("  {label}: "), &lines);
     }
 
-    /// `sipua.py subscribe` in the background: subscribes to `dialog`
-    /// events of `exten` as `user` with `agent` for `seconds`; the thread
-    /// returns the `SUBSCRIBE <status>` and `NOTIFY <body>` lines.
+    /// A subscriber in the background: subscribes to `dialog` events of
+    /// `exten` as `user` with `agent` for `seconds`; the thread returns
+    /// the `SUBSCRIBE <status>` and `NOTIFY <body>` lines.
     pub fn subscribe(
         &self,
         user: &str,

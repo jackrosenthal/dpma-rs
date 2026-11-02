@@ -1,9 +1,8 @@
 //! The dialplan applications: Local channels into extensions running each
 //! application (`extensions_dpma_apps.conf`), with DTMF sent from the
-//! other half; the result variables (`CPLAYBACKSTATUS`,
-//! `CPLAYBACKSTOPKEY`, `CPLAYBACKOFFSET`, `VOICEMAIL_PLAYBACKSTATUS`) are
-//! read back from AstDB.  DigiumControlPlayback is compared with
-//! Asterisk's own ControlPlayback on the same cases.
+//! other half; the result variables are read back from AstDB.
+//! DigiumControlPlayback is compared with Asterisk's own ControlPlayback
+//! on the same cases.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
@@ -90,8 +89,8 @@ fn near(a: &str, b: &str, tol: i64) -> bool {
     }
 }
 
-/// A test case: id, arguments, DTMF keys, the gap between keys, and
-/// whether it is comparable with ControlPlayback.
+/// A test case: `comparable` is whether it is comparable with
+/// ControlPlayback.
 struct Case {
     id: &'static str,
     args: String,

@@ -1,7 +1,5 @@
 //! The request handlers (phone_request.c), registered by
-//! `phone_request_load` (FUN_00177610) in this order: Echo, Handshake
-//! (`session::handshake`), HTTPRequest, AsteriskRequest, UserlistRequest,
-//! TokenRequest, ConfigRequest, FileRequest, VerifyRequest, PingRequest.
+//! `phone_request_load` (FUN_00177610).
 
 use super::{error_response_json, error_response_xml, register_handler};
 use crate::method::{self, MethodCall};
@@ -283,8 +281,7 @@ fn escapes_file_dir(name: &[u8]) -> bool {
 // ConfigRequest and VerifyRequest
 // ---------------------------------------------------------------------------
 
-/// `standard_phone_user_find_by_token` for the transaction's
-/// `Config-Token`, MAC, session, and Response-URI.
+/// `standard_phone_user_find_by_token` for the transaction.
 fn phone_for_token(tx: &Transaction) -> Option<Vec<u8>> {
     users::runtime::find_by_token(
         &tx.config_token,

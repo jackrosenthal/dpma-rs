@@ -1,9 +1,5 @@
-//! SIP messages as raw bytes: parsing, building, and encoding, shared by
-//! the phone simulator ([`crate::sim`]) and the test user agents
-//! ([`crate::sipua`]).
-//!
-//! Header values, the first line, and the body are bytes from end to
-//! end, so text that is not UTF-8 goes on the wire unchanged.
+//! SIP messages as raw bytes, shared by the phone simulator
+//! ([`crate::sim`]) and the test user agents ([`crate::sipua`]).
 
 use std::fmt;
 use std::net::SocketAddr;

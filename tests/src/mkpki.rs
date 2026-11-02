@@ -1,41 +1,17 @@
-//! The test PKI for the phone simulator (the Rust form of the former
-//! `tests/sim/mkpki.py`).
+//! The test PKI for the phone simulator.
 //!
 //! Everything is generated locally; nothing comes from the official DPMA's
-//! binary.  The PKI has two independent halves, the phone side (the CAs
-//! and phone certificates) and the AppServer side:
+//! binary.  The PKI has two independent halves: the phone side, whose root
+//! CA is the module's `phone_ca_file`, and the AppServer side, whose
+//! certificate is the module's `appserver_certificate` and whose CA the
+//! simulator checks the HandshakeResponse body against.  [`BUNDLES`] are
+//! the handshake bodies the simulator can send; the server encrypts the
+//! common password to the key of the last certificate of the body.  The
+//! expired bundles are accepted: the official DPMA ignores the
+//! verification errors "certificate is not yet valid" and "certificate
+//! has expired".
 //!
-//! | Entity | Issuer | Notes |
-//! |---|---|---|
-//! | `root-ca` | itself | The module's `phone_ca_file`. |
-//! | `intermediate-ca` | root-ca | Serial number 4097 (logged by the module as "Intermediate cert serial number"). |
-//! | `phone` | intermediate-ca | Chain form phone certificate. |
-//! | `legacy` | root-ca | Legacy form phone certificate. |
-//! | `phone-expired`, `legacy-expired` | intermediate-ca, root-ca | Valid 2001 to 2002. |
-//! | `rogue-ca`, `rogue` | itself, rogue-ca | Not trusted by the module. |
-//! | `weak` | root-ca | 512-bit RSA key, SHA-1 signature. |
-//! | `appserver-ca`, `appserver` | itself, appserver-ca | The module's `appserver_certificate`; the simulator checks the HandshakeResponse body against `appserver-ca`. |
-//!
-//! Files (in the PKI directory, by default `dev/sim/pki`, not committed):
-//! `<name>.key` (PKCS#1 PEM, mode 0600) and `<name>.pem` for every
-//! entity, and `bundles.json`, which lists the handshake bodies the
-//! simulator can send ([`BUNDLES`]): the certificates in body order and
-//! the key that decrypts the common password.  The server encrypts the
-//! common password to the key of the last certificate of the body.
 //! Existing files are kept unless [`Generator::force`] is set.
-//!
-//! | Bundle | Body | The module's answer |
-//! |---|---|---|
-//! | `legacy` | legacy | HandshakeResponse |
-//! | `chain` | legacy, intermediate-ca, phone | HandshakeResponse with `Handshake-Version: 1` |
-//! | `chain-expired`, `legacy-expired` | as above, expired | Accepted (the official DPMA ignores the verification errors "certificate is not yet valid" and "certificate has expired") |
-//! | `weak` | weak | Accepted (512-bit keys and SHA-1 must work) |
-//! | `rogue` | rogue | No reply; an auth incident |
-//! | `two`, `four` | 2 or 4 certificates | No reply ("Expected two certificates in the chain, found 1" or "3") |
-//!
-//! [`install`] copies `root-ca.pem` to
-//! `<etc>/dpma/phone_ca.pem` and `appserver.pem` to
-//! `<etc>/dpma/appserver.pem`.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -63,7 +39,8 @@ use x509_cert::Certificate;
 use crate::sim::crypto::load_private_key;
 use crate::sim::pki::parse_certificate;
 
-/// The fixed serial number of the intermediate CA.
+/// The fixed serial number of the intermediate CA (logged by the module as
+/// "Intermediate cert serial number").
 pub const INTERMEDIATE_SERIAL: u32 = 4097;
 
 /// The organization of the test PKI's names.
@@ -485,8 +462,7 @@ impl Generator {
 
 /// Installs the trust material of the PKI in `pki_dir` into an instance's
 /// configuration directory `etc` (`.../etc/asterisk`): `root-ca.pem` as
-/// `dpma/phone_ca.pem` and `appserver.pem` as `dpma/appserver.pem`,
-/// each written to a temporary file and renamed into place.
+/// `dpma/phone_ca.pem` and `appserver.pem` as `dpma/appserver.pem`.
 pub fn install(pki_dir: &Path, etc: &Path, quiet: bool) -> Result<()> {
     if !etc.is_dir() {
         anyhow::bail!(
@@ -525,10 +501,8 @@ fn is_ca(cert: &Certificate) -> bool {
 }
 
 /// Builds a chain from `leaf` through `untrusted` certificates to one of
-/// `anchors` (self-signed CAs): issuer names and signatures
-/// ([`crate::sim::pki::verify_directly_issued_by`]), CA status of every
-/// issuer, and, when `check_time` is set, every certificate's validity
-/// period.  Returns why it fails.
+/// `anchors` (self-signed CAs), checking validity periods only when
+/// `check_time` is set.  Returns why it fails.
 fn chain_verifies(
     leaf: &Certificate,
     untrusted: &[Certificate],
@@ -566,9 +540,8 @@ fn chain_verifies(
 
 /// Checks the PKI: every certificate verifies, or does not, as the
 /// module's rules expect (expiry ignored, 512-bit keys and SHA-1
-/// accepted), by the simulator's own X.509 code (`chain_verifies`:
-/// issuer names, signatures, CA flags, and validity periods).  Prints one
-/// line per case and returns the number of unexpected outcomes.
+/// accepted), by the simulator's own X.509 code.  Prints one line per
+/// case and returns the number of unexpected outcomes.
 pub fn check(dir: &Path) -> Result<usize> {
     let cert = |f: &str| -> Result<Certificate> {
         let path = dir.join(f);

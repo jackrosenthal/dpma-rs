@@ -1,8 +1,6 @@
-//! DPMAMessageSend / DPMAMessageRegister / DPMAMessageResponse, the
-//! queued AMI-forwarded requests, and the AMI scheduler (phone_ami.c
-//! 0x174980..0x175750; phone_request.c 0x175840..0x1758c0, 0x176490, and
-//! the AMI part of 0x176a60).
-//! (`DPMALicenseStatus`, FUN_00174d20, is intentionally not ported.)
+//! Phone requests forwarded to AMI (phone_ami.c 0x174980..0x175750;
+//! phone_request.c 0x175840..0x1758c0, 0x176490, and the AMI part of
+//! 0x176a60).
 //!
 //! AMI clients register method names with `DPMAMessageRegister`.  When a
 //! phone calls such a method in an AsteriskRequest or HTTPRequest (and no
@@ -12,11 +10,11 @@
 //! with that key as `RequestID` completes the reply and sends it to the
 //! phone's session.
 //!
-//! Each queued request also gets an expiry entry 300 s out in the AMI
-//! scheduler context, which runs on its own thread: a request nobody
-//! answers is dropped after 300 s (logged "No response to request (...),
-//! expired.").  Deviation (plan section 8, item 13): the official DPMA
-//! creates the context but never starts its thread
+//! Each queued request also gets an expiry entry in the AMI scheduler
+//! context, which runs on its own thread: a request nobody answers is
+//! dropped after 300 s (logged "No response to request (...),
+//! expired.").  The official DPMA creates the context but never starts
+//! its thread
 //! (`ast_sched_start_thread`) or runs it (`ast_sched_runq`), so its
 //! requests never expire and stay queued until unload.
 
@@ -59,7 +57,7 @@ const DPMA_MESSAGE_CATEGORY: i32 = manager::AUTH_AGENT;
 pub const HTTP_PREAMBLE: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\n\r\n";
 
 /// A phone request forwarded to AMI as a `DPMAMessage` event, waiting for
-/// `DPMAMessageResponse` (`struct queued_msg`, 0x28 bytes; destroyed by
+/// `DPMAMessageResponse` (`struct queued_msg`; destroyed by
 /// `destroy_queued_msg`, FUN_00175650).
 pub struct QueuedMsg {
     /// The transaction key, `"<AppServer-ID>-<MAC>"`: the event's
@@ -116,7 +114,7 @@ fn queue() -> MutexGuard<'static, Option<Vec<QueuedMsg>>> {
 
 /// FUN_00175880: create the scheduler context ("Failed to create ami
 /// schedule context" on error, logged by the caller) and start its thread
-/// (the official DPMA starts none; plan section 8, item 13).
+/// (the official DPMA starts none).
 pub fn sched_create() -> Result<(), ()> {
     let ctx = Context::create().ok_or(())?;
     if !ctx.start_thread() {

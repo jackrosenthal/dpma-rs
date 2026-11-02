@@ -1,7 +1,4 @@
-//! What the request handler and users' flow parts share (was
-//! `tests/request-handlers/p12lib.py`): the CLI through AMI, the
-//! `[general]` settings, simulated phones, checks of replies, the log, and
-//! the session flags.
+//! What the request handler and users' flow parts share.
 
 use std::time::Duration;
 

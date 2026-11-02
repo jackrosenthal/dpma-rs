@@ -1,8 +1,6 @@
-//! The mDNS announcement: the service, port, TXT records, and address
-//! for several configurations; announcements and goodbyes at reload,
-//! disable, unload, load, Asterisk shutdown, and startup (this restarts
-//! Asterisk).  Queries are legacy unicast ([`dpma_tests::mdns`]), on the
-//! test container's loopback interface.
+//! The mDNS announcement (this part restarts Asterisk).  Queries are
+//! legacy unicast ([`dpma_tests::mdns`]), on the test container's
+//! loopback interface.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;

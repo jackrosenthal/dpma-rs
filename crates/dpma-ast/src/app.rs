@@ -1,7 +1,4 @@
-//! Dialplan applications: registration (`ast_register_application2`),
-//! argument and option parsing (`__ast_app_separate_args`,
-//! `ast_app_parse_options`), and controlled playback
-//! (`ast_control_streamfile`, `ast_control_streamfile_w_cb`).
+//! Dialplan applications.
 //!
 //! Strings are passed as bytes (dialplan data need not be UTF-8) and cut
 //! at their first NUL byte, as C would see them.
@@ -30,7 +27,7 @@ pub const WAITSTREAM_CB_FASTFORWARD: sys::ast_waitstream_fr_cb_values =
 pub const WAITSTREAM_CB_START: sys::ast_waitstream_fr_cb_values = sys::AST_WAITSTREAM_CB_START;
 
 /// An option table as `AST_APP_OPTIONS` declares it: one
-/// `struct ast_app_option` per option letter (128).
+/// `struct ast_app_option` per option letter.
 #[repr(C)]
 pub struct AppOptions(pub [sys::ast_app_option; 128]);
 

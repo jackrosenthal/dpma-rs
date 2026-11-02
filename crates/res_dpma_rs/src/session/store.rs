@@ -1,10 +1,4 @@
-//! The session container and the module's session life cycle
-//! (`phone_msg_load` FUN_00150440, `phone_msg_unload` FUN_001510f0,
-//! `phone_msg_reload` FUN_00150420, `phone_msg_session_alloc` FUN_0014b450,
-//! `phone_msg_session_find` FUN_00149d60, `phone_msg_session_find_by_mac`
-//! FUN_00149e30, `phone_msg_session_mark_*` FUN_0014c160 FUN_0014c230
-//! FUN_0014c310, `phone_msg_session_invalidate` FUN_0014c390, and the
-//! global auth flags FUN_00149f00).
+//! The session container and the module's session life cycle.
 //!
 //! Phone certificates are verified against a CA store, and an AppServer
 //! certificate is sent in every HandshakeResponse.  Both default to the
@@ -89,9 +83,7 @@ fn load_trust() -> Result<Trust, ()> {
     })
 }
 
-/// `phone_msg_load` (FUN_00150440): load the CA store, create the
-/// containers, set the global auth flags, register `digium_phones show
-/// sessions`, restore sessions from AstDB, then `transport::load()`.
+/// `phone_msg_load` (FUN_00150440).
 pub fn load(_config_file: &[u8]) -> Result<(), ()> {
     let g = crate::config::get();
     *TRUST.write().unwrap_or_else(|e| e.into_inner()) = Some(load_trust()?);
@@ -121,9 +113,7 @@ pub fn reload(_config_file: &[u8]) -> Result<(), ()> {
     Ok(())
 }
 
-/// `phone_msg_unload` (FUN_001510f0): unregister `digium_phones show
-/// sessions`, stop the transport (`network_handler_destroy`), drop the
-/// containers, then destroy the dialplan routing and the CA store.
+/// `phone_msg_unload` (FUN_001510f0).
 pub fn unload() {
     CLI.lock().unwrap_or_else(|e| e.into_inner()).take();
     crate::transport::unload();

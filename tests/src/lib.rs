@@ -2,54 +2,27 @@
 //! in the Asterisk of the test container without Digium phones, and the
 //! test suites themselves.
 //!
-//! # Modules
-//!
-//! | Module | What it is |
-//! |---|---|
-//! | [`sim`] | The phone simulator: SIP transport, handshake (legacy and chain forms), encryption, chunking and reassembly, every request type, events, and a self-test.  Independent of the module's crates (it shares only the RustCrypto primitive crates, not dpma-proto), so it cross-checks them. |
-//! | [`mkpki`] | The test PKI: phone CAs and certificates, negative variants, and the AppServer certificate; installs the trust material into an instance. |
-//! | [`ami`] | An AMI client that keeps every message's raw bytes. |
-//! | [`sipua`] | A minimal SIP user agent for test phones: REGISTER with digest authentication, MESSAGE, SUBSCRIBE, and a UAS that answers or rejects calls, sends DTMF INFOs, and records INFOs and NOTIFYs. |
-//! | [`mdns`] | An mDNS browser (legacy unicast queries) and listener. |
-//! | [`harness`] | Shared by the suites: the test instance and its CLI (control socket), checks, the log, configuration editing, the suite runner, and fixtures. |
-//! | [`sip`] | SIP messages as bytes (parsing and encoding). |
-//! | [`util`] | JSON text as the test documents write it, waiting with timeouts. |
-//! | [`ari`] | An ARI (Asterisk REST Interface) HTTP client, for push configuration. |
-//! | [`diff`] | Unified line diffs for check details. |
-//! | [`xml`] | XML well-formedness. |
-//!
-//! # Binaries
-//!
-//! - `dpma-sim`: the simulator from the command line (`dpma-sim --help`).
-//! - `dpma-mkpki`: makes and installs the test PKI, or checks that its
-//!   certificates verify as the module's rules expect.
-//! - `dpma-ami`: sends an AMI action and prints the response and events.
-//!
 //! # Suites
 //!
 //! Each suite is a test target in `tests/suites/` that runs inside the
 //! test container, against its Asterisk ([`harness::Instance`]) with a
-//! devtest build of the module.  `cargo xtask test` builds the container's
-//! image, starts it, and runs the suites in it one after another (see
-//! `tests/README.md`):
+//! devtest build of the module (see `tests/README.md`):
 //!
 //! ```text
 //! cargo xtask test [--asterisk VERSION] [SUITE... | all]
 //! ```
 //!
 //! Inside, each suite runs as `cargo test -p dpma-tests --test <suite> --
-//! --ignored`: it prepares the instance itself (fresh configuration, its
-//! setup, the module installed, Asterisk restarted), then runs its parts;
-//! see [`harness::Suite`] for the arguments.  A plain `cargo test` runs the
+//! --ignored`: it prepares the instance itself, then runs its parts; see
+//! [`harness::Suite`] for the arguments.  A plain `cargo test` runs the
 //! unit tests (including the simulator's self-test against a throwaway
 //! PKI) and skips the suites.
 //!
 //! # Bytes
 //!
-//! Text is bytes from end to end: SIP header values, bodies, AMI fields,
-//! CLI output, and configuration files are `Vec<u8>` or
-//! [`bstr::BString`], so text that is not UTF-8 (Latin-1 in the raw-bytes
-//! tests) goes out and comes back unchanged.
+//! Text is bytes from end to end (`Vec<u8>` or [`bstr::BString`]), so
+//! text that is not UTF-8 (Latin-1 in the raw-bytes tests) goes out and
+//! comes back unchanged.
 
 #![warn(missing_docs)]
 

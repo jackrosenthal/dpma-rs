@@ -1,14 +1,10 @@
 //! Sessions persisted in AstDB (`DigiumPhoneSessions`) survive an
 //! Asterisk restart, come back authenticated but inactive, keep working
 //! with the same common password, and expire after 59 idle seconds;
-//! entries that do not decrypt are dropped (`session-restart.sh`).  Also
-//! checks the user details of `DPMAShowPhones` (a phone whose last token
-//! MAC is the session's) and the `message_delay` pause between chunks.
+//! entries that do not decrypt are dropped.
 //!
-//! As the shell script ran a new simulator for every step, every step
-//! here starts a new phone from a state file (session, common password,
-//! and local port), which also exercises the simulator's `--state`.
-//! Restarts Asterisk twice.
+//! Every step starts a new phone from a state file, which also exercises
+//! the simulator's `--state`.  Restarts Asterisk twice.
 
 use std::path::Path;
 use std::time::Instant;
@@ -19,7 +15,7 @@ use dpma_tests::sim::Phone;
 
 use crate::ami_cli;
 
-/// A simulator run with the state file, as `dpma_sim.py --state FILE`.
+/// A simulator run with the state file.
 fn sim(ctx: &Ctx, state: &Path, auto_handshake: bool) -> Result<Phone> {
     let mut o = ctx.sim_options();
     o.state = Some(state.to_path_buf());

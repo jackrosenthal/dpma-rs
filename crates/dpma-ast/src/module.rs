@@ -1,8 +1,4 @@
-//! The module's registration with Asterisk's loader: the
-//! [`asterisk_module!`](crate::asterisk_module) macro (what C modules get
-//! from `AST_MODULE_INFO`), the module's `self` pointer and name for the
-//! APIs that take them (`AST_MODULE_SELF`, `AST_MODULE`), and the
-//! workaround for Rust modules that the loader cannot unmap.
+//! The module's registration with Asterisk's loader.
 
 use crate::sys;
 use crate::util::CStatic;
@@ -105,9 +101,7 @@ fn reopen() {
 }
 
 /// Declare an Asterisk module, as `AST_MODULE_INFO` does in C: the
-/// `struct ast_module_info` (name, flags, description, the GPL key, an
-/// empty build options checksum, support level, callbacks, load priority,
-/// and dependencies), a constructor that registers it with the
+/// `struct ast_module_info`, a constructor that registers it with the
 /// loader when the image is loaded (`.init_array`), a destructor that
 /// unregisters it (`.fini_array`), and the `AST_MODULE_SELF_SYM` function
 /// `__internal_<name>_self`.

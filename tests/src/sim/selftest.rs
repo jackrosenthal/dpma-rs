@@ -1,18 +1,6 @@
 //! The simulator's self-test (no server needed) and the cross-check
 //! vectors.
 //!
-//! [`run`] checks: known-answer key, IV, and ciphertext (and
-//! `EVP_BytesToKey` against fixed known answers, [`BYTES_TO_KEY_KATS`]),
-//! stream encryption, header fields, `set_hex` and `ast_base64decode`
-//! quirks, both directions of framing (the server side emulated from
-//! `phone_msg_outgoing_send` and `incoming_check_finalize`), the CR/LF
-//! rule, RSA common passwords with every bundle key, the AppServer check,
-//! an in-process protocol round trip over UDP sockets against
-//! [`FakeServer`] (both handshake forms, encrypted requests and replies in
-//! many chunks, tokens, events, unknown session, rejected certificate),
-//! `tests/data/vectors.json`, and dpma-proto's
-//! `crates/dpma-proto/tests/fixtures/proto_vectors.json`.
-//!
 //! [`make_vectors`] writes the vectors that dpma-proto's
 //! `tests/sim_vectors.rs` checks the module's crypto against.
 
@@ -57,7 +45,7 @@ pub const KAT_PASSWORD: [u8; 40] = {
 /// The known-answer salt: bytes 1 to 8.
 pub const KAT_SALT: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
 /// Key for [`KAT_PASSWORD`] and [`KAT_SALT`] (`EVP_BytesToKey`, computed
-/// independently with Python's hashlib).
+/// independently).
 pub const KAT_KEY: &str = "600d4ffb274b57fc61281e5709e7f660";
 /// IV for [`KAT_PASSWORD`] and [`KAT_SALT`].
 pub const KAT_IV: &str = "1886e7fef5d8004f796243b3de6a68aa";
@@ -82,11 +70,8 @@ pub fn proto_vectors_path() -> PathBuf {
         .join("proto_vectors.json")
 }
 
-/// Deterministic vectors for cross-checking other implementations
-/// (dpma-proto): key and IV derivation, a body, a header field, and the
-/// server's framing of an encrypted event over UDP (prefix in every
-/// chunk, one CBC stream, each chunk's ciphertext base64 encoded on its
-/// own), all with a fixed password and salt.
+/// Deterministic vectors for cross-checking dpma-proto, with a fixed
+/// password and salt.
 pub fn make_vectors() -> Value {
     let (pw, salt) = (&KAT_PASSWORD[..], &KAT_SALT[..]);
     let mut body = b"<config>".to_vec();
@@ -130,11 +115,8 @@ pub fn vectors_text() -> String {
 }
 
 /// Known answers for `EVP_BytesToKey(EVP_aes_128_cbc(), EVP_sha1(), salt,
-/// password, 1)`: password and salt (hex), key and IV.  Computed
-/// independently with Python's hashlib from the definition in the
-/// official DPMA's OpenSSL 1.1.1t (`crypto/evp/evp_key.c`: D1 =
-/// SHA1(password || salt), D2 = SHA1(D1 || password || salt), key =
-/// D1[0..16], IV = D1[16..20] || D2[0..12]).
+/// password, 1)`: password and salt (hex), key and IV, computed
+/// independently.
 pub const BYTES_TO_KEY_KATS: [(&str, &str, &str, &str); 6] = [
     ("", "3132333435363738", "7c222fb2927d828af22f592134e89324", "80637c0d7a6e3c10173302c9578ee71c"),
     ("78", "3132333435363738", "947788df997e7a3a3a974204486b5233", "9abdf89b8358e0c4a989f89694f12309"),
@@ -804,8 +786,7 @@ struct FakeTx {
     fin: Option<i64>,
 }
 
-/// One completed transaction the fake server received: its first chunk,
-/// the reassembled (decrypted) body, and the decrypted header fields.
+/// One completed transaction the fake server received.
 pub struct Seen {
     /// The first chunk.
     pub first: Message,
@@ -823,15 +804,9 @@ struct FakeState {
     phone_addr: Option<SocketAddr>,
 }
 
-/// A minimal in-process stand-in for the module, for the self-test only:
-/// it receives MESSAGEs on a UDP socket and processes them the way the
-/// decompile does (transactions keyed `"<ID>-<MAC>"`, completion when the
-/// finishing chunk's sequence equals the chunk count minus one, bodies
-/// concatenated and decoded once with `ast_base64decode`, header fields
-/// decrypted with the same salt), then answers with [`server_frame`]
-/// framing.  It verifies chains with signatures only (none of the
-/// official DPMA's chain rules) and knows Handshake, PingRequest,
-/// TokenRequest, ConfigRequest, and events.
+/// A minimal in-process stand-in for the module, for the self-test only.
+/// It verifies chains with signatures only (none of the official DPMA's
+/// chain rules).
 pub struct FakeServer {
     sock: Arc<UdpSocket>,
     /// The server's UDP port.

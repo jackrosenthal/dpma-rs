@@ -1,20 +1,10 @@
 //! Phone sessions and messaging (phone_message.c).
 //!
 //! A *session* is created by a successful Handshake: it remembers the
-//! phone's contact, MAC, user agent, certificate, and the common password
-//! that encrypts everything after the handshake.  A *transaction* is one
-//! complete incoming request (possibly reassembled from several SIP
-//! MESSAGEs); handlers answer it by filling in its [`Outgoing`] and calling
-//! [`outgoing::send_and_destroy`].
-//!
-//! | File | Official DPMA |
-//! |---|---|
-//! | `store.rs` | the session container, `phone_msg_session_alloc`, `phone_msg_session_find*`, `phone_msg_session_mark_*`, `phone_msg_session_invalidate`, the global auth flags, `phone_msg_load`, `phone_msg_unload`, the trust material (`load_castore`) |
-//! | `incoming.rs` | `incoming_build_transaction`, `validate_message`, `validate_session`, `incoming_add_msg`, `incoming_check_finalize`, `prune_inactive` |
-//! | `outgoing.rs` | `phone_msg_outgoing_send`, `phone_msg_send_and_destroy`, `phone_msg_send_timeout`, `phone_msg_send_event`, `phone_msg_outgoing_send_handshake_error` |
-//! | `handshake.rs` | `handle_request_handshake`, `prune_session_by_mac`, `phone_msg_set_common_password`, `set_auth_requirements` |
-//! | `persist.rs` | `phone_session_update_db_info`, `phone_session_db_restore_entry` |
-//! | `cli.rs`, `ami.rs` | `digium_phones show sessions`, `DPMAShowPhones` |
+//! common password that encrypts everything after the handshake.  A
+//! *transaction* is one complete incoming request (possibly reassembled
+//! from several SIP MESSAGEs); handlers answer it by filling in its
+//! [`Outgoing`] and calling [`outgoing::send_and_destroy`].
 
 pub mod ami;
 pub mod cli;

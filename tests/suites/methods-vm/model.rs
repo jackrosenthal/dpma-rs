@@ -1,6 +1,5 @@
 //! A model of the decompile: the documents the official DPMA builds from
-//! the spool (app_voicemail's mailbox snapshots, getList's caller id
-//! parsing and paging), and the response documents.
+//! the spool, and the response documents.
 
 use std::cmp::Ordering;
 
@@ -55,8 +54,8 @@ pub struct SnapMsg {
     pub msg: Msg,
 }
 
-/// app_voicemail's `vm_mailbox_snapshot_create` (folders combined): 12
-/// lists of messages.  `folder` must be one of [`FOLDERS`].
+/// app_voicemail's `vm_mailbox_snapshot_create` (folders combined).
+/// `folder` must be one of [`FOLDERS`].
 pub fn snapshot(
     spool: &Spool,
     mbox: &str,
@@ -195,7 +194,7 @@ pub fn getlist_doc(
         }));
         ids.push((mid, m.folder_name.clone()));
     }
-    // Python's int(total / per_page): truncated toward zero.
+    // Truncated toward zero.
     let pages = total / per_page + 1;
     let result = json!({"messages": {
         "folder": shown, "page_number": page.to_string(), "total_pages": pages.to_string(),

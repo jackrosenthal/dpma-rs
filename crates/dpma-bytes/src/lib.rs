@@ -3,23 +3,18 @@
 //! Asterisk hands the modules C strings: bytes up to a NUL, in no
 //! particular encoding.  The official DPMA passes them through
 //! unchanged, so a Latin-1 "José" in a configuration file reaches the
-//! phone, the CLI, AMI, and AstDB as the same bytes.  dpma-rs does the
-//! same: text that comes from Asterisk or from a phone is kept as bytes
-//! (`Vec<u8>` and `&[u8]`, with [`bstr`]'s [`ByteSlice`] and [`ByteVec`]
-//! string methods) from the point it enters the module to the point it
-//! leaves, and is never converted through UTF-8.
+//! phone as the same bytes.  dpma-rs does the same: text that comes from
+//! Asterisk or from a phone is kept as bytes (`Vec<u8>` and `&[u8]`, with
+//! [`bstr`]'s [`ByteSlice`] and [`ByteVec`] string methods) from the point
+//! it enters the module to the point it leaves, and is never converted
+//! through UTF-8.
 //!
-//! This crate has the two pieces that make that readable:
+//! This crate has what makes that readable:
 //!
 //! - [`bformat!`], [`bwrite!`], and [`bwriteln!`]: `format!`, `write!`,
-//!   and `writeln!` for bytes, with the same format strings, where an
-//!   argument that is a byte string (`Vec<u8>`, `&[u8]`, `[u8; N]`, ...)
-//!   is written as its exact bytes, text as its UTF-8 bytes, and anything
-//!   else as its `Display` (see [`mod@fmt`]).
+//!   and `writeln!` for bytes (see [`mod@fmt`]).
 //! - the C library's string functions with the semantics the official DPMA
-//!   gets from them in the C locale ([`mod@c`]): strings end at their first
-//!   NUL, and case-insensitive comparisons and hashes fold only ASCII
-//!   letters.
+//!   gets from them in the C locale ([`mod@c`]).
 
 pub mod c;
 pub mod fmt;

@@ -1,12 +1,5 @@
-//! The phone users' runtime (package P8) over real sessions, with the
-//! request handlers (P12) in place (was
-//! `tests/request-handlers/users-flows.py`): reconfigure messages
-//! reaching the phone (reload, deleted phone, MAC mismatch), sessions
-//! marked authenticated and inactive by token builds and lookups,
-//! orphaned and stale phones, the response URI following a phone that
-//! moves, and the phones' sessions restored after an Asterisk restart.
-//! (Reconfigure from the CLI and AMI, its delete-token form, and events
-//! are checked in the ami suite.)
+//! The phone users' runtime over real sessions, with the request handlers
+//! in place.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;

@@ -6,7 +6,7 @@
 //! Over TCP it also listens for UDP on the same port, as phones do: the
 //! official DPMA answers a session that fails validation ("Session
 //! Timeout") at the bare Response-URI, without `;transport=tcp`, so over
-//! UDP; dpma-rs answers over TCP (port plan section 8, item 11).
+//! UDP; dpma-rs answers over TCP.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{ErrorKind, Read, Write};
@@ -175,8 +175,7 @@ impl SipEndpoint {
     }
 
     /// Sends a request and returns its final response (`None` on
-    /// timeout).  `headers` go after Via, Max-Forwards, From, To, Call-ID,
-    /// and CSeq; Content-Length is added.
+    /// timeout).  Content-Length is added.
     #[allow(clippy::too_many_arguments)]
     pub fn request(
         &self,
@@ -491,8 +490,7 @@ fn content_length(head: &[u8]) -> usize {
     0
 }
 
-/// A response to `req` (Via, From, To with a tag, Call-ID, CSeq, and
-/// `Server: dpma_sim`), with no body.
+/// A response to `req`, with no body.
 pub fn response(req: &Message, status: u16, reason: &str) -> Vec<u8> {
     let mut hdrs: Vec<(String, BString)> = req
         .get_all("Via")

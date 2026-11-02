@@ -1,21 +1,19 @@
-//! Small helpers shared by the modules: JSON text in the forms the test
-//! documents use, waiting with timeouts, and random tokens.
+//! Small helpers shared by the modules.
 
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-/// JSON text as Python's `json.dumps(value)` writes it: `", "` and `": "`
-/// separators and every non-ASCII character escaped (`\uXXXX`).
+/// JSON text with `", "` and `": "` separators and every non-ASCII
+/// character escaped (`\uXXXX`).
 pub fn json_python(value: &Value) -> String {
     let mut out = String::new();
     write_json(value, &mut out, true, ", ", ": ");
     out
 }
 
-/// Compact JSON with non-ASCII characters kept, as Python's
-/// `json.dumps(value, separators=(",", ":"), ensure_ascii=False)` and the
-/// module's (jansson's) compact documents write it.
+/// Compact JSON with non-ASCII characters kept, as the module's
+/// (jansson's) compact documents write it.
 pub fn json_compact(value: &Value) -> String {
     let mut out = String::new();
     write_json(value, &mut out, false, ",", ":");
@@ -101,7 +99,7 @@ pub fn wait_until(timeout: Duration, interval: Duration, mut f: impl FnMut() -> 
     wait_for(timeout, interval, || f().then_some(())).is_some()
 }
 
-/// `n` random bytes as lowercase hex (Python's `secrets.token_hex(n)`).
+/// `n` random bytes as lowercase hex.
 pub fn token_hex(n: usize) -> String {
     let mut b = vec![0u8; n];
     rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut b);

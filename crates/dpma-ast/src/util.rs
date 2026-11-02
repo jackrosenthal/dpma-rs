@@ -1,6 +1,4 @@
-//! C strings, the Asterisk allocator (`ast_free`, `ast_strdup`), strings
-//! handed to APIs that keep them, statics handed to C, and small Asterisk
-//! utilities.
+//! C strings and small Asterisk utilities.
 
 use crate::sys;
 use std::cell::UnsafeCell;
@@ -12,7 +10,7 @@ use std::sync::Mutex;
 /// The `__FILE__`, `__LINE__`, and function name arguments of the
 /// Asterisk functions behind the allocation, astobj2, and task macros, as
 /// C strings: `here!("function")`.  Asterisk only uses them in debug
-/// output (memory, reference, and lock debugging).
+/// output.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! here {
@@ -95,8 +93,7 @@ pub fn intern(s: &str) -> &'static CStr {
 }
 
 /// A static whose address is handed to C (a registration structure that
-/// Asterisk keeps, and may write: list links, the module's `self`).
-/// Rust code only takes its raw pointer.
+/// Asterisk keeps, and may write).  Rust code only takes its raw pointer.
 #[repr(transparent)]
 pub struct CStatic<T>(UnsafeCell<T>);
 

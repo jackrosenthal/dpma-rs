@@ -1,6 +1,6 @@
 //! Line diffs for check details: [`unified`] shows how a transcript or a
-//! captured output differs from the expected one, as `diff -u` (or
-//! Python's `difflib.unified_diff`) would.
+//! captured output differs from the expected one, as `diff -u`
+//! would.
 
 /// A unified diff of `old` and `new` (split into lines; a missing final
 /// line break is ignored), with `context` lines around each change;

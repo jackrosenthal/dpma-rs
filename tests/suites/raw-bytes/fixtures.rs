@@ -1,7 +1,6 @@
 //! The raw-bytes test configuration: text in Latin-1 (bytes that are not
 //! UTF-8) in every kind of user-visible field, plus a phone whose texts
-//! are UTF-8 with non-ASCII characters (the Rust form of the former
-//! `tests/raw-bytes/fixtures.py`).
+//! are UTF-8 with non-ASCII characters.
 
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
@@ -61,7 +60,7 @@ pub const U_NETWORK: &[u8] = "réseau-ü".as_bytes();
 pub const USER_AGENT: &[u8] = b"Digium D65 2_9_17 r\xe9v";
 pub const ORIGINATION: &[u8] = b"r\xe9seau-\xe9tage";
 
-/// A voicemail message: folder, message id, caller id, and origtime.
+/// A voicemail message.
 pub struct VmMessage {
     pub folder: &'static str,
     pub msg_id: &'static str,
@@ -69,9 +68,8 @@ pub struct VmMessage {
     pub origtime: u64,
 }
 
-// Voicemail (mailbox 1001@default, the Latin-1 phone's line): a message
-// with a Latin-1 caller id in Work, one with a UTF-8 caller id in Family.
-// (The phone's translation shows INBOX in Latin-1.)
+// Voicemail of mailbox 1001@default, the Latin-1 phone's line.  (The
+// phone's translation shows INBOX in Latin-1.)
 pub const VM_LATIN1: VmMessage = VmMessage {
     folder: "Work",
     msg_id: "1640995200-00000001",
@@ -249,10 +247,8 @@ fn message(inst: &Instance, num: u32, m: &VmMessage) -> Result<()> {
     Ok(())
 }
 
-/// Installs the configuration into the instance: `res_digium_phone.conf`
-/// and `voicemail.conf` (replacing the instance's), the files the phones
-/// refer to in `file_directory`, and the voicemail messages of
-/// 1001@default.
+/// Installs the configuration into the instance, replacing its
+/// `res_digium_phone.conf` and `voicemail.conf`.
 pub fn install(inst: &Instance) -> Result<()> {
     std::fs::write(inst.conf("res_digium_phone.conf"), conf())?;
     std::fs::write(inst.conf("voicemail.conf"), VOICEMAIL_CONF)?;

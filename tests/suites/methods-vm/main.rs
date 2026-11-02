@@ -1,6 +1,5 @@
 //! The methods-vm suite: end-to-end checks of the
-//! `switchvox.users.voicemail.*` methods (packages P9, P12, and P14; the
-//! Rust form of `tests/methods-vm/run.py`, `vm_uas.py`, and `setup.sh`).
+//! `switchvox.users.voicemail.*` methods.
 //!
 //! ```text
 //! cargo xtask test methods-vm
@@ -12,49 +11,23 @@
 //! cargo test -p dpma-tests --test methods-vm -- --ignored [PART...]
 //! ```
 //!
-//! The suite prepares the instance (fresh configuration; the test
-//! `res_digium_phone.conf` and `voicemail.conf` of `tests/data/methods-vm`
-//! replace the instance's, `extensions_dpma_vm.conf` is included from
-//! `extensions.conf`, the test mailboxes' spool is emptied, and the test
-//! PKI is installed; then the debug build is installed and Asterisk
-//! restarted; `--no-prepare` skips this).  The instance's `pjsip.conf`
-//! must have the endpoint 1001 (auth 1001/secret1001), as the scratch
-//! configuration has.
+//! The suite prepares the instance (`--no-prepare` skips this).  The
+//! instance's `pjsip.conf` must have the endpoint 1001 (auth
+//! 1001/secret1001), as the scratch configuration has.
 //!
-//! It leaves a message with the dialplan (a Local channel into
-//! `VoiceMail()`), copies it into more messages and adds hand-made ones
-//! for unusual caller ids, and calls every method.  Each response is
-//! compared, as text, with the document the official DPMA builds (key order
-//! included), computed from the spool and a model of the decompile; the
-//! spool and the message trackers (`dpmadev vm trackers`) are checked
-//! after each change.
+//! Each response is compared, as text, with the document the official
+//! DPMA builds (key order included), computed from the spool and a model
+//! of the decompile; the spool and the message trackers are checked after
+//! each change.
 //!
 //! The methods are called with `dpmadev method call` over AMI, and their
 //! return codes are checked too.  (No voicemail method depends on how a
 //! request arrives; the request-handlers suite checks the AsteriskRequest
-//! path.)  The phone simulator, as vmphone with an authenticated session,
-//! checks what needs a phone: that a phone's new session (a TokenRequest
-//! after a new handshake) drops its message trackers, and a page of 50
-//! messages as an encrypted AsteriskRequest whose reply comes in many
-//! chunks.  The simulator's test configuration is not installed: its
+//! path.)  The simulator's test configuration is not installed: its
 //! identify would also catch the test phone's REGISTER, and the module's
 //! PJSIP side identifies the simulator.
 //!
-//! The parts run in this order and build on each other's spool and
-//! trackers (about ten seconds in all):
-//!
-//! | Part | Checks |
-//! |---|---|
-//! | `messages` | Empties the test mailboxes, leaves one message through `VoiceMail()`, and copies it into five more (one urgent, one for 1002, one for 2001@other) with their own caller ids and times (no checks) |
-//! | `folder-list` | getFolderList: translated and plain names, counts, another voicemail context, the errors |
-//! | `get-list` | getList: translated folders, sort orders, paging, caller id forms, the trackers, the errors (and the deviations from the official DPMA's crashes) |
-//! | `mark` | markRead and markUnread: moves between INBOX and Old, Urgent, translated ids, Friends refused, the errors |
-//! | `move` | move: the response ids, stale trackers, Recordings (Cust5), the errors |
-//! | `forward` | forward: copies to other mailboxes and contexts, the errors |
-//! | `remove` | remove: renumbering, stale trackers, the errors |
-//! | `play` | play: a registered test phone (the `sipua` UAS) gets the INVITE with the event header, DigiumVoicemailPlayback plays the message, DTMF fast forward and rewind send location INFOs; a busy phone, an unregistered one, the errors |
-//! | `trackers` | Trackers dropped with their phone on a reload, by `dpmadev vm forget`, and by the phone's new session |
-//! | `big-list` | getList of 55 messages, two pages; the first page also through the phone (a reply of many chunks) |
+//! The parts run in order and build on each other's spool and trackers.
 
 mod model;
 mod scenarios;
@@ -84,8 +57,7 @@ pub struct State {
     phone: Option<Phone>,
 }
 
-/// A part's view of the suite: the context, the shared state, and the
-/// spool.
+/// A part's view of the suite.
 pub struct Vm<'a> {
     ctx: &'a mut Ctx,
     st: RefMut<'a, State>,

@@ -258,7 +258,7 @@ pub fn load() -> Result<(Option<Arc<General>>, Arc<General>), ()> {
                         g.message_delay = n;
                     }
                 }
-                // Additions of this implementation (see README).
+                // Additions of this implementation.
                 b"appserver_certificate" => g.appserver_certificate = value.into(),
                 b"phone_ca_file" => g.phone_ca_file = value.into(),
                 _ => dpma_log!("Unknown configuration parameter '{}'", v.name),

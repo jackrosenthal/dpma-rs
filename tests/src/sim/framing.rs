@@ -110,8 +110,7 @@ fn pem_marker_line() -> &'static Regex {
 /// Cuts `data` before and after every PEM BEGIN and END line (its line
 /// break included).  Chunks cut there end right after a BEGIN or END line
 /// or right before one, so res_pjsip_messaging's CR/LF stripping removes
-/// exactly the line breaks at the PEM boundaries (dpma-rs restores them:
-/// port plan section 8, item 12).
+/// exactly the line breaks at the PEM boundaries (dpma-rs restores them).
 pub fn pem_segments(data: &[u8]) -> Vec<&[u8]> {
     let mut cuts = vec![0, data.len()];
     for m in pem_marker_line().find_iter(data) {

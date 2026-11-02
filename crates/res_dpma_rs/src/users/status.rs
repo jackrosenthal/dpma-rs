@@ -1,5 +1,5 @@
 //! `digium_phones show status <phone>` (`handle_cli_show_status`
-//! 0x1659d0), the 18th command of the phone users CLI group.
+//! 0x1659d0).
 
 use super::read;
 use dpma_ast::cli::{CliArgs, CliCommand, CliResult};

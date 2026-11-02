@@ -1,17 +1,12 @@
 //! SIP URI and header parsing: the official DPMA's copy of chan_sip's
-//! reqresp_parser.c (`parse_uri_full`, `parse_uri`, `get_calleridname`,
-//! `get_in_brackets_full`, `get_in_brackets`, `parse_name_andor_addr`,
-//! `sip_uri_cmp` with its parameter, header, and domain helpers), the
-//! Asterisk helpers they use (`ast_uri_decode`,
-//! `ast_sockaddr_split_hostport`, `ast_sockaddr_parse`,
-//! `ast_sockaddr_cmp`), `phone_utils_parse_uri`, and the URI comparison of
-//! phone_users.c.
+//! reqresp_parser.c, the Asterisk helpers it uses,
+//! `phone_utils_parse_uri`, and the URI comparison of phone_users.c.
 //!
 //! The C functions cut their input apart in place (writing NULs, and
 //! putting `=` and `;` back for parameters they do not know) and return
-//! pointers into it; they are ported on a byte buffer so that every result is exactly
-//! the C string the official DPMA's pointer would show.  Unlike chan_sip's
-//! versions, this copy logs its warnings at the `DPMA` level.
+//! pointers into it; they are ported on a byte buffer so that every result
+//! is exactly the C string the official DPMA's pointer would show.  Unlike
+//! chan_sip's versions, this copy logs its warnings at the `DPMA` level.
 
 use crate::cbuf::{c_bytes, contains_ignore_case, eq_ignore_case, CBuf, EMPTY};
 use crate::LogLevel;

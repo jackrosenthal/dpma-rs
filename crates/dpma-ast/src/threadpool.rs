@@ -30,8 +30,7 @@ pub struct Options {
 /// A task run on a pool thread.
 pub type Task = Box<dyn FnOnce() + Send + 'static>;
 
-/// Where a push came from, for Asterisk's taskprocessor bookkeeping (the
-/// `__FILE__`, `__LINE__`, and `__PRETTY_FUNCTION__` of the C macro).  The
+/// Where a push came from, for Asterisk's taskprocessor bookkeeping.  The
 /// strings must be static: the taskprocessor keeps the pointers with the
 /// queued task and in its statistics (`core show taskprocessor`).
 #[derive(Debug, Clone, Copy)]

@@ -40,18 +40,11 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(30);
 /// The suites run inside a container of the test image
 /// (`tools/Containerfile`, which `cargo xtask test` builds and starts).
 /// The image holds one pinned Asterisk release installed with
-/// `--prefix=/opt/asterisk` ([`DIR`]), and that install is the instance:
-/// its configuration, AstDB, spool, logs, and module directory are
+/// `--prefix=/opt/asterisk` ([`DIR`]), and that install is the instance,
 /// writable by every user, since the tests run as the host user's user ID.
-/// [`Instance::reset_conf`] copies the scratch configuration
-/// ([`SCRATCH_CONF`]: the samples with `tools/asterisk-conf/` and a few
-/// edits on top) into `etc/asterisk`.
 ///
 /// The container has a network namespace of its own whose only interface
-/// is `lo`, so the ports are fixed: SIP on 127.0.0.1:15060 ([`SIP_PORT`])
-/// and AMI on 127.0.0.1:15038 ([`AMI_PORT`], user `test`, secret `test`).
-/// The CLI goes through the control socket ([`Cli`]); Asterisk's console
-/// output goes to `/opt/asterisk/ast-console.log` while it runs.
+/// is `lo`, so the ports are fixed ([`SIP_PORT`] and [`AMI_PORT`]).
 #[derive(Clone, Debug)]
 pub struct Instance {
     /// The instance directory, [`DIR`].
@@ -62,7 +55,7 @@ pub struct Instance {
     pub messages_log: PathBuf,
     /// Its SIP port, [`SIP_PORT`].
     pub sip_port: u16,
-    /// Its AMI port, [`AMI_PORT`] (user `test`, secret `test`).
+    /// Its AMI port, [`AMI_PORT`].
     pub ami_port: u16,
 }
 
@@ -253,9 +246,8 @@ impl Instance {
             .with_context(|| format!("unexpected `asterisk -V` output: {:?}", text))
     }
 
-    /// (Re)starts Asterisk in the background (`asterisk -g -f -n`, its
-    /// console output in [`Instance::console_log`], in a process group of
-    /// its own) and waits until it is fully booted.
+    /// (Re)starts Asterisk in the background and waits until it is fully
+    /// booted.
     pub fn start(&self) -> Result<()> {
         let conf = self.conf("asterisk.conf");
         if !conf.is_file() {

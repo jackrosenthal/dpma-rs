@@ -1,8 +1,6 @@
 //! Tests for the URI parser.  Most cases are chan_sip's own unit tests
-//! (reqresp_parser.c `sip_parse_uri_full_test`, `sip_parse_uri_test`,
-//! `get_calleridname_test`, `get_in_brackets_test`,
-//! `parse_name_andor_addr_test`, `sip_uri_cmp_test`), less the tel: URI
-//! cases (this copy of the parser has no tel: handling).
+//! (reqresp_parser.c), less the tel: URI cases (this copy of the parser
+//! has no tel: handling).
 
 use super::*;
 use crate::testlog;

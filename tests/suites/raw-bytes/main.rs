@@ -1,6 +1,4 @@
-//! The raw-bytes suite: text that is not UTF-8 passes through unchanged
-//! (port plan section 13; the Rust form of the former
-//! `tests/raw-bytes/run.py`).
+//! The raw-bytes suite: text that is not UTF-8 passes through unchanged.
 //!
 //! ```text
 //! cargo xtask test raw-bytes
@@ -12,38 +10,12 @@
 //! cargo test -p dpma-tests --test raw-bytes -- --ignored [--no-prepare] [-v] [PART...]
 //! ```
 //!
-//! Prerequisites: the test instance and a devtest build of the module.
-//! The suite prepares the instance (fresh configuration, the simulator's
-//! test PKI and configuration, then the configuration of
-//! [`fixtures`]: `res_digium_phone.conf` and `voicemail.conf` with
-//! Latin-1 text, the files the phones refer to, and voicemail messages
-//! for 1001@default; the debug build installed, Asterisk restarted;
-//! `--no-prepare` skips this).
+//! The suite prepares the instance with the configuration of [`fixtures`]
+//! (`--no-prepare` skips this).
 //!
-//! The configuration has Latin-1 text in phone, line, network,
-//! application, translation, alert, page, ringtone, and contact names and
-//! values, and a voicemail message with a Latin-1 caller id; a second
-//! phone has the same kinds of text in UTF-8.  The simulator sends a
-//! Latin-1 user agent, origination network, and message bodies, and AMI
-//! clients send Latin-1 action headers.  Checked, byte for byte: the
-//! configuration document, the user list, the default contacts, file
-//! requests, echoes, events and reconfigures sent to the simulator, CLI
-//! output, AMI responses and events, AstDB, and the log.  Where the
-//! official DPMA hands such text to jansson (the user list, the method
-//! responses, the JSON error documents, DPMAMessageResponse), the request
-//! fails the way jansson makes the official DPMA fail; where it hands it to
-//! libxml2 (an XML request, the display rules merge), libxml2 refuses it
-//! as it does for the official DPMA.
-//!
-//! | Part | Checks |
-//! |---|---|
-//! | `cli` | The `digium_phones show` commands with Latin-1 names and values |
-//! | `phone` | The Latin-1 phone's requests (echo, token, configuration document, files, user lists, methods, Latin-1 request bodies and credentials), AMI with Latin-1 headers (DPMAShowPhones, DPMAMessageSend, DigiumPhoneReconfigure, DPMAMessageRegister, forwarded XML and JSON requests), and AstDB |
-//! | `incident` | An auth incident's Latin-1 user agent in DPMAShowIncidents |
-//! | `utf8-phone` | The UTF-8 phone's configuration document, with the display rules merged by libxml2 |
-//!
-//! Each part forgets the sessions and locations of its phones in AstDB
-//! at its end, so that later suites do not restore them.
+//! Where the official DPMA hands such text to jansson, the request fails
+//! the way jansson makes the official DPMA fail; where it hands it to
+//! libxml2, libxml2 refuses it as it does for the official DPMA.
 
 mod fixtures;
 

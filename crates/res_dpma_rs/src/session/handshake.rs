@@ -1,6 +1,4 @@
-//! The Handshake request (`handle_request_handshake` FUN_0014dbe0,
-//! `prune_session_by_mac`, `phone_msg_set_common_password` FUN_0014bb00,
-//! `set_auth_requirements` FUN_00149710).
+//! The Handshake request.
 //!
 //! A phone sends its certificate(s) in the body.  The server drops any
 //! other session of the same MAC, creates a session (verifying the
@@ -94,7 +92,7 @@ pub(crate) fn set_auth_requirements(out: &mut Outgoing, flags: u32) {
 }
 
 /// Request handler for "Handshake" (`handle_request_handshake`,
-/// FUN_0014dbe0; registered by `request::handlers::load`).
+/// FUN_0014dbe0).
 pub fn handle_handshake(tx: Arc<Transaction>) -> i32 {
     let Some(msg) = tx.first_msg.as_ref() else {
         return 0;

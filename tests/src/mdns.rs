@@ -1,9 +1,8 @@
-//! A small mDNS client (the Rust form of
-//! `tests/apps-discovery/mdns_probe.py`).
+//! A small mDNS client.
 //!
-//! [`browse`] sends one-shot (legacy unicast) queries to
-//! 224.0.0.251:5353: PTR for the service type, then SRV and TXT for every
-//! instance found, then A and AAAA for every SRV target.  [`Listener`]
+//! [`browse`] sends one-shot (legacy unicast) queries: PTR for the
+//! service type, then SRV and TXT for every instance found, then A and
+//! AAAA for every SRV target.  [`Listener`]
 //! joins the mDNS group and collects every response it sees
 //! (announcements and goodbyes).  Queries and the group membership use
 //! the interface of a given address (normally 127.0.0.1), so nothing
@@ -327,8 +326,7 @@ fn both<T: Send>(f: impl Fn(u16) -> T + Sync, a: u16, b: u16) -> [T; 2] {
 }
 
 /// Every live (TTL > 0) instance of `service_type`, by instance label
-/// (its PTR query, then its SRV and TXT queries together, then the
-/// target's A and AAAA queries together, each waiting `wait`).
+/// (each query waits `wait`).
 pub fn browse(
     service_type: &str,
     iface: Ipv4Addr,

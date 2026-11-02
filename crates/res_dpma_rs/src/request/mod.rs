@@ -1,6 +1,4 @@
-//! Request dispatch (dpma_request.c): the request-type handler table, the
-//! `DPMA_request` and `DPMA_extended` thread pools, and the XML/JSON error
-//! responses.  The handlers themselves are in `handlers.rs`.
+//! Request dispatch (dpma_request.c).
 
 pub mod handlers;
 
@@ -11,10 +9,10 @@ use dpma_ast::{ast_log, bformat, bwrite, dpma_log};
 use std::sync::{Arc, RwLock};
 
 /// A request-type handler (`request_register_handler`); runs on the
-/// `DPMA_request` pool.  The transaction's `outgoing` is allocated (and
-/// its response type, URI, full contact, and id filled in) before the
-/// handler runs when the registration has a response type.  The return
-/// value is ignored (as the taskprocessor ignores it in the official DPMA).
+/// `DPMA_request` pool.  The transaction's `outgoing` is allocated before
+/// the handler runs when the registration has a response type.  The
+/// return value is ignored (as the taskprocessor ignores it in the
+/// official DPMA).
 pub type Handler = fn(tx: Arc<Transaction>) -> i32;
 
 /// One entry of the handler table (32 bytes in the official DPMA).
@@ -38,16 +36,12 @@ static EXTENDED_POOL: RwLock<Option<ThreadPool>> = RwLock::new(None);
 const REQUEST_POOL_NAME: &str = "DPMA_request";
 const EXTENDED_POOL_NAME: &str = "DPMA_extended";
 
-/// Fixed part of the pools' options (0x5e95e0): version 1, idle timeout
-/// 60 s, auto increment 1.  The sizes come from the configuration.
+/// Fixed part of the pools' options (0x5e95e0).  The sizes come from the
+/// configuration.
 const IDLE_TIMEOUT: i32 = 60;
 const AUTO_INCREMENT: i32 = 1;
 
-/// `request_load` (FUN_00189890): create the handler table, register the
-/// request handlers (`handlers::load`, i.e., `phone_request_load`), and
-/// create the thread pools (initial and maximum sizes from
-/// `transaction_initial_threads` / `transaction_max_threads`, idle timeout
-/// 60 s, auto increment 1).  Does nothing when already loaded.
+/// `request_load` (FUN_00189890).  Does nothing when already loaded.
 pub fn load() -> Result<(), ()> {
     if REQUEST_POOL.read().unwrap().is_some() {
         return Ok(());
@@ -119,9 +113,7 @@ pub fn register_handler(
     Ok(())
 }
 
-/// `request_handle_incoming` (FUN_00188d20): look up the handler, check
-/// the session requirement, allocate the outgoing message, and push the
-/// handler onto the request pool (`request_task_push`).
+/// `request_handle_incoming` (FUN_00188d20).
 pub fn handle_incoming(tx: Arc<Transaction>) -> Result<(), ()> {
     if tx.request_type.is_empty() {
         dpma_log!("Received request with no type");

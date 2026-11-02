@@ -1,6 +1,5 @@
 //! Checks on simulator exchanges, replies, and AMI messages, one check
-//! per condition (the conditions of the old `.sim` scripts' `expect` and
-//! `expect-ami`).
+//! per condition.
 //!
 //! ```no_run
 //! # use dpma_tests::harness::Checker;

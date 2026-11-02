@@ -1,20 +1,15 @@
-//! The PJSIP side of the module: what the official DPMA ships as
-//! two helper modules, res_pjsip_endpoint_identifier_dpma.so
-//! (`identifier.rs`) and res_pjsip_dialog_info_digium_body_supplement.so
-//! (`dialog_info.rs`), loaded after and unloaded before the rest of the
-//! module, as Asterisk loads and unloads those helpers.
+//! The PJSIP side of the module: what the official DPMA ships as helper
+//! modules, loaded after and unloaded before the rest of the module, as
+//! Asterisk loads and unloads those helpers.
 //!
-//! The helpers talked to res_digium_phone through its exported C API: a
-//! config handler run in every processing pass of the phone
-//! configuration, an info handler that sends SIP INFO requests on PJSIP
-//! channels, and the "is this endpoint a Digium phone" function.  Here
-//! they are plain Rust calls (`process_lines`, `info_send`, and
-//! `endpoint_is_dphone`), each active between the identifier side's
-//! registration and its cleanup, as the official DPMA's registrations were;
-//! outside that window they behave as the official DPMA does with nothing
-//! registered.  The registries' locks are kept: a processing pass holds
-//! the config handler lock while the PJSIP lines pass runs, and an INFO is
-//! sent under the info handler lock, so unloading waits for both.
+//! The helpers talked to res_digium_phone through its exported C API.
+//! Here they are plain Rust calls, each active between the identifier
+//! side's registration and its cleanup, as the official DPMA's
+//! registrations were; outside that window they behave as the official
+//! DPMA does with nothing registered.  The registries' locks are kept: a
+//! processing pass holds the config handler lock while the PJSIP lines
+//! pass runs, and an INFO is sent under the info handler lock, so
+//! unloading waits for both.
 
 pub mod dialog_info;
 pub mod identifier;

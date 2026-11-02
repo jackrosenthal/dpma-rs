@@ -2,24 +2,6 @@
 //! res_pjsip_endpoint_identifier_dpma.so, "DPMA PJSIP Support" (decompile:
 //! `dev/analysis/decomp/helpers/res_pjsip_endpoint_identifier_dpma.c`).
 //!
-//! * Requests carrying an `X-Digium-User-Agent` header (the phones'
-//!   AppServer MESSAGEs) are matched to an endpoint of their own: a new
-//!   endpoint with the id of the default outbound endpoint whose context is
-//!   res_digium_phone.conf's `pjsip_message_context` (default
-//!   `dpma_pjsip_message_context`), set at load and whenever the module
-//!   loads that file (config hook).
-//! * Phone lines named after a PJSIP endpoint take their technology,
-//!   context, caller ID, auth section, authname, secret, and mailbox from
-//!   the PJSIP configuration: the lines pass run in every processing of the
-//!   phone configuration (the official DPMA's config handler), and sorcery
-//!   observers on endpoints, AORs, and auths.
-//! * A REGISTER (contact created or updated) from a Digium or Sangoma user
-//!   agent records the contact URI as the last URI of the phone named after
-//!   the AOR.
-//! * `send_info` sends SIP INFO requests on calls (the official DPMA's
-//!   "PJSIP" info handler), and `endpoint_is_dphone` says whether an
-//!   endpoint has a contact with a phone user agent.
-//!
 //! Lines and phones are reached through their objects (`users::objects`),
 //! as the official DPMA's helper reaches them through res_digium_phone's
 //! exported API.  Log messages carry the official DPMA's file and function

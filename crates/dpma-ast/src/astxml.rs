@@ -1,13 +1,10 @@
 //! Asterisk's own XML API (`ast_xml_*`, main/xml.c).
 //!
 //! Most of the official DPMA calls libxml2 directly (see `xml.rs`), but
-//! the call methods of phone_method_internal_api.c (the phonebook entry
-//! method and the XML recording methods) use `ast_xml_open`,
-//! `ast_xml_find_element`, `ast_xml_doc_dump_file`, and friends, which
-//! differ from plain libxml2 (parser options, XInclude processing, attribute
-//! matching).  This wraps those functions so the behavior is the same.
-//! The phone request handlers (phone_request.c) use it too, for the XML
-//! requests' attributes and node markup.
+//! some of its call methods (phone_method_internal_api.c) and its phone
+//! request handlers (phone_request.c) use the `ast_xml_*` functions, which
+//! differ from plain libxml2.  This wraps those functions so the behavior
+//! is the same.
 
 use crate::sys;
 use crate::util::{cstr, from_ptr};

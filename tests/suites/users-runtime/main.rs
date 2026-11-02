@@ -1,5 +1,4 @@
-//! The users-runtime suite: the phone users' runtime without sessions
-//! (package P8; was `tests/users-runtime/check.sh`).
+//! The users-runtime suite: the phone users' runtime without sessions.
 //!
 //! ```text
 //! cargo xtask test users-runtime
@@ -11,23 +10,10 @@
 //! cargo test -p dpma-tests --test users-runtime -- --ignored [--no-prepare] [PART...]
 //! ```
 //!
-//! Prerequisites: the test instance and the devtest build of the module
-//! (the checks use its `dpmadev` CLI commands).  The suite prepares the
-//! instance (fresh configuration, the P8 test phones of
-//! `tests/data/users-runtime/res_digium_phone_p8.conf` included from
-//! `res_digium_phone.conf`, the debug build installed, Asterisk
-//! restarted; `--no-prepare` skips this).  Before the first part it
-//! deletes the test phones' AstDB entries and restarts Asterisk, so that
-//! the runtime state starts out empty.  It takes about ten seconds.
+//! The suite prepares the instance (`--no-prepare` skips this).
 //!
 //! Each check runs a CLI command and looks for fixed strings in its
-//! output:
-//!
-//! | Part | Checks |
-//! |---|---|
-//! | `presence` | Presence options from status applications (and the six defaults), `digium_phones show status`, the `send_dnd` options of the configuration document, and the `switchvox.users.presence` methods (`options.getList`, `update`, `getInfo`) with their errors |
-//! | `tokens` | Configuration tokens (build and find, the previous token), last-seen information and AstDB (orphaned by MAC, MAC mismatch, stale location), `digium_phones show tokens`, events to phones without a session; then the lookups (by credentials, MAC, group pin, last MAC, user name, line, mailbox, applications), which rely on the tokens' last-seen information |
-//! | `incidents` | Auth incidents (`dpmadev auth alert`) keyed by the full IPv6 host (`DPMAShowIncidents`); from the fifth failure the log line says ALERT and the incident is blocking; incidents expire more than 600 s after the latest failure (`dpmadev auth age` and `dpmadev auth expire`) |
+//! output.
 
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};

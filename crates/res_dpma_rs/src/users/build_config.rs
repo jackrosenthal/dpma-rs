@@ -1702,9 +1702,9 @@ pub fn primary_line_name(phone: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// `phone_user_get_show_call_parking`: `show_call_parking` of the first
-/// phone (in container order) that has `line` in any of its twelve line
-/// slots (an empty name matches a phone with a free slot); true when no
-/// phone has it.
+/// phone (in container order) that has `line` in any of its line slots
+/// (an empty name matches a phone with a free slot); true when no phone
+/// has it.
 pub fn show_call_parking(line: &[u8]) -> bool {
     let g = read();
     let Some(reg) = g.as_ref() else { return true };
@@ -1800,8 +1800,7 @@ mod devtest {
     }
 }
 
-/// Test hooks (feature "devtest"): `dpmadev config`, `dpmadev contacts`,
-/// and `dpmadev userlist`.
+/// Test hooks (feature "devtest").
 #[cfg(feature = "devtest")]
 pub fn devtest_commands() -> Vec<dpma_ast::cli::CliCommand> {
     devtest::commands()

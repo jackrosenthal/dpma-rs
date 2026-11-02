@@ -1,6 +1,4 @@
-//! Call-related methods: queues, parking lots, recording, phonebook, and
-//! the echo test method, plus the AMI hook helper (`amihook_action`) and
-//! the parked-call Stasis router (phone_method_internal_api.c).
+//! Call-related methods (phone_method_internal_api.c).
 //!
 //! The methods talk to Asterisk the way the official DPMA does: through
 //! in-process manager actions (`ast_hook_send_action`), whose response
@@ -944,8 +942,7 @@ fn queue_pause_member(phone: &[u8], queue: &[u8], paused: i32, reason: Option<&[
 }
 
 /// The Originate the login and logout methods use when the application
-/// has a login or logout extension: a Local channel to `exten` running
-/// Wait(30), with the phone's primary line as caller id.
+/// has a login or logout extension.
 fn originate_exten(phone: &[u8], exten: &[u8]) -> Option<Vec<u8>> {
     let action = bformat!(
         "Action: Originate\r\nCallerID: <{}>\r\nChannel: Local/{}\r\nApplication: Wait\r\nData: 30\r\nAsync: true\r\n",
@@ -1106,8 +1103,7 @@ pub fn queue_logout(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
     handle_request_json_queue_logout(c, p, out)
 }
 
-/// switchvox.users.callQueues.pause (FUN_0017cd80): `account_id`,
-/// `reason`, and `call_queue_account_id` are required.
+/// switchvox.users.callQueues.pause (FUN_0017cd80).
 pub fn queue_pause(c: &MethodCall, p: &Value, out: &mut Vec<u8>) -> i32 {
     if param_str(p, "account_id").is_none() {
         error_response_json(out, &c.method, rq::PARAMS_NOT_FOUND, "account_id");

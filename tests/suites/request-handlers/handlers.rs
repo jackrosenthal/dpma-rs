@@ -1,11 +1,4 @@
-//! The phone request handlers (package P12, `phone_request.c`; was
-//! `tests/request-handlers/run.py`).  Replies are compared byte for byte
-//! with what the decompile builds: message errors (`Error-ID` and
-//! `<error msg="..." />`), XML and JSON request errors, the HTTP wrapper
-//! of AsteriskResponse and HTTPResponse, tokens, the user list, files,
-//! and the DPMAMessage AMI event; log lines, auth incidents
-//! (`DPMAShowIncidents`), AstDB, and the session's Configured flag are
-//! checked too.
+//! The phone request handlers.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -616,9 +609,9 @@ pub fn file(ctx: &mut Ctx) -> Result<()> {
         Body::Is(b"empty body"),
     );
     // Subdirectories of file_directory are served; names with a ".."
-    // component are refused like a missing file (plan section 8, item
-    // 14), although the files exist.  Absolute names are looked up inside
-    // file_directory, as the official DPMA does ("<dir>//p12-small.txt").
+    // component are refused like a missing file, although the files exist.
+    // Absolute names are looked up inside file_directory, as the official
+    // DPMA does ("<dir>//p12-small.txt").
     for fname in [
         "sub/p12-sub.txt",
         "./sub/./p12-sub.txt",
@@ -1099,9 +1092,7 @@ pub fn ami(ctx: &mut Ctx) -> Result<()> {
 }
 
 /// What the request handler gives the DPMAMessage event of an
-/// AMI-registered method (the event itself, the queue, and the answers are
-/// checked byte for byte in the ami suite): the method as requested and
-/// the parameters.
+/// AMI-registered method: the method as requested and the parameters.
 fn ami_checks(ctx: &mut Ctx) -> Result<()> {
     let ok = ctx
         .ami()?

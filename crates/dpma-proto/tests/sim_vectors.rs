@@ -1,10 +1,9 @@
 //! Cross-check against the phone simulator's vectors
 //! (`tests/data/vectors.json`, written by `dpma-sim vectors` from the
 //! `dpma-tests` crate, an independent implementation of the protocol from
-//! the decompile, which shares only the RustCrypto primitive crates): key
-//! and IV derivation, a body, a header field, and the server's framing of
-//! an encrypted event over UDP.  The simulator checks the other direction
-//! against `tests/fixtures/proto_vectors.json` in its self-test.
+//! the decompile, which shares only the RustCrypto primitive crates).  The
+//! simulator checks the other direction against
+//! `tests/fixtures/proto_vectors.json` in its self-test.
 
 use dpma_proto::{crypto, framing};
 use serde_json::Value;

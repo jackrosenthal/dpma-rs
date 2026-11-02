@@ -5,24 +5,11 @@
 #   <podman|docker> build -f tools/Containerfile \
 #       --build-arg ASTERISK_VERSION=<release> \
 #       --build-arg ASTERISK_SHA256=<sha256> tools
-#
-#   /opt/asterisk          Asterisk, configured with --prefix=/opt/asterisk:
-#                          the test instance (writable by every user, since
-#                          the tests run as the host user's user ID)
-#   /opt/asterisk-conf     the scratch configuration, which the harness
-#                          copies into /opt/asterisk/etc/asterisk
-#   /opt/asterisk-headers  the configured headers that bindgen reads
-#                          (ASTERISK_SOURCE_DIR): include/ and the bundled
-#                          pjproject's include directories
-#   /usr/local/rustup, /usr/local/cargo   Rust 1.99 with clippy
 
 FROM docker.io/library/ubuntu:24.04
 
-# Asterisk's build dependencies (the basic set of its
-# contrib/scripts/install_prereq; curl, bzip2, and patch for the bundled
-# pjproject), libclang for bindgen (the library and clang's own headers,
-# without the static libraries of libclang-dev), and ip and ss (iproute2)
-# for the suites.
+# Asterisk's build dependencies, libclang for bindgen (without the static
+# libraries of libclang-dev), and iproute2 for the suites.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       build-essential pkg-config curl ca-certificates bzip2 patch libedit-dev \
@@ -36,13 +23,11 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rustup-init.sh https://sh.rust
       --default-toolchain 1.99 --component clippy \
  && rm /tmp/rustup-init.sh && cargo clippy --version
 
-# Download and verify the release; configure it as dpma-rs always has
-# (BUILD_NATIVE off, so that the build runs on any CPU of the
-# architecture); build and install it (ASTDATADIR given explicitly:
-# with a --prefix of its own, makeopts defines it through ${prefix},
-# which the bundled pjproject's install step sees as pjproject's
-# /opt/pjproject, an Asterisk bug); strip the debugging information
-# (the build has -g3); keep the headers; and remove the source tree.
+# BUILD_NATIVE is off, so that the build runs on any CPU of the
+# architecture.  ASTDATADIR is given explicitly: with a --prefix of its
+# own, makeopts defines it through ${prefix}, which the bundled
+# pjproject's install step sees as pjproject's /opt/pjproject (an
+# Asterisk bug).
 ARG ASTERISK_VERSION
 ARG ASTERISK_SHA256
 RUN mkdir /usr/src/asterisk && cd /usr/src/asterisk \
@@ -73,8 +58,7 @@ RUN mkdir /usr/src/asterisk && cd /usr/src/asterisk \
 ENV ASTERISK_SOURCE_DIR=/opt/asterisk-headers
 
 # The scratch configuration: the samples with tools/asterisk-conf/ and
-# these edits on top (the greps fail the build if the samples change);
-# asterisk.conf's [directories] section is made active.
+# these edits on top.  The greps fail the build if the samples change.
 COPY asterisk-conf/ /opt/asterisk-conf/
 RUN cd /opt/asterisk-conf \
  && sed -i -e 's/^rtpstart=.*/rtpstart=21000/' -e 's/^rtpend=.*/rtpend=21100/' rtp.conf \

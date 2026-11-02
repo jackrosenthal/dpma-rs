@@ -1,15 +1,14 @@
 //! Presence methods (phone_method_internal_api.c): getInfo
 //! (FUN_0017d0e0), update (FUN_0017cf20), options.getList
-//! (`handle_request_json_presence_getlist` FUN_0017dd50).  They use the
-//! presence store in `users::presence`.
+//! (`handle_request_json_presence_getlist` FUN_0017dd50).
 //!
 //! Each answers `{"response":{"method":M,"result":...}}` (replacing
 //! `out`) and returns 0, or puts the JSON error document in `out` and
 //! returns -1, as the official DPMA does.
 //!
 //! The official DPMA builds the documents with `ast_json_pack`, which fails
-//! for text that is not valid UTF-8 (a sub-state or message in Latin-1,
-//! say); the failures are reproduced where they happen.
+//! for text that is not valid UTF-8; the failures are reproduced where
+//! they happen.
 
 use crate::method::MethodCall;
 use crate::request::error_response_json;

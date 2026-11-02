@@ -1,6 +1,5 @@
-//! XML well-formedness, which the Python suites checked with expat
-//! (`xml.dom.minidom.parseString`); here with roxmltree, a strict XML 1.0
-//! parser independent of the module's (xmltree).
+//! XML well-formedness, checked with roxmltree, a strict XML 1.0 parser
+//! independent of the module's (xmltree).
 //!
 //! ```
 //! use dpma_tests::xml;
@@ -11,11 +10,8 @@
 
 use roxmltree::{Document, ParsingOptions};
 
-/// Checks that `doc` is a well-formed XML document: UTF-8 text with an
-/// optional XML declaration, one root element, and nothing but comments,
-/// processing instructions, and white space around it.  A document type
-/// declaration is allowed, as expat allows it.  Returns the parser's
-/// error otherwise.
+/// Checks that `doc` is a well-formed UTF-8 XML document; returns the
+/// parser's error otherwise.  A document type declaration is allowed.
 pub fn well_formed(doc: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(doc).map_err(|e| format!("not UTF-8: {e}"))?;
     let opt = ParsingOptions {
@@ -27,7 +23,7 @@ pub fn well_formed(doc: &[u8]) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Escapes `&`, `<`, and `>` (as Python's `xml.sax.saxutils.escape`):
+/// Escapes `&`, `<`, and `>`:
 /// enough for character data and for attribute values in double quotes
 /// that contain no double quote.
 pub fn escape(text: &[u8]) -> Vec<u8> {

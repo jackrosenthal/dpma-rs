@@ -1,37 +1,32 @@
-//! The test container: the container engine, the test image of a pinned
-//! release, and a container that runs `cargo xtask inside ...`.
+//! The test container.
 //!
 //! # The engine
 //!
-//! `$DPMA_ENGINE` (a command name or path) when set, else `podman` when it
-//! is on the `PATH`, else `docker`.  The engine is used as its user has
-//! configured it (storage, registries, rootless or not); only commands
-//! and options that podman and docker share are used.
+//! `$DPMA_ENGINE` when set, else `podman` when it is on the `PATH`, else
+//! `docker`.  The engine is used as its user has configured it; only
+//! commands and options that podman and docker share are used.
 //!
 //! # The image
 //!
-//! One image per pinned release, built from `tools/Containerfile` with the
-//! release and its checksum as build arguments and `tools/` as the
-//! context.  Its tag, `dpma-rs-asterisk:<release>-<hash>`, carries a hash
-//! of what goes into it (the Containerfile, the pin, and
-//! `tools/asterisk-conf/`), so that a change to any of them builds a new
-//! image and anything else reuses the existing one ([`image_tag`]).
+//! One image per pinned release, built from `tools/Containerfile`.  Its
+//! tag carries a hash of what goes into it, so that a change to any of it
+//! builds a new image and anything else reuses the existing one
+//! ([`image_tag`]).
 //!
 //! # The container
 //!
 //! A fresh container per run ([`Container`]), removed afterwards:
 //!
 //! - `--network none`: a network namespace of its own whose only interface
-//!   is `lo`, so that SIP, AMI, and mDNS stay inside and runs for
-//!   different releases never clash.  Root in the container (an `exec` as
-//!   user 0, with `--cap-add NET_ADMIN`) turns multicast on for `lo` and
-//!   routes 224.0.0.0/4 through it, for the apps-discovery suite's mDNS.
-//! - Mounts (the [`SRC`], [`OUT`], and [`CARGO_HOME`] paths): the
-//!   repository; `target/container/<release>/` for the Cargo target
-//!   directory, the logs, the test PKI, and the published module; and
+//!   is `lo`, so that the traffic stays inside and runs for different
+//!   releases never clash.  Root in the container (an `exec` as user 0,
+//!   with `--cap-add NET_ADMIN`) turns multicast on for `lo` and routes
+//!   224.0.0.0/4 through it, for the apps-discovery suite's mDNS.
+//! - Mounts ([`SRC`], [`OUT`], and [`CARGO_HOME`]): the repository;
+//!   `target/container/<release>/` for what the run writes; and
 //!   `target/container/cargo/` as `CARGO_HOME`, the registry cache that
 //!   the releases share.  The container has no network, so the host
-//!   fetches the crates into that cache first (`cargo fetch --locked`).
+//!   fetches the crates into that cache first.
 //! - `--security-opt label=disable`, so that SELinux hosts let the
 //!   container read and write the mounts without relabeling them.
 //! - The work runs as the container user that is the host user: the
@@ -148,8 +143,8 @@ impl Engine {
 }
 
 /// The tag of `pin`'s image: `dpma-rs-asterisk:<release>-<hash>`, where
-/// the hash (12 hex digits of SHA-256) covers the Containerfile, the pin,
-/// and the files of `tools/asterisk-conf/`.
+/// the hash covers the Containerfile, the pin, and the files of
+/// `tools/asterisk-conf/`.
 pub fn image_tag(pin: &Pin) -> Result<String> {
     let tools = repo_root().join("tools");
     let mut h = Sha256::new();
@@ -217,8 +212,7 @@ pub fn exit_code(status: ExitStatus) -> u8 {
 }
 
 impl Container {
-    /// Starts a container of `image` with `mounts` and `env`, waits until
-    /// it runs, prepares `lo` for multicast, and finds the host user.
+    /// Starts a container of `image` with `mounts` and `env`.
     fn start(
         engine: Engine,
         image: &str,
@@ -340,8 +334,7 @@ impl Drop for Container {
     }
 }
 
-/// What the containers of a run of one release share: the engine, the
-/// image, the mounts, and the environment.
+/// What the containers of a run of one release share.
 pub struct Run {
     engine: Engine,
     image: String,

@@ -1,17 +1,8 @@
-//! A minimal SIP user agent over UDP for test phones (the Rust form of
-//! `tests/pjsip-helpers/sipua.py`, `tests/methods-calls/phone.py`,
-//! and `tests/methods-vm/vm_uas.py`).
+//! A minimal SIP user agent over UDP for test phones.
 //!
-//! - [`SipUa`]: requests and replies by hand; [`SipUa::register`] with
-//!   digest authentication, [`SipUa::message`], and [`SipUa::subscribe`].
-//! - [`Uas`]: a registered phone in a background thread that answers,
-//!   leaves ringing, or rejects INVITEs, sends DTMF as INFO in an answered
-//!   call, answers everything else, and reports what happened as
-//!   [`UaEvent`]s.
-//!
-//! The `*_line` functions write the transcript lines of `sipua.py`
-//! (stable across runs: no ports, tags, or branches), which the
-//! pjsip-helpers suite compares with its expected transcript.
+//! The `*_line` functions write transcript lines that are stable across
+//! runs (no ports, tags, or branches), which the pjsip-helpers suite
+//! compares with its expected transcript.
 
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,7 +19,7 @@ use regex::Regex;
 
 use crate::sip::{self, Message};
 
-/// The SDP of an answered call (PCMU on port 40000).
+/// The SDP of an answered call.
 pub const SDP: &str = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=audio 40000 RTP/AVP 0\r\na=rtpmap:0 PCMU/8000\r\n";
 
 fn hex32() -> String {
@@ -151,10 +142,7 @@ impl SipUa {
         }
     }
 
-    /// Sends a request: Via, Max-Forwards, From (`from_user` at the
-    /// server's host, this agent's tag), To, Call-ID, CSeq, Contact, then
-    /// `extra` header lines, Content-Type (when given), and
-    /// Content-Length.
+    /// Sends a request from `from_user` at the server's host.
     #[allow(clippy::too_many_arguments)]
     pub fn request(
         &mut self,
@@ -196,9 +184,7 @@ impl SipUa {
         self.send(&data);
     }
 
-    /// Answers `req`: its Via, From, Call-ID, and CSeq, its To with a tag,
-    /// Contact `<sip:<contact_user>@127.0.0.1:<port>>`, `extra` header
-    /// lines, and the body.
+    /// Answers `req`.
     pub fn reply(
         &self,
         req: &Message,
@@ -327,8 +313,8 @@ impl SipUa {
 
     /// Subscribes to `dialog` events of `exten` as `user` (digest
     /// authenticated when challenged) for `duration`, answering every
-    /// NOTIFY; returns the transcript lines of `sipua.py subscribe`:
-    /// `SUBSCRIBE <status>` and `NOTIFY <body on one line>`.
+    /// NOTIFY; returns the transcript lines `SUBSCRIBE <status>` and
+    /// `NOTIFY <body on one line>`.
     pub fn subscribe(
         &mut self,
         user: &str,
@@ -378,8 +364,7 @@ impl SipUa {
     }
 }
 
-/// `NOTIFY <body>` with the body on one line (whitespace between elements
-/// removed, `version="N"`), as `sipua.py` prints it.
+/// `NOTIFY <body>` with the body on one line.
 pub fn notify_line(m: &Message) -> String {
     let body = m.body.to_str_lossy();
     let body = Regex::new(r">\s+<").unwrap().replace_all(body.trim(), "><");
@@ -389,11 +374,11 @@ pub fn notify_line(m: &Message) -> String {
     format!("NOTIFY {body}")
 }
 
-/// The transcript lines of `sipua.py` for a received INFO: `INFO
-/// received:`, its `X-`, `Content-Type`, and `Content-Length` header
-/// lines exactly as they arrived (PJSIP pads `Content-Length`), and the
-/// body.  A message that was not parsed from bytes (no
-/// [`Message::raw`]) shows its parsed headers instead.
+/// The transcript lines for a received INFO: `INFO received:`, its `X-`,
+/// `Content-Type`, and `Content-Length` header lines exactly as they
+/// arrived (PJSIP pads `Content-Length`), and the body.  A message that
+/// was not parsed from bytes (no [`Message::raw`]) shows its parsed
+/// headers instead.
 pub fn info_lines(m: &Message) -> Vec<String> {
     let wanted = |line: &str| {
         let l = line.to_ascii_lowercase();
@@ -757,8 +742,6 @@ mod tests {
         assert!(a.contains(&format!("response=\"{want}\"")));
     }
 
-    /// A fake registrar and caller: challenges the REGISTER, checks the
-    /// digest, calls the phone, and hangs up after two DTMF INFOs.
     #[test]
     fn uas_against_a_fake_server() {
         let server = UdpSocket::bind("127.0.0.1:0").unwrap();

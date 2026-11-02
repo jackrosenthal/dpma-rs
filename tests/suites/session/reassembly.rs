@@ -1,11 +1,9 @@
-//! Reassembly of incoming chunks (`session-reassembly.py`;
-//! incoming_add_msg, incoming_check_finalize, prune_inactive in
-//! FUN_0014f280): chunks out of order, the same transaction id from
-//! another MAC, and incomplete transactions dropped when more than 40 s
-//! old.  Sends hand-made Echo chunks.  Pruning runs at the start of a
-//! read cycle, so the age checks backdate the incomplete transactions
-//! (`dpmadev session txage`, which also lets the next cycle prune at
-//! once) and complete an Echo to start a new cycle.
+//! Reassembly of incoming chunks (incoming_add_msg,
+//! incoming_check_finalize, prune_inactive in FUN_0014f280).  Sends
+//! hand-made Echo chunks.  Pruning runs at the start of a read cycle, so
+//! the age checks backdate the incomplete transactions (`dpmadev session
+//! txage`, which also lets the next cycle prune at once) and complete an
+//! Echo to start a new cycle.
 
 use std::time::Duration;
 
@@ -58,8 +56,7 @@ fn send_and_wait(
 
 pub fn run(ctx: &mut Ctx) -> Result<()> {
     let mut opts = ctx.sim_options();
-    // As the original script: no X-Digium-User-Agent (the test identify
-    // routes the chunks).
+    // No X-Digium-User-Agent (the test identify routes the chunks).
     opts.digium_ua_header = false;
     let phone = Phone::start(opts)?;
     let base: u32 = rand::thread_rng().gen_range(100000..900000);

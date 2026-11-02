@@ -489,8 +489,7 @@ impl Phone {
         self.shared.add_part(msg);
     }
 
-    /// Writes the session (id, common password, token, local port, and
-    /// contact) to a JSON file.
+    /// Writes the session to a JSON file.
     pub fn save_state(&self, path: &Path) -> Result<()> {
         let s = self.shared.state.lock().unwrap();
         let state = json!({
@@ -1210,10 +1209,8 @@ impl<'p> RequestBuilder<'p> {
         self
     }
 
-    /// Sends the request (in as many chunks as needed) and, unless told
-    /// not to, waits for the reply.  Errors are setup errors (no PKI, no
-    /// common password to encrypt with, a bad chunk size); protocol
-    /// failures are in the [`Exchange`].
+    /// Sends the request and, unless told not to, waits for the reply.
+    /// Errors are setup errors; protocol failures are in the [`Exchange`].
     pub fn send(self) -> Result<Exchange> {
         let RequestBuilder {
             phone,

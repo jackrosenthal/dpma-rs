@@ -268,8 +268,7 @@ pub fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 /// Whether the regular expression `pattern` matches somewhere in `text`
-/// (`.` matches line breaks, as Python's `re.S`); an invalid pattern
-/// matches nothing.
+/// (`.` matches line breaks); an invalid pattern matches nothing.
 pub fn regex_search(pattern: &str, text: &[u8]) -> bool {
     RegexBuilder::new(pattern)
         .dot_matches_new_line(true)

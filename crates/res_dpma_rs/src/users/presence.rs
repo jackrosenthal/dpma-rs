@@ -3,9 +3,9 @@
 //! 0x151fb0, `phone_presence_user_application_sync` 0x1648d0).
 //!
 //! Every phone has a list of presence options (the official DPMA's ao2 hash
-//! container at +0x8e8, 57 buckets keyed by the option id): the states a
-//! user can pick on the phone, each with an optional sub-state.
-//! `set_user_defaults` installs the six standard states; the first
+//! container at +0x8e8, keyed by the option id): the states a user can
+//! pick on the phone, each with an optional sub-state.
+//! `set_user_defaults` installs the standard states; the first
 //! `user_application_sync` that finds one of the phone's status
 //! applications replaces them with the states of the phone's status
 //! applications and updates the send-486 mask (see `Phone::send486_custom`).
@@ -24,7 +24,7 @@ pub const OWNER_USER: i32 = 0;
 /// `owner` of the default options and of the status applications' options.
 pub const OWNER_SYSTEM: i32 = 1;
 
-/// One presence option (`struct phone_presence_option`, 0x18 bytes).
+/// One presence option (`struct phone_presence_option`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PresenceOption {
     /// Presence state (`dpma_ast::presence`) (+0x00).
@@ -87,8 +87,7 @@ pub fn option_add(
 }
 
 /// The options `set_user_defaults` installs (after
-/// `phone_presence_option_remove_all`): available, unavailable, away, xa,
-/// chat, and dnd, owned by the system, ids 1 to 6.
+/// `phone_presence_option_remove_all`).
 pub fn default_options() -> Vec<PresenceOption> {
     let mut v = Vec::new();
     for state in [
@@ -108,11 +107,7 @@ pub fn default_options() -> Vec<PresenceOption> {
 /// `list` as its application list.
 ///
 /// Runs only while the phone is not synchronized yet (`send486_custom`
-/// clear).  The first status application found (not marked for deletion)
-/// sets the flag and removes every option; each status application then
-/// adds its state and one option per sub-state, and sets (`send486=yes`)
-/// or clears (`send486=no`) its state in the send-486 mask.  An
-/// application that does not exist is logged.
+/// clear).
 ///
 /// `set_user_defaults` runs this with the phone's previous application
 /// list while every application is marked for deletion, so then it only

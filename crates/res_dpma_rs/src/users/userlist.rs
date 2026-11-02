@@ -50,11 +50,9 @@ fn user_entry(reg: &Registry, p: &Phone) -> (Vec<u8>, Vec<u8>, &'static str) {
     (extension, name, assigned)
 }
 
-/// `phone_user_list_build_json`: append `{"users":[...]}` to `out`, listing
-/// every phone in container order with its extension (the primary line's
-/// `exten`, or the line name, or the phone name), name (`full_name` or the
-/// phone name), and whether it is assigned.  With `filter_group_pin` only
-/// phones whose `group_pin` equals `config_password` are listed.
+/// `phone_user_list_build_json`: append `{"users":[...]}` to `out`, one entry
+/// per phone in container order.  With `filter_group_pin` only phones
+/// whose `group_pin` equals `config_password` are listed.
 ///
 /// Every value goes through jansson, which refuses text that is not valid
 /// UTF-8: a phone with such an extension or name makes the whole list
@@ -63,9 +61,7 @@ fn user_entry(reg: &Registry, p: &Phone) -> (Vec<u8>, Vec<u8>, &'static str) {
 /// `handle_request_userlist` passes `filter_group_pin` when
 /// `userlist_auth=globalpin` is in force and the supplied configuration
 /// password is not the global pin.  Returns the number of users listed;
-/// the caller treats zero as an authentication failure.  (The official
-/// DPMA's fourth parameter selects a variant keyed on a phone field that
-/// nothing sets; its only caller passes 0, so that variant is not ported.)
+/// the caller treats zero as an authentication failure.
 pub fn build_userlist_json(
     out: &mut Vec<u8>,
     filter_group_pin: bool,

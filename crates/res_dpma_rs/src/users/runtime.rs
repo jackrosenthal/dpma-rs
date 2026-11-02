@@ -1,6 +1,4 @@
-//! Runtime state of phone users: tokens, authentication lookups, last
-//! known location, AstDB `DigiumPhoneUsers` updates, reconfigure and
-//! event messages (phone_users.c).
+//! Runtime state of phone users (phone_users.c).
 //!
 //! Functions: `phone_user_token_set_last_info` (0x170630),
 //! `phone_user_config_token_build` (0x170f00),
@@ -22,9 +20,8 @@
 //!
 //! Lookups return the phone's (or line's) name instead of a referenced
 //! object.  Functions that change phones do so under the registry write
-//! lock and then perform the side effects that leave the users layer
-//! (sessions, AstDB, messages, and their log lines) in the official DPMA's
-//! order, after releasing it.
+//! lock and then perform the side effects that leave the users layer in
+//! the official DPMA's order, after releasing it.
 
 use super::*;
 use crate::session::{self, Outgoing};
@@ -145,8 +142,7 @@ fn find_session(id: &[u8]) -> Option<std::sync::Arc<session::Session>> {
     session::find(id)
 }
 
-/// Mark the session `id` inactive, if it exists (`phone_msg_session_find`
-/// plus `phone_msg_session_mark_inactive`).
+/// Mark the session `id` inactive, if it exists.
 pub fn mark_session_inactive(id: &[u8]) {
     if let Some(s) = find_session(id) {
         session::mark_inactive(&s);
@@ -170,8 +166,8 @@ fn db_value(p: &Phone) -> Vec<u8> {
     )
 }
 
-/// `phone_user_update_db_info`: store the phone's last MAC, URI, and
-/// session id in AstDB `DigiumPhoneUsers/<phone>`.
+/// `phone_user_update_db_info`: store the phone's last location in AstDB
+/// `DigiumPhoneUsers/<phone>`.
 pub fn update_db_info(phone: &[u8]) {
     let v = {
         let g = read();
@@ -247,16 +243,6 @@ pub fn restore_sessions() {
 /// `phone_user_token_set_last_info`: record that phone `phone` was seen
 /// at `uri` with `session_id` and `mac` (None for either: not supplied,
 /// as the PJSIP helper calls it on REGISTER).
-///
-/// - A MAC that another phone was last seen with orphans that phone (its
-///   last MAC, URI, and session are dropped).
-/// - A MAC different from the phone's last MAC sends a reconfigure to the
-///   old location.
-/// - A new location (URI by address and transport, or MAC) is logged and
-///   stored, and the phone's session follows a changed URI.
-/// - A new session id replaces the old session (marked inactive), and the
-///   session is marked authenticated with `uri`.
-/// - AstDB is updated unless nothing changed.
 pub fn set_last_info(phone: &[u8], uri: &[u8], session_id: Option<&[u8]>, mac: Option<&[u8]>) {
     let mut fx = Vec::new();
     {
@@ -417,9 +403,7 @@ fn token_sum(token: &[u8]) -> i32 {
 /// phone `phone` requested from `mac`, `session_id`, and `uri` (the
 /// TokenRequest's), with `secret` the global pin.  The token is
 /// `<phone>/<mac>/<hash("blah")>/<hash(secret)>` (at most 1023
-/// characters).  Records the phone's location (`set_last_info`), then
-/// drops any other phone last seen at `uri` with another session.  None
-/// when the phone does not exist.
+/// characters).  None when the phone does not exist.
 pub fn config_token_build(
     phone: &[u8],
     mac: &[u8],
@@ -473,9 +457,8 @@ pub struct TokenLookup {
 /// match the phone's location is recorded (`set_last_info`).
 ///
 /// Only `<phone><sep><last MAC>` is compared: the official DPMA builds four
-/// candidate tokens (with hashes of "blah", the phone's pin, "none", the
-/// global pin, and the group pin) but compares each only up to its second
-/// separator, which is the same for all four.  So a token matches when it
+/// candidate tokens but compares each only up to its second separator,
+/// which is the same for all four.  So a token matches when it
 /// starts with the phone's name (case sensitive), the separator, and the
 /// MAC the phone was last seen with.
 pub fn find_by_token(
@@ -715,9 +698,9 @@ pub fn applications_of_type(phone: &[u8], type_name: &str) -> Vec<Vec<u8>> {
 // ---------------------------------------------------------------------------
 
 /// `phone_user_send_reconfigure`: send `digium.config.update` to the
-/// session `session_id` (body `<config></config>`, or with
-/// `delete_token` the form that also drops the phone's token), addressed
-/// to `uri`.  Err only when the session does not exist.
+/// session `session_id` (with `delete_token`, the form that also drops
+/// the phone's token), addressed to `uri`.  Err only when the session
+/// does not exist.
 pub fn send_reconfigure(session_id: &[u8], uri: &[u8], delete_token: bool) -> Result<(), ()> {
     let body = if delete_token {
         "<config>\t<section id=\"all\"/>\t<option id=\"delete_token\" value=\"true\"/></config>"

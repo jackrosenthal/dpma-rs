@@ -1,6 +1,4 @@
-//! Fixtures several suites share: preparing the instance, the simulator's
-//! test PKI and configuration, simulated phones, sessions and incidents as
-//! the CLI and AMI show them, and the documents the module builds.
+//! Fixtures several suites share.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -32,34 +30,15 @@ pub const DEVTEST_HINT: &str = "cargo build -p res_dpma_rs --features devtest";
 /// instance, the configuration file that includes it, and the contents
 /// (`@SIP_PORT@` is replaced).
 ///
-/// - `pjsip_dpma_sim.conf`: a TCP transport on the instance's SIP port;
-///   the endpoint `dpma-sim` with
-///   `message_context=dpma_pjsip_message_context`, identified by
-///   `match=127.0.0.1` (a test-only stand-in for the module's endpoint
-///   identifier); and `dpma-sim-loopback`, identified by
-///   `match=127.0.0.2`, whose messages go to a static test context.  With
-///   the module loaded, the simulator's MESSAGEs (which carry
-///   `X-Digium-User-Agent`) are identified by the module's endpoint
-///   identifier instead, and the `dpma-sim` identify is not needed; take
-///   the snippet out ([`remove_sim_conf`]) when testing other PJSIP
-///   clients: it matches every request from 127.0.0.1, REGISTERs
-///   included.  The loopback path needs `--no-digium-ua-header` while the
-///   module is loaded.
-/// - `extensions_dpma_sim.conf`: `[dpma-sim-loopback]` logs every MESSAGE
-///   from 127.0.0.2 with its AppServer headers and answers Echo the way
-///   the module's `handle_request_echo` does (no module needed);
-///   `[dpma-sim-send]` sends an unencrypted `digium.config.update` event
-///   to a listening simulator: `channel originate
-///   Local/<port>@dpma-sim-send application Wait 1`.
-/// - `res_digium_phone_sim.conf`: the test phones [`SIMPHONE`] (MAC
-///   `000fd3000001`, the simulator's default; pin 1234; line 1001, the
-///   PJSIP endpoint 1001 with secret `secret1001`) and [`SIMPHONE2`] (MAC
-///   `000fd3000002`; pin 5678; line 1002, secret `secret1002`).
-///
-/// The scratch configuration's `[general]` has `globalpin=344486`
-/// ([`GLOBALPIN`]), `config_auth=mac_globalpin`, and
-/// `userlist_auth=disabled`; change them in the instance for the other
-/// authentication modes.
+/// The `dpma-sim` endpoint is identified by `match=127.0.0.1`, a
+/// test-only stand-in for the module's endpoint identifier; take the
+/// snippet out ([`remove_sim_conf`]) when testing other PJSIP clients: it
+/// matches every request from 127.0.0.1, REGISTERs included.  The
+/// loopback path (`dpma-sim-loopback`, from 127.0.0.2) needs
+/// `--no-digium-ua-header` while the module is loaded.  `[dpma-sim-send]`
+/// sends an unencrypted `digium.config.update` event to a listening
+/// simulator: `channel originate Local/<port>@dpma-sim-send application
+/// Wait 1`.
 pub const SIM_CONF: [(&str, &str, &str); 3] = [
     (
         "pjsip_dpma_sim.conf",
@@ -78,9 +57,8 @@ pub const SIM_CONF: [(&str, &str, &str); 3] = [
     ),
 ];
 
-/// Prepares the instance for a suite: stops Asterisk, resets the
-/// configuration, runs `setup`, installs the module (debug build), starts
-/// Asterisk, and checks that the module is a devtest build.
+/// Prepares the instance for a suite: a fresh configuration with `setup`
+/// applied, and the module's devtest build running.
 pub fn prepare(inst: &Instance, setup: impl FnOnce(&Instance) -> Result<()>) -> Result<()> {
     inst.stop()?;
     inst.reset_conf()?;
@@ -125,10 +103,7 @@ pub fn check_devtest(inst: &Instance) -> Result<()> {
     Ok(())
 }
 
-/// The simulator setup: the test PKI ([`install_sim_pki`]), the test
-/// configuration ([`install_sim_conf`]), and `phone_ca_file` and
-/// `appserver_certificate` pointed at the test PKI (so that `cargo xtask
-/// instance sim-setup` alone gives a working setup too).
+/// The simulator setup: the test PKI and the test configuration.
 pub fn sim_setup(inst: &Instance) -> Result<()> {
     install_sim_pki(inst)?;
     install_sim_conf(inst)?;
@@ -143,10 +118,8 @@ pub fn install_sim_pki(inst: &Instance) -> Result<()> {
     mkpki::install(&dir, &inst.etc, true)
 }
 
-/// Installs the simulator's test configuration into the instance (the
-/// SIP port filled in) and includes it from `pjsip.conf`,
-/// `extensions.conf`, and `res_digium_phone.conf`.  Reload or restart
-/// Asterisk afterwards.
+/// Installs the simulator's test configuration into the instance.  Reload
+/// or restart Asterisk afterwards.
 pub fn install_sim_conf(inst: &Instance) -> Result<()> {
     for (snippet, main, text) in SIM_CONF {
         let text = text.replace("@SIP_PORT@", &inst.sip_port.to_string());
@@ -285,8 +258,7 @@ pub fn token_hash(s: &[u8]) -> u32 {
     h & 0x7fff_ffff
 }
 
-/// Escapes text for the Asterisk CLI parser (backslashes, double quotes,
-/// and spaces).
+/// Escapes text for the Asterisk CLI parser.
 pub fn cli_quote(text: &str) -> String {
     text.replace('\\', "\\\\")
         .replace('"', "\\\"")

@@ -1,8 +1,4 @@
-//! Outgoing messages: `phone_msg_outgoing_send` (FUN_0014c6b0),
-//! `phone_msg_send_and_destroy` (FUN_0014e590), `phone_msg_send_timeout`
-//! (FUN_0014e7e0), `phone_msg_send_event` (FUN_0014e030), and the
-//! handshake error reply (`phone_msg_outgoing_send_handshake_error`,
-//! FUN_0014bf10).
+//! Outgoing messages.
 //!
 //! Every message but a HandshakeResponse is encrypted with the session's
 //! common password and a fresh salt; the body is split into chunks (see
@@ -67,7 +63,7 @@ fn message_type(out: &Outgoing) -> Option<&[u8]> {
 }
 
 /// `phone_msg_outgoing_send` (FUN_0014c6b0): send `out` to the phone of
-/// `session`: chunking, encryption, and headers.
+/// `session`.
 pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
     let Some(type_name) = message_type(out) else {
         dpma_log!("Outgoing message is not request, response, or event type");

@@ -1,6 +1,4 @@
-//! Incoming AppServer messages ([`Reply`]), the exchanges of a request and
-//! its reply ([`Exchange`]), and the phone side of reassembly
-//! ([`Reassembler`]).
+//! The phone side of incoming AppServer messages.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;

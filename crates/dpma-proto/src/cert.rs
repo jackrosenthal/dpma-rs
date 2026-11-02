@@ -1,7 +1,7 @@
 //! Phone certificate verification (`load_castore`, `session_verify_cert`).
 //!
 //! The CA store is built from a PEM bundle of CA certificates: by default
-//! the three built into the official DPMA, or the `phone_ca_file` when set.
+//! the ones built into the official DPMA, or the `phone_ca_file` when set.
 //! A phone sends its certificates in its Handshake body, and they are
 //! verified against the store.
 //!
@@ -9,9 +9,9 @@
 //! This module does not reproduce OpenSSL: it decodes certificates with the
 //! `x509-cert` crate (strict DER) and makes the checks that the
 //! certificates the module meets need.  Those are the built-in
-//! certificates, the chains genuine phones send (issued by Digium's or
-//! Sangoma's CA, in standard DER), and the test PKI.  `phone_ca_file` and
-//! `appserver_certificate` are meant for development and testing only.
+//! certificates, the chains genuine phones send, and the test PKI.
+//! `phone_ca_file` and `appserver_certificate` are meant for development
+//! and testing only.
 //!
 //! # Reading
 //!
@@ -80,13 +80,6 @@
 //! ignores OpenSSL's "certificate is not yet valid" and "certificate has
 //! expired".
 //!
-//! Not supported, as no certificate the module meets uses them: name
-//! constraints, proxy certificates, and the RFC 3779 IP address and AS
-//! number extensions (marked critical, as they normally are, they are
-//! refused as unhandled critical extensions); other signature algorithms
-//! and issuer key types; the Netscape certificate type as a CA marking;
-//! and chain building by authority key identifier.
-//!
 //! The public key of the verified certificate is returned for the session
 //! (the common password is encrypted to it).
 
@@ -102,9 +95,7 @@ use x509_cert::name::Name;
 pub use crate::rsakey::RsaKey;
 
 /// What is logged, where the official DPMA logs OpenSSL's error text, for a
-/// certificate that cannot be read: no `CERTIFICATE` PEM block, a block
-/// without an END line or whose base64 text does not decode, or a
-/// certificate `x509-cert` does not decode (see the module documentation).
+/// certificate that cannot be read (see the module documentation).
 pub const PARSE_ERROR: &str = "certificate parse error";
 
 /// What is logged for an intermediate certificate with a negative serial
@@ -286,8 +277,8 @@ impl CaStore {
 }
 
 /// Who presented the certificate; only used in the official DPMA's log
-/// messages (session contact, MAC, and user agent).  A missing MAC prints
-/// as "(null)", as glibc prints the official DPMA's NULL pointer.
+/// messages.  A missing MAC prints as "(null)", as glibc prints the
+/// official DPMA's NULL pointer.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ClientInfo<'a> {
     pub contact: &'a [u8],

@@ -1,7 +1,5 @@
-# Build, lint, and test dpma-rs against every pinned Asterisk version on
-# x86_64 and aarch64, and build the module for publishing.  Each test job
-# is a thin wrapper around `cargo xtask ci`, which runs the same way
-# locally (with podman or docker):
+# Each test job is a thin wrapper around `cargo xtask ci`, which runs the
+# same way locally (with podman or docker):
 #
 #   cargo xtask ci --asterisk <major>
 #
@@ -71,10 +69,9 @@ jobs:
           command -v rustup || { curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none && echo "$HOME/.cargo/bin" >> "$GITHUB_PATH" && export PATH="$HOME/.cargo/bin:$PATH"; }
           rustup toolchain install 1.99 --profile minimal && rustup default 1.99
 
-      # The test image (Asterisk built and installed, its headers, and
-      # Rust) as a `docker save` archive, keyed by the architecture and
-      # what its tag covers (tools/src/container.rs, image_tag), so that
-      # the xtask finds the image and does not build it again.
+      # Keyed by what the image's tag covers (image_tag in
+      # tools/src/container.rs), so that the xtask finds the image and
+      # does not build it again.
       - name: Restore the test image
         id: image
         uses: actions/cache/restore@v6
@@ -86,8 +83,6 @@ jobs:
         if: steps.image.outputs.cache-hit == 'true'
         run: docker load -i test-image.tar && rm test-image.tar
 
-      # cargo build, both clippy runs, cargo test, every suite, and the
-      # module for publishing (release build, glibc baseline, smoke test).
       - name: Build, lint, and test dpma-rs
         run: cargo xtask ci --asterisk ${{ matrix.asterisk }}
 

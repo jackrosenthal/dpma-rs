@@ -61,8 +61,7 @@ impl Ari {
     /// [`Ari::new`] with another timeout for each request (connecting,
     /// sending, and reading the response).
     ///
-    /// Every request uses a new connection, as Python's `urllib` did in
-    /// the tests this client replaces.
+    /// Every request uses a new connection.
     pub fn with_timeout(
         host: &str,
         port: u16,

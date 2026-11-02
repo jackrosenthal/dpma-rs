@@ -504,9 +504,8 @@ fn show_line(a: &CliArgs) -> CliResult {
             "Secondary Media Encryption: {}",
             l.secondary_media_encryption
         );
-        // Deviation (plan section 8, item 15): the official DPMA prints the
-        // secondary server port here (the field at +0x120, not authname's
-        // at +0x128).
+        // Deviation: the official DPMA prints the secondary server port here
+        // (the field at +0x120, not authname's at +0x128).
         bwriteln!(o, "AuthName: {}", l.authname);
         bwriteln!(o, "UserID: {}", l.userid);
         bwriteln!(o, "Register: {}", if l.no_register { "NO" } else { "YES" });
@@ -696,16 +695,14 @@ fn show_application(a: &CliArgs) -> CliResult {
                 }
             );
             bwriteln!(o, "Login Extension: {}", q.login_exten);
-            // Deviation (plan section 8, item 15): the official DPMA shows
-            // the login extension here (it prints the login field when the
-            // logout field's pointer is set).
+            // Deviation: the official DPMA shows the login extension here (it
+            // prints the login field when the logout field's pointer is set).
             bwriteln!(o, "Logout Extension: {}", q.logout_exten);
         }
         Some(AppKind::Status(s)) => {
             o.push_str("Status Application\n-------------------\n");
             bwriteln!(o, "Status: {}", dpma_ast::presence::state2str(s.status));
-            // Deviation (plan section 8, item 15): the official DPMA shows
-            // send486=yes as "No".
+            // Deviation: the official DPMA shows send486=yes as "No".
             bwriteln!(
                 o,
                 "Send486: {}",

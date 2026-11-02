@@ -1,10 +1,10 @@
-//! Idle sessions are pruned (`session-prune.sim`; prune_inactive in
-//! FUN_0014f280): unauthenticated ones idle more than 119 s,
-//! authenticated but inactive ones idle more than 59 s; authenticated
-//! active sessions are kept.  Pruning runs at the start of a read cycle,
-//! so each check backdates the session (`dpmadev session idle`, which
-//! also lets the next cycle prune at once), completes a transaction (an
-//! Echo) to start a new cycle, then pings.
+//! Idle sessions are pruned (prune_inactive in FUN_0014f280):
+//! unauthenticated ones idle more than 119 s, authenticated but inactive
+//! ones idle more than 59 s; authenticated active sessions are kept.
+//! Pruning runs at the start of a read cycle, so each check backdates the
+//! session (`dpmadev session idle`, which also lets the next cycle prune
+//! at once), completes a transaction (an Echo) to start a new cycle, then
+//! pings.
 
 use anyhow::Result;
 use dpma_tests::harness::Ctx;

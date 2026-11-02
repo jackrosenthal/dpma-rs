@@ -1,13 +1,10 @@
 //! Authentication incidents (phone_auth.c): failed handshakes and bad
-//! credentials are recorded per IP address, logged, expired, and exposed
-//! through `DPMAShowIncidents` / `DPMARemoveIncident`.
+//! credentials, recorded per IP address.
 //!
-//! An incident (`struct auth_problem`, 0x50 bytes) keeps the reason, MAC
-//! address, and user agent of the first failure from an address, the times
-//! of the first and the latest failure, and a count.  It expires 600 s
-//! after the latest failure.  From the fifth failure on, the log line says
-//! "ALERT" and `DPMAShowIncidents` reports it as blocking; nothing is
-//! actually blocked, and the "alert sent" flag is never set in 3.6.13.
+//! An incident expires 600 s after the latest failure.  From the fifth
+//! failure on, the log line says "ALERT" and `DPMAShowIncidents` reports
+//! it as blocking; nothing is actually blocked, and the "alert sent" flag
+//! is never set in 3.6.13.
 
 use crate::ami::AmiAction;
 use crate::session::Transaction;

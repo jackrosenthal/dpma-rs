@@ -257,8 +257,7 @@ pub struct Phone {
     /// The phone's pin as last applied (also tracks voicemail pins).
     pub applied_pin: Vec<u8>,
     /// Configuration token state (+0x984): 0 until the first token is
-    /// issued, then 1.  (The user list's unported variant also knows 2
-    /// and 3.)
+    /// issued, then 1.
     pub token_state: i32,
     /// Sum of the characters (as signed chars) of the latest token
     /// issued (+0x988).
@@ -280,9 +279,9 @@ impl Phone {
     }
 
     /// Reset everything that comes from configuration (`set_user_defaults`),
-    /// including the presence options (back to the six defaults; the
-    /// caller runs `presence::sync_applications` with the previous
-    /// application list, as the official DPMA does).
+    /// including the presence options (back to the defaults; the caller
+    /// runs `presence::sync_applications` with the previous application
+    /// list, as the official DPMA does).
     pub fn set_defaults(&mut self) {
         let fresh = Phone {
             name: std::mem::take(&mut self.name),
