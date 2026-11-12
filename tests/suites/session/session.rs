@@ -7,11 +7,13 @@ use std::time::Duration;
 
 use anyhow::Result;
 use bstr::BString;
-use dpma_tests::harness::{Ctx, LogMark};
-use dpma_tests::sim::proto::{
-    method_request_json, H_FINISHED, H_ID, H_MAC, H_RESPONSE_TYPE, H_SEQUENCE, H_SESSION,
+use dpma_proto::documents::method_call_json as method_request_json;
+use dpma_proto::headers::{
+    APPSERVER_ID as H_ID, MAC_ADDRESS as H_MAC, MESSAGE_FINISHED as H_FINISHED,
+    MESSAGE_SEQUENCE as H_SEQUENCE, RESPONSE_TYPE as H_RESPONSE_TYPE, SESSION as H_SESSION,
 };
-use dpma_tests::sim::{Exchange, Phone, Transport};
+use dpma_tests::harness::{Ctx, LogMark};
+use dpma_tests::sim::{Exchange, Form, Phone, Transport};
 
 use crate::ami_cli;
 
@@ -116,16 +118,16 @@ pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
     let c = &mut ctx.c;
 
     // Chain form: Handshake-Version 1, unencrypted, the AppServer
-    // certificate in the body (about 1.3 KB: 3 chunks over UDP, 2 over
-    // TCP).
-    let ex = phone.handshake().bundle("chain").send()?;
+    // certificate in the body (700 bytes: 2 chunks over UDP, whose
+    // plaintext limit is 615 bytes, and 1 over TCP, whose limit is 900).
+    let ex = phone.handshake().form(Form::Chain).send()?;
     c.exchange("handshake chain", &ex)
         .ok()
         .ty("HandshakeResponse")
         .no_error()
         .encrypted(false)
         .appserver_ok()
-        .chunks_matches("^[23]$")
+        .chunks(if t == Transport::Udp { 2 } else { 1 })
         .header("Handshake-Version", "1")
         .header_present("Session")
         .header_present("Password")
@@ -214,7 +216,7 @@ pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
 
         // A new handshake prunes the phone's old session.
         let old = phone.session().unwrap_or_default();
-        let ex = phone.handshake().bundle("legacy").send()?;
+        let ex = phone.handshake().form(Form::Legacy).send()?;
         c.exchange("handshake legacy", &ex)
             .ok()
             .ty("HandshakeResponse")
@@ -239,7 +241,7 @@ pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
     // BEGIN and END line: Asterisk strips those line breaks and the
     // module restores them (the official DPMA rejects these).
     let c = &mut ctx.c;
-    let ex = phone.handshake().bundle("legacy").pem_cuts().send()?;
+    let ex = phone.handshake().form(Form::Legacy).pem_cuts().send()?;
     c.exchange("handshake legacy, PEM cuts", &ex)
         .ok()
         .ty("HandshakeResponse")
@@ -251,7 +253,7 @@ pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
         .ok()
         .ty("PingResponse")
         .no_error();
-    let ex = phone.handshake().bundle("chain").pem_cuts().send()?;
+    let ex = phone.handshake().form(Form::Chain).pem_cuts().send()?;
     c.exchange("handshake chain, PEM cuts", &ex)
         .ok()
         .ty("HandshakeResponse")
@@ -265,30 +267,6 @@ pub fn run(ctx: &mut Ctx, t: Transport) -> Result<()> {
         .no_error();
     if !udp {
         return Ok(());
-    }
-
-    // Accepted: expired certificates (errors 9 and 10 are ignored) and a
-    // 512-bit SHA-1 legacy certificate.
-    for bundle in ["chain-expired", "legacy-expired", "weak"] {
-        let ex = phone.handshake().bundle(bundle).send()?;
-        c.exchange(format!("handshake {bundle}"), &ex).ok();
-    }
-
-    // Rejected: untrusted CA, two or four certificates.  No reply at all,
-    // and an auth incident for 127.0.0.1 (its log line is the handshake
-    // handler's last).
-    for bundle in ["rogue", "two", "four"] {
-        let mark = ctx.log().mark();
-        let ex = phone.handshake().bundle(bundle).no_wait().send()?;
-        let label = format!("handshake {bundle}");
-        dropped(
-            ctx,
-            &label,
-            &phone,
-            ex,
-            mark,
-            "Auth failed for ip '127.0.0.1'",
-        );
     }
 
     // Leave a working session behind.

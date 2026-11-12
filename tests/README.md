@@ -96,8 +96,7 @@ when it is done:
   use the mounts without relabeling them.
 
 A run has two steps.  First one container (`cargo xtask inside build`)
-builds the devtest module and the suites' test binaries, and makes the
-test PKI.  Then every suite runs in a fresh container of its own, up to
+builds the devtest module and the suites' test binaries.  Then every suite runs in a fresh container of its own, up to
 `-j` at a time: its prebuilt binary runs directly, not through Cargo, so
 that the suites do not wait on the target directory's lock.
 
@@ -163,7 +162,7 @@ published (without devtest), checks that it needs no newer glibc than
 the minimum that `README.md` states (`GLIBC_BASELINE` in
 `tools/src/ci.rs`), and smoke-tests it in the container's Asterisk.
 
-## The simulator, the test PKI, and AMI from the command line
+## The simulator and AMI from the command line
 
 The binaries of dpma-tests (`cargo run -p dpma-tests --bin <name> --
 --help` describes their options):
@@ -171,20 +170,16 @@ The binaries of dpma-tests (`cargo run -p dpma-tests --bin <name> --
 | Binary | What it does |
 |---|---|
 | `dpma-sim` | The phone simulator (`dpma_tests::sim`) |
-| `dpma-mkpki` | Makes the test PKI and installs its trust material into an instance (`dpma_tests::mkpki`) |
 | `dpma-ami` | Sends an AMI action and prints the response and the events that follow it, or listens for events (`dpma_tests::ami`) |
 
-Everything is written from the decompile of the official DPMA,
-independently of the module's crates (the simulator shares only the
-RustCrypto primitive crates with them), and nothing comes from the
-official DPMA's binary: all certificates and keys are generated locally
-(real phones do not accept the test AppServer certificate).  The module
-defaults to the official DPMA's embedded trust material, so a setup that
-uses the test PKI points `phone_ca_file` and `appserver_certificate` at
-it (`dpma_tests::harness::fixtures::prepare` does this for the suites).
+The simulator speaks the protocol with `dpma-proto`.  It mints its
+identity as the phones do, with the provisioning CA's key, so the module
+trusts it with no setup (real phones do not accept the test AppServer
+certificate, but the simulator does check the module's against the CAs the
+official DPMA trusts).
 
 By default the binaries talk to the test instance, so they work inside
-the test container.  `dpma-sim selftest` needs no server.
+the test container.
 
 The rustdoc of `dpma_tests::harness::fixtures::SIM_CONF` describes the
 simulator's test configuration and its phones.

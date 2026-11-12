@@ -27,11 +27,14 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
 use bstr::{BStr, BString, ByteSlice};
+use dpma_proto::documents::{
+    method_call_json as method_request_json, method_call_xml as method_request_xml,
+};
+use dpma_proto::json::dump as json_compact;
 use dpma_tests::ami::{AmiClient, Match};
 use dpma_tests::harness::{fixtures, Checker, ConfFile, Ctx, Instance, Log, LogMark, Suite};
-use dpma_tests::sim::proto::{method_request_json, method_request_xml};
 use dpma_tests::sim::{Exchange, Phone, Reply};
-use dpma_tests::util::{json_compact, secs};
+use dpma_tests::util::secs;
 use regex::Regex;
 use serde_json::{json, Value};
 

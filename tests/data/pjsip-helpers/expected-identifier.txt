@@ -265,12 +265,12 @@ line 2005:
   uas:   X-Event-Name: digium.test
   uas:   X-Extra: 1
   uas:   Content-Type: application/json
-  uas:   Content-Length:    12
+  uas:   Content-Length: 12
   uas:   body: {location:5}
   uas: INFO received:
   uas:   X-Event-Name: digium.test
   uas:   X-Extra: 1
-  uas:   Content-Length:  0
+  uas:   Content-Length: 0
   uas:   body:
 
 == MESSAGE identification and pjsip_message_context

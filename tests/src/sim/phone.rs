@@ -9,37 +9,29 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
 use bstr::{BString, ByteSlice};
-use rand::{Rng, RngCore};
+use rand::Rng;
 use rsa::RsaPrivateKey;
 use serde_json::json;
 
-use super::crypto::{b64encode, encrypt_field, rsa_decrypt_common_password, salt_hex};
-use super::framing::{frame_request_body, ChunkStyle};
-use super::pki::Pki;
-use super::proto::*;
-use super::reply::{Added, Exchange, Reassembler, Reply, ReplySlot};
+use dpma_proto::headers as h;
+use dpma_proto::message::Transactions;
+use dpma_proto::{cert, client, crypto, documents};
+
+use super::certs;
+use super::chunking::{self, ChunkStyle};
+use super::reply::{proto_message, Exchange, Reply, ReplySlot};
 use super::transport::SipEndpoint;
-use super::{default_pki_dir, Logger, Output, DEFAULT_MAC, DEFAULT_TIMEOUT, DEFAULT_UA};
+use super::{Logger, Output, DEFAULT_MAC, DEFAULT_TIMEOUT, DEFAULT_UA};
 use crate::sip::{Message, Transport};
 
 /// The certificate form of a handshake.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Form {
-    /// One certificate signed by the root CA (bundle `legacy`).
+    /// The phone's own certificate, as the legacy phones sent.
     Legacy,
-    /// Legacy, intermediate, and phone certificates (bundle `chain`).
+    /// The legacy certificate, the CA certificate, and the phone's own.
     #[default]
     Chain,
-}
-
-impl Form {
-    /// The bundle name of the form.
-    pub fn bundle(self) -> &'static str {
-        match self {
-            Form::Legacy => "legacy",
-            Form::Chain => "chain",
-        }
-    }
 }
 
 impl FromStr for Form {
@@ -83,10 +75,6 @@ pub struct Options {
     pub origination_network: Option<BString>,
     /// The handshake certificate form.
     pub form: Form,
-    /// The handshake bundle (overrides `form`).
-    pub bundle: Option<String>,
-    /// The test PKI directory.
-    pub pki: PathBuf,
     /// Whether a handshake fails when the AppServer certificate does not
     /// verify against the test AppServer CA.
     pub appserver_check: bool,
@@ -127,8 +115,6 @@ impl Default for Options {
             contact: None,
             origination_network: None,
             form: Form::Chain,
-            bundle: None,
-            pki: default_pki_dir(),
             appserver_check: true,
             chunk_size: None,
             chunk_style: ChunkStyle::Split,
@@ -182,20 +168,19 @@ pub enum SessionChoice {
     Id(String),
 }
 
-#[derive(Default)]
 struct State {
-    session: Option<String>,
-    common_password: Option<Vec<u8>>,
-    token: Option<BString>,
+    session: client::Session,
     key: Option<RsaPrivateKey>,
-    handshake_version: Option<BString>,
     next_id: u32,
 }
+
+/// The simulator's clock for dropping incomplete messages.
+static START: OnceLock<Instant> = OnceLock::new();
 
 struct Shared {
     log: Logger,
     state: Mutex<State>,
-    partial: Mutex<Reassembler>,
+    partial: Mutex<Transactions<(), Message>>,
     waiting: Mutex<HashMap<String, Arc<ReplySlot>>>,
     events: Mutex<VecDeque<Reply>>,
     events_cv: Condvar,
@@ -203,30 +188,30 @@ struct Shared {
 
 impl Shared {
     fn add_part(&self, msg: Message) {
-        let added = {
+        let complete = {
             let mut p = self.partial.lock().unwrap();
-            for (key, n) in p.expire(Duration::from_secs(40)) {
-                self.log.log(
-                    0,
-                    &format!("--- discarded incomplete message {key} ({n} chunks)"),
-                );
+            let clock = START.get_or_init(Instant::now).elapsed().as_secs() as i64;
+            let dropped = p.prune(clock, 40).len();
+            if dropped > 0 {
+                self.log
+                    .log(0, &format!("--- discarded {dropped} incomplete message(s)"));
             }
-            p.add(msg)
+            p.add(proto_message(&msg), msg, clock, ())
         };
-        match added {
-            Added::Complete(parts) => self.complete(Reply::new(parts)),
-            Added::Duplicate(seq) => self
-                .log
-                .log(1, &format!("--- duplicate chunk {seq} ignored")),
-            Added::Pending => {}
+        if let Some(((), parts)) = complete {
+            self.complete(Reply::new(parts.into_metas()));
         }
     }
 
     fn complete(&self, mut reply: Reply) {
-        if !(reply.is_response("HandshakeResponse") && !reply.encrypted) {
-            let pw = self.state.lock().unwrap().common_password.clone();
-            reply.decode(pw.as_deref());
-        }
+        let pw = self
+            .state
+            .lock()
+            .unwrap()
+            .session
+            .common_password()
+            .map(<[u8]>::to_vec);
+        reply.decode(pw.as_deref());
         let slot = reply.id.as_ref().filter(|i| !i.is_empty()).and_then(|id| {
             self.waiting
                 .lock()
@@ -261,7 +246,6 @@ pub struct Phone {
     opts: Options,
     shared: Arc<Shared>,
     sip: Option<SipEndpoint>,
-    pki: OnceLock<Pki>,
 }
 
 impl Phone {
@@ -270,21 +254,21 @@ impl Phone {
     pub fn offline(opts: Options) -> Phone {
         let log = Logger::new(opts.verbose, &opts.output);
         let state = State {
+            session: client::Session::new(opts.mac.as_bytes()),
+            key: None,
             next_id: rand::thread_rng().gen_range(1..=50000),
-            ..State::default()
         };
         Phone {
             shared: Arc::new(Shared {
                 log,
                 state: Mutex::new(state),
-                partial: Mutex::default(),
+                partial: Mutex::new(Transactions::new(dpma_proto::message::Sender::Server)),
                 waiting: Mutex::default(),
                 events: Mutex::default(),
                 events_cv: Condvar::new(),
             }),
             opts,
             sip: None,
-            pki: OnceLock::new(),
         }
     }
 
@@ -356,15 +340,6 @@ impl Phone {
         &self.shared.log
     }
 
-    /// The test PKI (opened on first use).
-    pub fn pki(&self) -> Result<&Pki> {
-        if let Some(p) = self.pki.get() {
-            return Ok(p);
-        }
-        let p = Pki::open(&self.opts.pki)?;
-        Ok(self.pki.get_or_init(|| p))
-    }
-
     /// The MAC address.
     pub fn mac(&self) -> &str {
         &self.opts.mac
@@ -433,46 +408,56 @@ impl Phone {
 
     /// The session id.
     pub fn session(&self) -> Option<String> {
-        self.shared.state.lock().unwrap().session.clone()
+        let st = self.shared.state.lock().unwrap();
+        st.session
+            .session_id()
+            .map(|s| String::from_utf8_lossy(s).into_owned())
     }
 
     /// Replaces the session id.
     pub fn set_session(&self, s: Option<String>) {
-        self.shared.state.lock().unwrap().session = s;
+        let mut st = self.shared.state.lock().unwrap();
+        let password = st.session.common_password().unwrap_or_default().to_vec();
+        st.session
+            .resume(s.map(String::into_bytes).unwrap_or_default(), password);
     }
 
     /// The common password of the session.
     pub fn common_password(&self) -> Option<Vec<u8>> {
-        self.shared.state.lock().unwrap().common_password.clone()
+        let st = self.shared.state.lock().unwrap();
+        st.session.common_password().map(<[u8]>::to_vec)
     }
 
     /// Replaces the common password.
     pub fn set_common_password(&self, pw: Option<Vec<u8>>) {
-        self.shared.state.lock().unwrap().common_password = pw;
+        let mut st = self.shared.state.lock().unwrap();
+        let session_id = st.session.session_id().unwrap_or_default().to_vec();
+        st.session.resume(session_id, pw.unwrap_or_default());
     }
 
     /// The configuration token of the last TokenResponse.
     pub fn token(&self) -> Option<BString> {
-        self.shared.state.lock().unwrap().token.clone()
+        let st = self.shared.state.lock().unwrap();
+        st.session.config_token().map(BString::from)
     }
 
     /// Replaces the configuration token.
     pub fn set_token(&self, t: Option<BString>) {
-        self.shared.state.lock().unwrap().token = t;
+        let mut st = self.shared.state.lock().unwrap();
+        st.session
+            .set_config_token(t.map(|t| t.to_vec()).unwrap_or_default());
     }
 
     /// `Handshake-Version` of the last HandshakeResponse.
     pub fn handshake_version(&self) -> Option<BString> {
-        self.shared.state.lock().unwrap().handshake_version.clone()
+        let st = self.shared.state.lock().unwrap();
+        st.session.handshake_version().map(BString::from)
     }
 
     /// Drops the session, common password, and token (as a phone reboot
     /// would).
     pub fn forget(&self) {
-        let mut s = self.shared.state.lock().unwrap();
-        s.session = None;
-        s.common_password = None;
-        s.token = None;
+        self.shared.state.lock().unwrap().session.forget();
     }
 
     /// A new transaction id (a counter from a random start, so that a
@@ -491,12 +476,11 @@ impl Phone {
 
     /// Writes the session to a JSON file.
     pub fn save_state(&self, path: &Path) -> Result<()> {
-        let s = self.shared.state.lock().unwrap();
         let state = json!({
             "mac": self.opts.mac,
-            "session": s.session,
-            "token": s.token.as_ref().map(|t| t.to_str_lossy().into_owned()),
-            "common_password": s.common_password.as_ref().map(|p| b64encode(p)),
+            "session": self.session(),
+            "token": self.token().map(|t| t.to_str_lossy().into_owned()),
+            "common_password": self.common_password().map(|p| crypto::base64_encode(&p)),
             "local_port": self.local_addr().port(),
             "contact": self.contact_uri(),
         });
@@ -523,15 +507,13 @@ impl Phone {
                 return Ok(());
             }
         }
-        {
-            let mut s = self.shared.state.lock().unwrap();
-            s.session = v["session"].as_str().map(str::to_string);
-            s.token = v["token"].as_str().map(BString::from);
-            s.common_password = match v["common_password"].as_str() {
-                Some(cp) => Some(super::crypto::b64decode_strict(cp.as_bytes())?),
-                None => None,
-            };
-        }
+        self.set_session(v["session"].as_str().map(str::to_string));
+        self.set_token(v["token"].as_str().map(BString::from));
+        self.set_common_password(
+            v["common_password"]
+                .as_str()
+                .map(|cp| crypto::base64_decode(cp.as_bytes())),
+        );
         if let Some(c) = v["contact"].as_str() {
             if c != self.contact_uri() {
                 self.shared.log.log(
@@ -565,9 +547,9 @@ impl Phone {
         RequestBuilder::new(self, request_type, Kind::Plain)
     }
 
-    /// A `Handshake` with a bundle of the test PKI (default: from the
+    /// A `Handshake` with the phone's identity (default form: the
     /// options); [`RequestBuilder::send`] recovers the common password
-    /// with the bundle's key and checks the AppServer certificate.
+    /// with its key and checks the AppServer certificate.
     pub fn handshake(&self) -> RequestBuilder<'_> {
         let mut b = RequestBuilder::new(self, "Handshake", Kind::Handshake);
         b.o.encrypt = Some(false);
@@ -588,7 +570,7 @@ impl Phone {
     /// A `ConfigRequest` with the configuration token (default: the last
     /// token).
     pub fn config(&self) -> RequestBuilder<'_> {
-        RequestBuilder::new(self, "ConfigRequest", Kind::WithToken)
+        self.request("ConfigRequest")
     }
 
     /// A `TokenRequest`; [`RequestBuilder::send`] keeps the returned
@@ -605,15 +587,14 @@ impl Phone {
     /// A `FileRequest` for `file://<name>` (`default`, `null`, or a
     /// file).
     pub fn file(&self, name: impl AsRef<[u8]>) -> RequestBuilder<'_> {
-        let mut body = b"file://".to_vec();
-        body.extend_from_slice(name.as_ref());
-        self.request("FileRequest").body(body)
+        self.request("FileRequest")
+            .body(documents::file_request(name))
     }
 
     /// A `VerifyRequest` with the configuration token (default: the last
     /// token).
     pub fn verify(&self) -> RequestBuilder<'_> {
-        RequestBuilder::new(self, "VerifyRequest", Kind::WithToken)
+        self.request("VerifyRequest")
     }
 
     /// An `AsteriskRequest` with the request document `doc`; add the
@@ -685,9 +666,6 @@ impl Phone {
         let mut h: Vec<(String, BString)> = vec![("Contact".into(), format!("<{contact}>").into())];
         if !self.opts.user_agent.is_empty() {
             h.push(("User-Agent".into(), self.opts.user_agent.clone()));
-            if self.opts.digium_ua_header {
-                h.push(("X-Digium-User-Agent".into(), self.opts.user_agent.clone()));
-            }
         }
         h.push(("Content-Type".into(), "text/plain".into()));
         h
@@ -698,19 +676,21 @@ impl Phone {
             .sip
             .as_ref()
             .ok_or_else(|| anyhow!("the phone is not started"))?;
-        let need = needs_session(rtype);
-        let (session, common_password) = {
-            let s = self.shared.state.lock().unwrap();
-            (s.session.clone(), s.common_password.clone())
+        // The session's defaults, and what this request overrides.
+        let (mut request, common_password, encrypts) = {
+            let st = self.shared.state.lock().unwrap();
+            (
+                st.session.request(rtype, body.to_vec()),
+                st.session.common_password().map(<[u8]>::to_vec),
+                st.session.encrypts(rtype),
+            )
         };
-        let session = match &o.session {
-            SessionChoice::Auto => session.filter(|_| need),
-            SessionChoice::Omit => None,
-            SessionChoice::Id(s) => Some(s.clone()),
-        };
-        let encrypt = o
-            .encrypt
-            .unwrap_or(need && common_password.is_some() && !self.opts.plain);
+        match &o.session {
+            SessionChoice::Auto => {}
+            SessionChoice::Omit => request.session_id.clear(),
+            SessionChoice::Id(s) => request.session_id = s.clone().into_bytes(),
+        }
+        let encrypt = o.encrypt.unwrap_or(encrypts && !self.opts.plain);
         if encrypt && common_password.is_none() {
             bail!("cannot encrypt without a common password (no handshake)");
         }
@@ -721,67 +701,36 @@ impl Phone {
             .unwrap_or_else(|| self.new_id());
         let mut ex = Exchange::new(rtype, &txid);
         ex.encrypted = encrypt;
-        let salt: Option<[u8; 8]> = encrypt.then(|| {
-            let mut s = [0u8; 8];
-            rand::thread_rng().fill_bytes(&mut s);
-            s
-        });
         let pw = if encrypt {
             common_password.as_deref()
         } else {
             None
         };
 
-        let mac = o
-            .mac
-            .as_deref()
-            .filter(|m| !m.is_empty())
-            .unwrap_or(&self.opts.mac);
-        let mut base: Vec<(String, BString)> = vec![
-            (H_REQUEST_TYPE.into(), rtype.into()),
-            (H_ID.into(), txid.as_str().into()),
-            (H_MAC.into(), mac.into()),
-        ];
-        if let Some(s) = session.filter(|s| !s.is_empty()) {
-            base.push((H_SESSION.into(), s.into()));
+        let bytes = |v: &Option<BString>| v.as_ref().map(|v| v.to_vec());
+        request.id = txid.clone().into_bytes();
+        if let Some(mac) = o.mac.as_deref().filter(|m| !m.is_empty()) {
+            request.mac = mac.as_bytes().to_vec();
         }
-        if let Some(on) = self
-            .opts
-            .origination_network
-            .as_ref()
-            .filter(|v| !v.is_empty())
-        {
-            base.push((H_ORIGINATION.into(), on.clone()));
+        request.origination_network = bytes(&self.opts.origination_network).unwrap_or_default();
+        if self.opts.digium_ua_header {
+            request.user_agent = self.opts.user_agent.to_vec();
         }
-        if let Some(u) = o.username.as_ref().filter(|v| !v.is_empty()) {
-            base.push((H_USERNAME.into(), u.clone()));
+        request.username = bytes(&o.username).unwrap_or_default();
+        request.password = bytes(&o.password).unwrap_or_default();
+        request.config_password = bytes(&o.config_password).unwrap_or_default();
+        if let Some(token) = bytes(&o.config_token) {
+            request.config_token = token;
         }
-        for (name, value) in [
-            (H_PASSWORD, &o.password),
-            (H_CONFIG_PASSWORD, &o.config_password),
-            (H_CONFIG_TOKEN, &o.config_token),
-        ] {
-            if let Some(v) = value.as_ref().filter(|v| !v.is_empty()) {
-                let v = match (pw, &salt) {
-                    (Some(pw), Some(salt)) => encrypt_field(pw, salt, v).into(),
-                    _ => v.clone(),
-                };
-                base.push((name.into(), v));
-            }
-        }
-        if let Some(s) = &salt {
-            base.push((H_SALT.into(), salt_hex(s).into()));
-        }
-        base.extend(o.headers.iter().cloned());
-
-        let enc = match (pw, &salt) {
-            (Some(pw), Some(salt)) => Some((pw, &salt[..])),
-            _ => None,
-        };
-        let chunks = frame_request_body(
-            body,
+        request.headers = o
+            .headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.to_vec()))
+            .collect();
+        let chunks = chunking::encode(
+            &request,
+            pw,
             o.chunk_size.unwrap_or_else(|| self.chunk_size()),
-            enc,
             o.chunk_style.unwrap_or(self.opts.chunk_style),
             o.pem_cuts,
         )?;
@@ -798,16 +747,17 @@ impl Phone {
         let n = chunks.len();
         for (i, chunk) in chunks.iter().enumerate() {
             let mut hdrs = common.clone();
-            hdrs.extend(base.iter().cloned());
-            hdrs.push((H_SEQUENCE.into(), i.to_string().into()));
-            if i == n - 1 {
-                hdrs.push((H_FINISHED.into(), "1".into()));
-            }
+            hdrs.extend(
+                chunk
+                    .headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone().into())),
+            );
             let resp = sip.request(
                 "MESSAGE",
                 &self.server_uri(),
                 &hdrs,
-                chunk,
+                &chunk.body,
                 Some(&from),
                 None,
                 self.opts.timeout,
@@ -925,48 +875,32 @@ impl Phone {
         if !r.ok() {
             return;
         }
-        if r.encrypted {
-            r.problems.push("HandshakeResponse is encrypted".into());
-            return;
-        }
-        let pw_text = r.first().get(H_PASSWORD).cloned().filter(|v| !v.is_empty());
-        let session = r.session.clone().filter(|v| !v.is_empty());
-        let (Some(pw_text), Some(session)) = (pw_text, session) else {
-            let what = if r.first().get(H_PASSWORD).is_none_or(|v| v.is_empty()) {
-                "a password"
-            } else {
-                "a session"
-            };
-            r.problems.push(format!("HandshakeResponse without {what}"));
+        let Some(incoming) = r.incoming.clone() else {
             return;
         };
-        let pw = match rsa_decrypt_common_password(&key, &pw_text) {
-            Ok(pw) => pw,
-            Err(e) => {
-                r.problems.push(e.to_string());
+        {
+            let mut st = self.shared.state.lock().unwrap();
+            if let Err(e) = st.session.accept_handshake_response(&incoming, &key) {
+                r.problems.push(e.message().to_string());
                 return;
             }
-        };
-        r.fields.push((
-            "common password".into(),
-            format!("{} bytes {}", pw.len(), hex::encode(&pw)).into(),
-        ));
-        let (ok, info) = match self.pki() {
-            Ok(p) => p.check_appserver(&r.raw_body),
-            Err(e) => (false, e.to_string()),
-        };
-        r.appserver_ok = Some(ok);
-        r.appserver_info = Some(info);
-        if !ok && self.opts.appserver_check {
+            st.key = Some(key);
+            if let Some(pw) = st.session.common_password() {
+                r.fields.push((
+                    "common password".into(),
+                    format!("{} bytes {}", pw.len(), hex::encode(pw)).into(),
+                ));
+            }
+        }
+        let checked = cert::verify_appserver_certificate(&incoming.body);
+        r.appserver_ok = Some(checked.is_ok());
+        r.appserver_info = Some(match checked {
+            Ok(_) => "signed by a CA the official DPMA trusts".into(),
+            Err(e) => e.to_string(),
+        });
+        if r.appserver_ok == Some(false) && self.opts.appserver_check {
             r.problems.push("AppServer certificate check failed".into());
         }
-        let version = r.first().get(H_HANDSHAKE_VERSION).cloned();
-        let mut s = self.shared.state.lock().unwrap();
-        s.session = Some(session.to_str_lossy().into_owned());
-        s.common_password = Some(pw);
-        s.key = Some(key);
-        s.handshake_version = version;
-        s.token = None;
     }
 }
 
@@ -1022,7 +956,6 @@ enum Kind {
     Plain,
     Handshake,
     Token,
-    WithToken,
     Asterisk,
 }
 
@@ -1030,12 +963,12 @@ enum Kind {
 /// [`send`](RequestBuilder::send) it.
 ///
 /// ```no_run
-/// # use dpma_tests::sim::{Options, Phone};
+/// # use dpma_tests::sim::{Form, Options, Phone};
 /// # fn main() -> anyhow::Result<()> {
 /// # let phone = Phone::start(Options::default())?;
 /// let ex = phone.request("PingRequest").body("x".repeat(500)).chunk_size(64).send()?;
 /// let ex = phone.request("PingRequest").session("999999999").encrypt(false).send()?;
-/// let ex = phone.handshake().bundle("legacy").pem_cuts().send()?;
+/// let ex = phone.handshake().form(Form::Legacy).pem_cuts().send()?;
 /// # Ok(()) }
 /// ```
 #[must_use = "a request does nothing until it is sent"]
@@ -1044,7 +977,8 @@ pub struct RequestBuilder<'p> {
     kind: Kind,
     rtype: String,
     body: Vec<u8>,
-    bundle: Option<String>,
+    form: Option<Form>,
+    handshake: Option<(Vec<u8>, RsaPrivateKey)>,
     auth: Option<BString>,
     o: ReqOpts,
 }
@@ -1056,7 +990,8 @@ impl<'p> RequestBuilder<'p> {
             kind,
             rtype: rtype.into(),
             body: Vec::new(),
-            bundle: None,
+            form: None,
+            handshake: None,
             auth: None,
             o: ReqOpts::default(),
         }
@@ -1195,9 +1130,16 @@ impl<'p> RequestBuilder<'p> {
         self
     }
 
-    /// Handshake: the bundle of the test PKI.
-    pub fn bundle(mut self, name: impl Into<String>) -> Self {
-        self.bundle = Some(name.into());
+    /// Handshake: the certificate form (default: the option).
+    pub fn form(mut self, form: Form) -> Self {
+        self.form = Some(form);
+        self
+    }
+
+    /// Handshake: sends this certificate chain and recovers the common
+    /// password with `key`, instead of the phone's identity.
+    pub fn handshake_body(mut self, body: impl AsRef<[u8]>, key: RsaPrivateKey) -> Self {
+        self.handshake = Some((body.as_ref().to_vec(), key));
         self
     }
 
@@ -1217,19 +1159,23 @@ impl<'p> RequestBuilder<'p> {
             kind,
             rtype,
             mut body,
-            bundle,
+            form,
+            handshake,
             auth,
-            mut o,
+            o,
         } = self;
         match kind {
             Kind::Handshake => {
-                let name = bundle
-                    .or_else(|| phone.opts.bundle.clone())
-                    .unwrap_or_else(|| phone.opts.form.bundle().to_string());
-                let b = phone.pki()?.bundle(&name)?;
-                let mut ex = phone.send_request(&rtype, &b.body, &o)?;
+                let (body, key) = match handshake {
+                    Some((b, k)) => (b, k),
+                    None => {
+                        let id = certs::identity(&phone.opts.mac)?;
+                        (id.body(form.unwrap_or(phone.opts.form)), id.key())
+                    }
+                };
+                let mut ex = phone.send_request(&rtype, &body, &o)?;
                 if o.wait {
-                    phone.finish_handshake(&mut ex, b.key);
+                    phone.finish_handshake(&mut ex, key);
                 }
                 Ok(ex)
             }
@@ -1238,24 +1184,16 @@ impl<'p> RequestBuilder<'p> {
                 if let Some(t) = ex
                     .reply
                     .as_ref()
-                    .and_then(|r| r.field(H_CONFIG_TOKEN))
+                    .and_then(|r| r.field(h::CONFIG_TOKEN))
                     .filter(|t| !t.is_empty())
                 {
                     phone.set_token(Some(t.clone()));
                 }
                 Ok(ex)
             }
-            Kind::WithToken => {
-                if o.config_token.is_none() {
-                    o.config_token = phone.token();
-                }
-                phone.send_request(&rtype, &body, &o)
-            }
             Kind::Asterisk => {
                 if let Some(a) = auth {
-                    let mut b = digest_auth_line(&a);
-                    b.extend_from_slice(&body);
-                    body = b;
+                    body = documents::with_digest_auth(&a, &body);
                 }
                 phone.send_request(&rtype, &body, &o)
             }

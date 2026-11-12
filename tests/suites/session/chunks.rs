@@ -66,14 +66,19 @@ pub fn run(ctx: &mut Ctx, t: Transport, event_chunks: usize) -> Result<()> {
     }
 
     // Server to phone, plaintext: the HandshakeResponse (AppServer
-    // certificate) in several chunks with sequence numbers.
+    // certificate, 700 bytes).  Over UDP it takes 2 chunks with sequence
+    // numbers; over TCP it fits in one, which has none.
     let ex = phone.handshake().send()?;
-    ctx.c
+    let r = ctx
+        .c
         .exchange("handshake response in chunks", &ex)
         .ok()
-        .ty("HandshakeResponse")
-        .chunks_matches("^[23]$")
-        .header("Message-Sequence", "0");
+        .ty("HandshakeResponse");
+    if udp {
+        r.chunks(2).header("Message-Sequence", "0");
+    } else {
+        r.chunks(1).header_absent("Message-Sequence");
+    }
     Ok(())
 }
 

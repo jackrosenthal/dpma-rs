@@ -5,7 +5,7 @@
 //! has two steps:
 //!
 //! 1. One container builds the devtest module and the suites' test
-//!    binaries, and makes the test PKI ([`build`]).
+//!    binaries ([`build`]).
 //! 2. Every suite then runs in a fresh container of its own, several at a
 //!    time ([`run_suites`]): the prebuilt binary runs directly, without
 //!    Cargo, so that the suites do not wait for each other on the target
@@ -113,8 +113,7 @@ fn test_targets() -> Result<Vec<String>> {
 
 /// `cargo xtask inside build SUITE...`, in the build container: the
 /// devtest module, the test binaries of the suites (listed in
-/// [`BINARIES`]), and the test PKI (made here once, since the suites share
-/// it).
+/// [`BINARIES`]).
 pub fn build(suites: &[String]) -> Result<u8> {
     run(crate::cargo().args(["build", "-p", "res_dpma_rs", "--features", "devtest"]))?;
     let existing = test_targets()?;
@@ -154,8 +153,6 @@ pub fn build(suites: &[String]) -> Result<u8> {
             }
         }
     }
-    let pki = dpma_tests::sim::default_pki_dir();
-    dpma_tests::mkpki::Generator::new(&pki).quiet().generate()?;
     let path = PathBuf::from(OUT).join(BINARIES);
     fs::write(&path, list).with_context(|| path.display().to_string())?;
     Ok(0)

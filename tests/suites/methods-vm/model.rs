@@ -3,8 +3,8 @@
 
 use std::cmp::Ordering;
 
+use dpma_proto::json::dump as json_compact;
 use dpma_tests::harness::fixtures;
-use dpma_tests::util::json_compact;
 use serde_json::{json, Value};
 
 use crate::spool::{Msg, Spool};

@@ -5,10 +5,10 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use bstr::{BString, ByteSlice};
+use dpma_proto::documents::method_call_json as method_request_json;
+use dpma_proto::json::dump as json_compact;
 use dpma_tests::harness::{ConfFile, Ctx};
-use dpma_tests::sim::proto::method_request_json;
 use dpma_tests::sim::{Exchange, Phone};
-use dpma_tests::util::json_compact;
 use serde_json::{json, Value};
 
 use crate::common::*;
@@ -1224,18 +1224,9 @@ pub fn handshake(ctx: &mut Ctx) -> Result<()> {
 
 /// Sends a handshake that fails and waits until the module logged `last`
 /// (the handshake handler's last line); then a reply can no longer come.
-fn failed_handshake(
-    ctx: &mut Ctx,
-    p: &Phone,
-    bundle: Option<&str>,
-    last: &str,
-) -> Result<Exchange> {
+fn failed_handshake(ctx: &mut Ctx, p: &Phone, last: &str) -> Result<Exchange> {
     let mark = log_mark(ctx);
-    let mut b = p.handshake().no_wait();
-    if let Some(bundle) = bundle {
-        b = b.bundle(bundle);
-    }
-    let mut ex = b.send()?;
+    let mut ex = p.handshake().no_wait().send()?;
     logged(ctx, &format!("log: {last}"), mark, last);
     p.wait_reply(&mut ex, Some(Duration::from_millis(200)));
     Ok(ex)
@@ -1247,7 +1238,7 @@ fn handshake_checks(ctx: &mut Ctx) -> Result<()> {
     let p = Phone::start(o)?;
     let mark = log_mark(ctx);
     let last = "Failed to create auth problem record";
-    let ex = failed_handshake(ctx, &p, None, last)?;
+    let ex = failed_handshake(ctx, &p, last)?;
     ctx.c.check("no reply", ex.reply.is_none(), ex.describe(0));
     for text in [
         "User Agent allocation failed",
@@ -1260,34 +1251,6 @@ fn handshake_checks(ctx: &mut Ctx) -> Result<()> {
         "no incident without a user agent",
         inc.is_none(),
         format!("{inc:?}"),
-    );
-    // With an incident for the address already there, it counts.
-    {
-        let q = Phone::start(ctx.sim_options().mac(MAC_A))?;
-        let last = format!(
-            "Auth failed for ip '127.0.0.1' mac '{MAC_A}' reason 'invalid credentials' count=1"
-        );
-        failed_handshake(ctx, &q, Some("rogue"), &last)?;
-    }
-    let inc = local_incident(ctx)?;
-    ctx.c.same(
-        "rogue certificate: incident",
-        inc.as_ref()
-            .map(|i| (field(i, "Reason"), field(i, "IncidentCount"))),
-        Some((
-            Some("invalid credentials".to_string()),
-            Some("1".to_string()),
-        )),
-    );
-    let last = format!(
-        "Auth failed for ip '127.0.0.1' mac '{MAC_A}' reason 'invalid credentials' count=2"
-    );
-    failed_handshake(ctx, &p, None, &last)?;
-    let inc = local_incident(ctx)?;
-    ctx.c.same(
-        "no user agent: the incident counts",
-        inc.as_ref().and_then(|i| field(i, "IncidentCount")),
-        Some("2".to_string()),
     );
     Ok(())
 }

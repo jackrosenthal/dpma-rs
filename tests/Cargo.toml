@@ -7,25 +7,23 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-aes.workspace = true
 anyhow = "1"
 base64.workspace = true
 bstr.workspace = true
-cbc.workspace = true
 clap = { version = "4", features = ["derive"] }
+dpma-proto.workspace = true
 hex.workspace = true
 libc.workspace = true
-md-5.workspace = true
 rand.workspace = true
 regex = "1"
+rsipstack = "0.8.4"
 rsa.workspace = true
 roxmltree = "0.21"
 serde_json.workspace = true
-sha1.workspace = true
-sha2.workspace = true
 socket2 = { version = "0.5", features = ["all"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "net"] }
+tokio-util = "0.7"
 ureq = { version = "3", default-features = false }
-x509-cert = { workspace = true, features = ["builder", "hazmat", "pem"] }
 
 [lib]
 path = "src/lib.rs"

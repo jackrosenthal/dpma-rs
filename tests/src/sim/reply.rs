@@ -1,20 +1,19 @@
 //! The phone side of incoming AppServer messages.
 
-use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use bstr::{BStr, BString, ByteSlice};
+use bstr::{BString, ByteSlice};
+use dpma_proto::headers as h;
+use dpma_proto::message::{Collector, Sender};
+use dpma_proto::types;
 
-use super::crypto::{b64decode_strict, decrypt, decrypt_field, set_hex};
-use super::framing::{SERVER_TCP_LIMIT, SERVER_UDP_ENCRYPTED_LIMIT, SERVER_UDP_PLAIN_LIMIT};
-use super::proto::*;
 use crate::sip::Message;
 
 /// One complete incoming AppServer message: all of its chunks, decrypted
 /// (when salted) and with the `Command: ` prefixes of events and error
-/// replies removed.
+/// replies removed (by [`dpma_proto::message`]).
 #[derive(Clone, Debug)]
 pub struct Reply {
     /// The chunks in sequence order.
@@ -47,6 +46,8 @@ pub struct Reply {
     pub fields: Vec<(String, BString)>,
     /// Decoding problems.
     pub problems: Vec<String>,
+    /// The message as `dpma-proto` decoded it, when it did.
+    pub incoming: Option<dpma_proto::message::Incoming>,
     /// For a HandshakeResponse: whether the AppServer certificate
     /// verified against the test AppServer CA.
     pub appserver_ok: Option<bool>,
@@ -65,19 +66,19 @@ impl Reply {
     pub fn new(parts: Vec<Message>) -> Reply {
         let first = &parts[0];
         let h = |n: &str| first.get(n).cloned();
-        let salt = h(H_SALT);
+        let salt = h(h::MESSAGE_SALT);
         let raw_body: BString = parts
             .iter()
             .flat_map(|p| p.body.iter().copied())
             .collect::<Vec<u8>>()
             .into();
         Reply {
-            id: h(H_ID),
-            response_type: h(H_RESPONSE_TYPE),
-            request_type: h(H_REQUEST_TYPE),
-            event: h(H_EVENT),
-            session: h(H_SESSION),
-            error: h(H_ERROR),
+            id: h(h::APPSERVER_ID),
+            response_type: h(h::RESPONSE_TYPE),
+            request_type: h(h::REQUEST_TYPE),
+            event: h(h::EVENT_NAME),
+            session: h(h::SESSION),
+            error: h(h::ERROR_ID),
             encrypted: salt.as_ref().is_some_and(|s| !s.is_empty()),
             salt,
             body: raw_body.clone(),
@@ -85,6 +86,7 @@ impl Reply {
             raw_body,
             fields: Vec::new(),
             problems: Vec::new(),
+            incoming: None,
             appserver_ok: None,
             appserver_info: None,
             parts,
@@ -132,14 +134,14 @@ impl Reply {
             if name.len() >= 2 && name[..2].eq_ignore_ascii_case("x-") {
                 None
             } else {
-                first.get(&format!("{P}{name}"))
+                first.get(&format!("{}{name}", h::PREFIX))
             }
         })
     }
 
     /// A decrypted header field; `X-Digium-AppServer-` may be omitted.
     pub fn field(&self, name: &str) -> Option<&BString> {
-        let long = format!("{P}{name}");
+        let long = format!("{}{name}", h::PREFIX);
         self.fields
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(name) || k.eq_ignore_ascii_case(&long))
@@ -155,77 +157,28 @@ impl Reply {
     /// `Command: ` prefixes.  Problems are recorded in
     /// [`Reply::problems`].
     pub fn decode(&mut self, password: Option<&[u8]>) {
-        if self.encrypted {
-            let Some(password) = password else {
-                self.problems
-                    .push("encrypted message but no common password".into());
-                return;
-            };
-            let res = (|| -> anyhow::Result<()> {
-                let salt = set_hex(self.salt.as_ref().map(|s| s.as_slice()).unwrap_or(&[]))?;
-                let mut data = Vec::new();
-                for p in &self.parts {
-                    data.extend(b64decode_strict(&p.body)?);
-                }
-                self.body = decrypt(password, &salt, &data)?.into();
-                for name in [H_PASSWORD, H_CONFIG_TOKEN] {
-                    if let Some(v) = self.first().get(name).filter(|v| !v.is_empty()).cloned() {
-                        let plain = decrypt_field(password, &salt, &v)?;
-                        self.fields.push((name.to_string(), plain.into()));
+        let mut collector = Collector::new();
+        for p in &self.parts {
+            collector.add(proto_message(p), ());
+        }
+        match collector.decode(Sender::Server, password) {
+            Ok(incoming) => {
+                self.body = incoming.body.clone().into();
+                self.payload = incoming.payload.clone().into();
+                if incoming.encrypted {
+                    for (name, value) in [
+                        (h::PASSWORD, &incoming.password),
+                        (h::CONFIG_TOKEN, &incoming.config_token),
+                    ] {
+                        if !value.is_empty() {
+                            self.fields.push((name.to_string(), value.clone().into()));
+                        }
                     }
                 }
-                Ok(())
-            })();
-            if let Err(e) = res {
-                self.problems.push(e.to_string());
-                return;
+                self.incoming = Some(incoming);
             }
+            Err(e) => self.problems.push(e.message().to_string()),
         }
-        let prefixed = self.event.is_some() || nonempty_error(&self.error);
-        self.payload = if prefixed {
-            self.strip_prefix()
-        } else {
-            self.body.clone()
-        };
-    }
-
-    fn strip_prefix(&mut self) -> BString {
-        let body = &self.body;
-        let p = COMMAND_PREFIX;
-        if !body.starts_with(p) {
-            return body.clone();
-        }
-        if self.parts.len() == 1 {
-            return body[p.len()..].into();
-        }
-        if !self.encrypted {
-            let mut out = Vec::new();
-            for part in &self.parts {
-                out.extend_from_slice(part.body.strip_prefix(p).unwrap_or(&part.body));
-            }
-            return out.into();
-        }
-        // Encrypted chunk boundaries are not visible after decryption; the
-        // server cut the plaintext at a fixed limit, so find it.
-        for limit in [
-            SERVER_UDP_ENCRYPTED_LIMIT,
-            SERVER_TCP_LIMIT,
-            SERVER_UDP_PLAIN_LIMIT,
-        ] {
-            let starts: Vec<usize> = (0..body.len()).step_by(limit).collect();
-            if starts.len() == self.parts.len() && starts.iter().all(|&s| body[s..].starts_with(p))
-            {
-                let mut out = Vec::new();
-                for &s in &starts {
-                    out.extend_from_slice(&body[s + p.len()..(s + limit).min(body.len())]);
-                }
-                return out.into();
-            }
-        }
-        let rest = body[p.len()..].into();
-        self.problems
-            .push("could not locate the chunk prefixes".into());
-        rest
     }
 
     /// A human-readable description (header values are written as
@@ -271,7 +224,8 @@ impl Reply {
         ];
         for (k, v) in &self.first().headers {
             let lk = k.to_ascii_lowercase();
-            let shown = verbose > 0 || (lk.starts_with("x-") && k != H_SEQUENCE && k != H_FINISHED);
+            let shown = verbose > 0
+                || (lk.starts_with("x-") && k != h::MESSAGE_SEQUENCE && k != h::MESSAGE_FINISHED);
             if shown && (verbose > 1 || !SKIP.contains(&lk.as_str())) {
                 out.extend_from_slice(format!("\n   {k}: ").as_bytes());
                 out.extend_from_slice(v);
@@ -381,7 +335,7 @@ impl Exchange {
             reply: None,
             sent_at: Instant::now(),
             problems: Vec::new(),
-            expected: response_for(request_type),
+            expected: types::response_type_for(request_type),
             waited: false,
             slot: None,
         }
@@ -468,91 +422,14 @@ impl std::fmt::Debug for Exchange {
     }
 }
 
-/// Key of an incomplete incoming message: transaction id, salt, and type.
-type PartialKey = (BString, BString, BString);
-
-/// The phone side of `incoming_add_msg`: chunks grouped by transaction
-/// id, salt, and type (events carry no id); a chunk without a sequence,
-/// or the chunk with `Message-Finished` once all chunks before it are in,
-/// completes the group.  Incomplete groups are dropped after 40 s.
-#[derive(Default)]
-pub struct Reassembler {
-    partial: HashMap<PartialKey, Vec<(i64, bool, Message)>>,
-}
-
-/// What [`Reassembler::add`] did with a chunk.
-pub enum Added {
-    /// The message is complete: its chunks in sequence order.
-    Complete(Vec<Message>),
-    /// More chunks are needed.
-    Pending,
-    /// A chunk with this sequence number was already there.
-    Duplicate(i64),
-}
-
-impl Reassembler {
-    /// Adds one chunk.
-    pub fn add(&mut self, msg: Message) -> Added {
-        let g = |n: &str| msg.get(n).cloned().unwrap_or_default();
-        let seq_text = g(H_SEQUENCE);
-        let finished = !g(H_FINISHED).is_empty();
-        let kind = [H_RESPONSE_TYPE, H_REQUEST_TYPE, H_EVENT, H_ERROR]
+/// A SIP MESSAGE as the protocol's [`dpma_proto::message::Message`].
+pub(crate) fn proto_message(m: &Message) -> dpma_proto::message::Message {
+    dpma_proto::message::Message {
+        headers: m
+            .headers
             .iter()
-            .map(|n| g(n))
-            .find(|v| !v.is_empty())
-            .unwrap_or_default();
-        let key = (g(H_ID), g(H_SALT), kind);
-        let seq: Option<i64> = if seq_text.is_empty() {
-            None
-        } else {
-            seq_text.to_str().ok().and_then(|s| s.trim().parse().ok())
-        };
-        let parts = self.partial.entry(key.clone()).or_default();
-        if let Some(s) = seq {
-            if parts.iter().any(|p| p.0 == s) {
-                return Added::Duplicate(s);
-            }
-        }
-        parts.push((seq.unwrap_or(0), finished || seq.is_none(), msg));
-        parts.sort_by_key(|p| p.0);
-        let Some(done) = parts.iter().find(|p| p.1) else {
-            return Added::Pending;
-        };
-        if seq.is_some() && done.0 != parts.len() as i64 - 1 {
-            return Added::Pending;
-        }
-        let parts = self.partial.remove(&key).unwrap_or_default();
-        Added::Complete(parts.into_iter().map(|p| p.2).collect())
-    }
-
-    /// Drops groups whose last chunk (in sequence order) arrived more than
-    /// `max_age` ago; returns how many chunks each dropped group had, with
-    /// its key described.
-    pub fn expire(&mut self, max_age: Duration) -> Vec<(String, usize)> {
-        let now = Instant::now();
-        let old: Vec<PartialKey> = self
-            .partial
-            .iter()
-            .filter(|(_, parts)| {
-                parts
-                    .last()
-                    .is_some_and(|p| now.duration_since(p.2.received) > max_age)
-            })
-            .map(|(k, _)| k.clone())
-            .collect();
-        old.into_iter()
-            .map(|k| {
-                let n = self.partial.remove(&k).map(|p| p.len()).unwrap_or(0);
-                (
-                    format!(
-                        "({:?}, {:?}, {:?})",
-                        BStr::new(&k.0),
-                        BStr::new(&k.1),
-                        BStr::new(&k.2)
-                    ),
-                    n,
-                )
-            })
-            .collect()
+            .map(|(k, v)| (k.clone(), v.to_vec()))
+            .collect(),
+        body: m.body.to_vec(),
     }
 }

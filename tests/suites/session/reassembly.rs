@@ -9,8 +9,11 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 use bstr::BString;
+use dpma_proto::headers::{
+    APPSERVER_ID as H_ID, MAC_ADDRESS as H_MAC, MESSAGE_FINISHED as H_FINISHED,
+    MESSAGE_SEQUENCE as H_SEQUENCE, REQUEST_TYPE as H_REQUEST_TYPE,
+};
 use dpma_tests::harness::Ctx;
-use dpma_tests::sim::proto::{H_FINISHED, H_ID, H_MAC, H_REQUEST_TYPE, H_SEQUENCE};
 use dpma_tests::sim::Phone;
 use rand::Rng;
 

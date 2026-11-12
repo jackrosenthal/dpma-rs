@@ -132,7 +132,7 @@ impl<'a> Vm<'a> {
         if self.st.phone.is_none() {
             self.start_phone()?;
         }
-        let text = dpma_tests::util::json_compact(params);
+        let text = dpma_proto::json::dump(params);
         let doc = format!(r#"{{"request": {{"method": "{VM}{method}", "parameters": {text}}}}}"#);
         let sim = self.st.phone.as_ref().expect("started");
         let ex = sim
@@ -166,7 +166,7 @@ impl<'a> Vm<'a> {
         method: &str,
         params: &Value,
     ) -> Result<(Option<i64>, String)> {
-        let text = dpma_tests::util::json_compact(params);
+        let text = dpma_proto::json::dump(params);
         let esc = text.replace('\\', "\\\\").replace('"', "\\\"");
         let out = self.cli(&format!("dpmadev method call {phone} {VM}{method} {esc}"))?;
         let re = Regex::new(r"^Return code: (-?\d+)").expect("regex");
@@ -316,7 +316,7 @@ fn setup(inst: &Instance) -> Result<()> {
     for b in ["default/1001", "default/1002", "default/1003", "other/2001"] {
         spool.remove(b);
     }
-    fixtures::install_sim_pki(inst)
+    Ok(())
 }
 
 type PartFn = fn(&mut Vm) -> Result<()>;

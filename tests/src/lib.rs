@@ -15,8 +15,7 @@
 //! Inside, each suite runs as `cargo test -p dpma-tests --test <suite> --
 //! --ignored`: it prepares the instance itself, then runs its parts; see
 //! [`harness::Suite`] for the arguments.  A plain `cargo test` runs the
-//! unit tests (including the simulator's self-test against a throwaway
-//! PKI) and skips the suites.
+//! unit tests and skips the suites.
 //!
 //! # Bytes
 //!
@@ -30,7 +29,6 @@ pub mod ari;
 pub mod diff;
 pub mod harness;
 pub mod mdns;
-pub mod mkpki;
 pub mod sim;
 pub mod sip;
 pub mod sipua;

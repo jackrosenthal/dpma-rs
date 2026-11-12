@@ -38,10 +38,12 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail, Result};
 use bstr::BString;
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use dpma_tests::harness::Checker;
-use dpma_tests::sim::proto::{method_request_json, method_request_xml, needs_session};
+use dpma_proto::documents::{
+    method_call_json as method_request_json, method_call_xml as method_request_xml,
+};
+use dpma_proto::types::needs_session;
 use dpma_tests::sim::{
-    self, selftest, ChunkStyle, Exchange, Form, Options, Phone, RequestBuilder, Transport,
+    self, ChunkStyle, Exchange, Form, Options, Phone, RequestBuilder, Transport,
 };
 
 #[derive(Parser)]
@@ -80,12 +82,6 @@ struct Cli {
     /// Handshake certificate form.
     #[arg(long, value_enum, default_value_t = FormArg::Chain)]
     form: FormArg,
-    /// Handshake bundle of the test PKI (overrides --form).
-    #[arg(long)]
-    bundle: Option<String>,
-    /// Test PKI directory.
-    #[arg(long)]
-    pki: Option<PathBuf>,
     /// Do not fail when the AppServer certificate does not verify.
     #[arg(long)]
     no_appserver_check: bool,
@@ -180,9 +176,6 @@ struct ReqOpts {
 enum Cmd {
     /// Handshake (legacy or chain certificate form).
     Handshake {
-        /// Bundle (default from --form).
-        #[arg(long = "bundle")]
-        cmd_bundle: Option<String>,
         #[command(flatten)]
         o: ReqOpts,
     },
@@ -322,18 +315,6 @@ enum Cmd {
         #[arg(long)]
         event: Option<OsString>,
     },
-    /// Self-test (no server needed).
-    Selftest {
-        /// Also print the cross-check vectors (JSON).
-        #[arg(long)]
-        vectors: bool,
-    },
-    /// Print the cross-check vectors (tests/data/vectors.json), or write them.
-    Vectors {
-        /// Write them to this file instead.
-        #[arg(long)]
-        out: Option<PathBuf>,
-    },
 }
 
 fn b(s: &OsString) -> &[u8] {
@@ -361,10 +342,6 @@ fn options(a: &Cli) -> Result<Options> {
         FormArg::Legacy => Form::Legacy,
         FormArg::Chain => Form::Chain,
     };
-    o.bundle = a.bundle.clone();
-    if let Some(p) = &a.pki {
-        o.pki = p.clone();
-    }
     o.appserver_check = !a.no_appserver_check;
     o.chunk_size = a.chunk_size;
     o.chunk_style = match a.chunk_style {
@@ -430,13 +407,7 @@ fn request(phone: &Phone, cmd: &Cmd) -> Result<(Exchange, bool, bool)> {
         phone.ensure_session()?;
     }
     let (ex, o, raw) = match cmd {
-        Cmd::Handshake { cmd_bundle, o } => {
-            let mut r = phone.handshake();
-            if let Some(bn) = cmd_bundle {
-                r = r.bundle(bn);
-            }
-            (apply(r, o)?.send()?, o, false)
-        }
+        Cmd::Handshake { o } => (apply(phone.handshake(), o)?.send()?, o, false),
         Cmd::Ping { o } => (apply(phone.ping(), o)?.send()?, o, false),
         Cmd::Echo { body, o } => (apply(phone.echo(b(body)), o)?.send()?, o, false),
         Cmd::Config { token, o } => {
@@ -609,39 +580,6 @@ fn run_listen(
 
 fn main() -> ExitCode {
     let a = Cli::parse();
-    match &a.command {
-        Cmd::Selftest { vectors } => {
-            let mut c = Checker::new();
-            let pki = a.pki.clone().unwrap_or_else(sim::default_pki_dir);
-            selftest::run(&mut c, &pki);
-            if *vectors {
-                print!("{}", selftest::vectors_text());
-            }
-            println!("{} failure(s)", c.failures().len());
-            return if c.passed() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            };
-        }
-        Cmd::Vectors { out } => {
-            let text = selftest::vectors_text();
-            return match out {
-                Some(p) => match std::fs::write(p, text) {
-                    Ok(()) => ExitCode::SUCCESS,
-                    Err(e) => {
-                        eprintln!("dpma-sim: {}: {e}", p.display());
-                        ExitCode::from(2)
-                    }
-                },
-                None => {
-                    print!("{text}");
-                    ExitCode::SUCCESS
-                }
-            };
-        }
-        _ => {}
-    }
     let opts = match options(&a) {
         Ok(o) => o,
         Err(e) => {

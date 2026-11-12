@@ -37,9 +37,9 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use bstr::ByteSlice;
+use dpma_proto::json::dump as json_compact;
 use dpma_tests::harness::{fixtures, Checker, ConfFile, Ctx, Instance, Log, Suite};
 use dpma_tests::sipua::{UaEvent, Uas, UasConfig};
-use dpma_tests::util::{json_compact, json_python};
 use regex::Regex;
 use serde_json::{json, Value};
 
@@ -213,7 +213,7 @@ impl<'a> T<'a> {
     pub fn call(&mut self, phone: &str, method: &str, params: &Value) -> Result<Got> {
         let out = self.cli(&format!(
             "dpmadev method call {phone} {method} {}",
-            fixtures::cli_quote(&json_python(params))
+            fixtures::cli_quote(&dpma_proto::json::dump(params))
         ));
         let re = Regex::new(r"(?s)^Return code: (-?\d+)\n(?:\(empty response body.*\n)?(.*)")
             .expect("regex");

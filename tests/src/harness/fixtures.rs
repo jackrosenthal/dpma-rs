@@ -11,7 +11,6 @@ use serde_json::json;
 use super::conf::ConfFile;
 use super::instance::Instance;
 use crate::ami::{AmiClient, AmiMessage};
-use crate::mkpki;
 use crate::sim::{self, Phone};
 
 /// The global pin of the scratch configuration and the test setups.
@@ -63,31 +62,9 @@ pub fn prepare(inst: &Instance, setup: impl FnOnce(&Instance) -> Result<()>) -> 
     inst.stop()?;
     inst.reset_conf()?;
     setup(inst)?;
-    use_test_trust(inst)?;
     inst.install("debug")?;
     inst.start()?;
     check_devtest(inst)
-}
-
-/// The module defaults to the certificates embedded in the official DPMA,
-/// so a suite that installed the test PKI must point `phone_ca_file` and
-/// `appserver_certificate` at it, in `[general]` itself: the module, like
-/// the official DPMA, reads the first `[general]` only.
-fn use_test_trust(inst: &Instance) -> Result<()> {
-    let dpma = inst.etc.join("dpma");
-    let ca = dpma.join("phone_ca.pem");
-    if !ca.exists() {
-        return Ok(());
-    }
-    let appserver = dpma.join("appserver.pem");
-    let (ca, appserver) = (ca.to_string_lossy(), appserver.to_string_lossy());
-    ConfFile::new(&inst.conf("res_digium_phone.conf")).set_options(
-        "general",
-        &[
-            ("phone_ca_file", Some(ca.as_bytes())),
-            ("appserver_certificate", Some(appserver.as_bytes())),
-        ],
-    )
 }
 
 /// Fails unless the running module has the `dpmadev` CLI commands.
@@ -103,19 +80,10 @@ pub fn check_devtest(inst: &Instance) -> Result<()> {
     Ok(())
 }
 
-/// The simulator setup: the test PKI and the test configuration.
+/// The simulator setup: the test configuration.  (The module trusts the
+/// phones' provisioning CA by default, and so the simulator's identities.)
 pub fn sim_setup(inst: &Instance) -> Result<()> {
-    install_sim_pki(inst)?;
-    install_sim_conf(inst)?;
-    use_test_trust(inst)
-}
-
-/// Makes the test PKI if needed (in [`sim::default_pki_dir`]) and installs
-/// its trust material into the instance.
-pub fn install_sim_pki(inst: &Instance) -> Result<()> {
-    let dir = sim::default_pki_dir();
-    mkpki::Generator::new(&dir).quiet().generate()?;
-    mkpki::install(&dir, &inst.etc, true)
+    install_sim_conf(inst)
 }
 
 /// Installs the simulator's test configuration into the instance.  Reload
@@ -236,7 +204,7 @@ pub fn request_error_text(code: u32) -> &'static str {
 pub fn json_error(method: &str, code: u32, detail: &str) -> String {
     let doc = json!({"response": {"method": method, "errors": {"error": {
         "code": code, "message": format!("{}: {detail} ", request_error_text(code))}}}});
-    crate::util::json_compact(&doc)
+    dpma_proto::json::dump(&doc)
 }
 
 /// An XML request error document.
