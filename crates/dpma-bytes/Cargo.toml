@@ -1,6 +1,7 @@
 [package]
 name = "dpma-bytes"
-description = "C strings as bytes: byte formatting and C-locale string functions for the dpma-rs modules"
+description = "Internal helpers for the dpma-rs crates; not intended for use on its own"
+readme = "README.md"
 version.workspace = true
 license.workspace = true
 repository.workspace = true

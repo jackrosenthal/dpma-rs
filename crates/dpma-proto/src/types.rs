@@ -40,6 +40,15 @@ pub fn response_type_for(request: impl AsRef<[u8]>) -> Option<&'static str> {
         .map(|(_, resp, _)| *resp)
 }
 
+/// Whether a request of this type needs a session: all but a Handshake, an
+/// Echo, and a Preconfig do.
+pub fn needs_session(request_type: impl AsRef<[u8]>) -> bool {
+    let request_type = request_type.as_ref();
+    ![HANDSHAKE, ECHO, PRECONFIG]
+        .iter()
+        .any(|t| dpma_bytes::eq_ic(t.as_bytes(), request_type))
+}
+
 /// Event names sent in `X-Event-Name` / `X-Event-Type`.
 pub mod events {
     pub const CONFIG_UPDATE: &str = "digium.config.update";

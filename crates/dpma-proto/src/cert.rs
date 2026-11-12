@@ -9,9 +9,9 @@
 //! This module does not reproduce OpenSSL: it decodes certificates with the
 //! `x509-cert` crate (strict DER) and makes the checks that the
 //! certificates the module meets need.  Those are the built-in
-//! certificates, the chains genuine phones send, and the test PKI.
-//! `phone_ca_file` and `appserver_certificate` are meant for development
-//! and testing only.
+//! certificates, the chains genuine phones send (which [`phone`] mints
+//! too), and the unit tests' throwaway PKI.  `phone_ca_file` and
+//! `appserver_certificate` are meant for development and testing only.
 //!
 //! # Reading
 //!
@@ -82,10 +82,19 @@
 //!
 //! The public key of the verified certificate is returned for the session
 //! (the common password is encrypted to it).
+//!
+//! The [`phone`] module is the phone's side: the provisioning CA key and
+//! the identities minted from it.
+
+pub mod phone;
 
 mod verify;
 
-use crate::{LogLevel, ProtoError, Result};
+pub use phone::{
+    phone_ca_certificate_pem, phone_ca_key, phone_ca_subject, PhoneIdentity, DEFAULT_PHONE_CA_KEY,
+};
+
+use crate::{ProtoError, Result};
 use base64::Engine;
 use dpma_bytes::{bformat, ByteSlice};
 use x509_cert::der::{Decode, Header, Reader, SliceReader, Tag, Tagged};
@@ -230,27 +239,62 @@ fn decode_key(spki: &x509_cert::spki::SubjectPublicKeyInfoOwned) -> Option<Publi
 }
 
 /// The certificates in the `CERTIFICATE` PEM blocks of `text`, in order;
-/// None for a block that cannot be read (a BEGIN line without an END line
-/// takes the rest of the text).
+/// None for a block that cannot be read.  A BEGIN line without an END
+/// line ends the text.
 fn pem_certificates(text: &[u8]) -> impl Iterator<Item = Option<Certificate>> + '_ {
+    pem_certificate_blocks(text)
+        .into_iter()
+        .map(|b| {
+            base64::engine::general_purpose::STANDARD
+                .decode(base64_text(b))
+                .ok()
+        })
+        .map(|d| d.and_then(|d| Certificate::from_der(&d)))
+}
+
+/// The `CERTIFICATE` PEM blocks of `text` (markers included), in order.
+pub(crate) fn pem_certificate_blocks(text: &[u8]) -> Vec<&[u8]> {
     const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
     const END: &str = "-----END CERTIFICATE-----";
+    let mut out = Vec::new();
     let mut rest = text;
-    std::iter::from_fn(move || {
-        let body = &rest[rest.find(BEGIN)? + BEGIN.len()..];
+    while let Some(at) = rest.find(BEGIN) {
+        let body = &rest[at + BEGIN.len()..];
         let Some(len) = body.find(END) else {
-            rest = b"";
-            return Some(None);
+            break;
         };
+        out.push(&rest[at..at + BEGIN.len() + len + END.len()]);
         rest = &body[len + END.len()..];
-        let b64: Vec<u8> = body[..len]
-            .iter()
-            .copied()
-            .filter(|c| !c.is_ascii_whitespace())
-            .collect();
-        let der = base64::engine::general_purpose::STANDARD.decode(b64).ok();
-        Some(der.and_then(|d| Certificate::from_der(&d)))
-    })
+    }
+    out
+}
+
+/// The base64 body of a `CERTIFICATE` PEM block (markers included), white
+/// space removed.
+pub(crate) fn base64_text(block: &[u8]) -> Vec<u8> {
+    const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
+    const END: &str = "-----END CERTIFICATE-----";
+    let body = &block[BEGIN.len()..];
+    let len = body.windows(END.len()).position(|w| w == END.as_bytes());
+    body[..len.unwrap_or(body.len())]
+        .iter()
+        .copied()
+        .filter(|c| !c.is_ascii_whitespace())
+        .collect()
+}
+
+/// Verifies the AppServer certificate that a HandshakeResponse carries in its
+/// body, as a phone does: against the CA certificates built into the
+/// official DPMA.
+pub fn verify_appserver_certificate(
+    pem: impl AsRef<[u8]>,
+) -> std::result::Result<VerifiedClient, CertError> {
+    let info = ClientInfo {
+        contact: b"appserver",
+        mac: None,
+        user_agent: b"",
+    };
+    verify_client_chain(&CaStore::builtin(), pem, &info)
 }
 
 /// The trusted CA certificates phones are verified against (the official
@@ -259,7 +303,21 @@ pub struct CaStore {
     certs: Vec<Certificate>,
 }
 
+/// The CA certificates that phone certificates are verified against unless
+/// told otherwise: the ones built into the official DPMA (a PEM bundle).
+pub const DEFAULT_PHONE_CA: &[u8] = include_bytes!("trust/phone_ca.pem");
+
+/// The AppServer certificate that the official DPMA sends in every
+/// HandshakeResponse (PEM).
+pub const DEFAULT_APPSERVER_CERTIFICATE: &[u8] = include_bytes!("trust/appserver.pem");
+
 impl CaStore {
+    /// The store of [`DEFAULT_PHONE_CA`].  Use [`CaStore::from_pem`] to
+    /// verify against other CAs instead.
+    pub fn builtin() -> CaStore {
+        CaStore::from_pem(DEFAULT_PHONE_CA).expect("the embedded phone CA bundle is valid")
+    }
+
     /// Build a store from a PEM bundle: every certificate in it.  A block
     /// that cannot be read is an error, as is a bundle without
     /// certificates.
@@ -370,9 +428,7 @@ impl std::fmt::Display for CertError {
     }
 }
 
-fn log(level: LogLevel, line: u32, msg: &[u8]) {
-    crate::log(level, "phone_message.c", line, "session_verify_cert", msg);
-}
+impl std::error::Error for CertError {}
 
 /// Restore the line breaks at PEM boundaries that a Handshake body lost
 /// on the way (a deviation from the official DPMA).
@@ -456,8 +512,8 @@ pub fn verify_client_chain(
             client.user_agent
         )
     };
-    let fail = |line: u32, e: CertError| {
-        log(LogLevel::Dpma, line, &e.log_message(client.contact));
+    let fail = |e: CertError| {
+        crate::warn(&e.log_message(client.contact));
         Err(e)
     };
     // The official DPMA copies the body with strlen.
@@ -472,29 +528,25 @@ pub fn verify_client_chain(
         chain.get_or_insert_with(Vec::new).push(x);
         if serial == 0 {
             let Some(s) = s else {
-                return fail(0x22b, CertError::NoSerial);
+                return fail(CertError::NoSerial);
             };
             serial = s;
-            log(
-                LogLevel::Debug(1),
-                0x22f,
-                &bformat!("{} Intermediate cert serial number: {}\n", who(), s),
-            );
+            crate::debug(&bformat!(
+                "{} Intermediate cert serial number: {}\n",
+                who(),
+                s
+            ));
         }
     }
     let (cert, untrusted, legacy) = match &chain {
         None => {
-            log(
-                LogLevel::Debug(1),
-                0x235,
-                &bformat!("{} Using legacy certificate\n", who()),
-            );
+            crate::debug(&bformat!("{} Using legacy certificate\n", who()));
             match &first {
                 Some(c) => (c, &[][..], true),
-                None => return fail(0x23a, CertError::Unreadable),
+                None => return fail(CertError::Unreadable),
             }
         }
-        Some(c) if c.len() != 2 => return fail(0x23f, CertError::WrongChainLength(c.len())),
+        Some(c) if c.len() != 2 => return fail(CertError::WrongChainLength(c.len())),
         Some(c) => (&c[1], c.as_slice(), false),
     };
     match verify::verify(&store.certs, cert, untrusted) {
@@ -504,11 +556,9 @@ pub fn verify_client_chain(
             intermediate_serial: serial,
             legacy,
         }),
-        Err(e) => fail(0x258, CertError::Verify(e)),
+        Err(e) => fail(CertError::Verify(e)),
     }
 }
 
-#[cfg(test)]
-mod testpki;
 #[cfg(test)]
 mod tests;

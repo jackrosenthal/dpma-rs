@@ -3,6 +3,8 @@
 //! Incoming SIP MESSAGE headers arrive as `ast_msg` variables; outgoing
 //! variables become SIP headers (see `ast_msg_set_var`).
 
+/// The start of the names of the protocol's own headers.
+pub const PREFIX: &str = "X-Digium-AppServer-";
 pub const APPSERVER_ID: &str = "X-Digium-AppServer-ID";
 pub const SESSION: &str = "X-Digium-AppServer-Session";
 pub const REQUEST_TYPE: &str = "X-Digium-AppServer-RequestType";

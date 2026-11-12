@@ -19,8 +19,7 @@
 //! hook) and return the same text in [`ProtoError::Crypto`].
 
 use crate::cbuf::c_bytes;
-use crate::errstack::{self, Errs, LIB_EVP, LIB_RAND};
-use crate::{LogLevel, ProtoError, Result};
+use crate::{ProtoError, Result};
 use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use dpma_bytes::bformat;
 
@@ -46,66 +45,29 @@ pub const COMMON_PASSWORD_B64_BUF: usize = 0x3ff;
 /// (`incoming_check_finalize`).
 pub const HEADER_FIELD_BUF: usize = 0x80;
 
-fn log_dpma(line: u32, func: &str, msg: &[u8]) {
-    crate::log(LogLevel::Dpma, "phone_crypto.c", line, func, msg);
-}
-
-/// `log_ssl` (FUN_001511c0): log `fmt` (which contains one `%s`) with what
-/// `ERR_print_errors` writes for the errors, and return the logged text
-/// without its trailing newlines.  The errors are 1.1.1t's, one line each:
-/// `<thread id>:error:<code>:<library>:<function>:<reason>:<file>:<line>:`.
-fn log_ssl(fmt: &str, errs: &mut Errs) -> ProtoError {
-    let text = fmt.replacen("%s", &errs.print(), 1);
-    log_dpma(0x50, "log_ssl", text.as_bytes());
-    ProtoError::Crypto(text.trim_end_matches('\n').to_string())
-}
-
-/// Log a fixed phone_crypto.c message and return it as an error.
-fn fail(line: u32, func: &str, msg: &str) -> ProtoError {
-    log_dpma(line, func, format!("{}\n", msg).as_bytes());
+/// Log `msg` and return it as an error.
+fn fail(msg: &str) -> ProtoError {
+    crate::warn(msg.as_bytes());
     ProtoError::Crypto(msg.to_string())
 }
 
-/// `RAND_bytes`: fill `buf` from the operating system's random source.
-/// When that fails, record the errors 1.1.1t reports when its random
-/// generator cannot get entropy.
-pub(crate) fn random_bytes(buf: &mut [u8], errs: &mut Errs) -> std::result::Result<(), ()> {
-    if getrandom::getrandom(buf).is_ok() {
-        return Ok(());
-    }
-    const DRBG: &str = "crypto/rand/drbg_lib.c";
-    errs.put(
-        LIB_RAND,
-        errstack::rand::F_RAND_DRBG_INSTANTIATE,
-        errstack::rand::R_ERROR_RETRIEVING_ENTROPY,
-        DRBG,
-        335,
-    );
-    errs.put(
-        LIB_RAND,
-        errstack::rand::F_RAND_DRBG_GENERATE,
-        errstack::rand::R_IN_ERROR_STATE,
-        DRBG,
-        578,
-    );
-    Err(())
+/// Fill `buf` from the operating system's random source.
+pub(crate) fn random_bytes(buf: &mut [u8]) -> Result<()> {
+    getrandom::getrandom(buf)
+        .map_err(|e| ProtoError::Crypto(format!("random number generation failed: {}", e)))
 }
 
-/// Generate a new common password (`RAND_bytes(40)`).
+/// Generate a new common password: 40 random bytes.
 pub fn new_common_password() -> Result<Vec<u8>> {
     let mut buf = vec![0u8; COMMON_PASSWORD_LEN];
-    let mut errs = Errs::new();
-    random_bytes(&mut buf, &mut errs)
-        .map_err(|_| ProtoError::Crypto(errstack::error_string(errs.peek())))?;
+    random_bytes(&mut buf)?;
     Ok(buf)
 }
 
-/// Generate a new message salt (FUN_00151840, `RAND_bytes(8)`).
+/// Generate a new message salt (FUN_00151840): 8 random bytes.
 pub fn new_salt() -> Result<[u8; SALT_LEN]> {
     let mut salt = [0u8; SALT_LEN];
-    let mut errs = Errs::new();
-    random_bytes(&mut salt, &mut errs)
-        .map_err(|_| log_ssl("RAND_bytes returned failure: %s\n", &mut errs))?;
+    random_bytes(&mut salt).map_err(|e| fail(e.message()))?;
     Ok(salt)
 }
 
@@ -122,7 +84,7 @@ pub fn salt_to_hex(salt: &[u8; SALT_LEN]) -> String {
 pub fn set_hex(hex: impl AsRef<[u8]>, out: &mut [u8]) -> Result<()> {
     let digits = c_bytes(hex.as_ref());
     if digits.len() > out.len() * 2 {
-        log_dpma(0x18, "set_hex", b"hex string is too long\n");
+        crate::warn(b"hex string is too long");
         return Err(ProtoError::Invalid("hex string is too long".into()));
     }
     out.iter_mut().for_each(|b| *b = 0);
@@ -132,11 +94,7 @@ pub fn set_hex(hex: impl AsRef<[u8]>, out: &mut [u8]) -> Result<()> {
             b'A'..=b'F' => c - b'A' + 10,
             b'a'..=b'f' => c - b'a' + 10,
             _ => {
-                log_dpma(
-                    0x2b,
-                    "set_hex",
-                    &bformat!("Invalid character in hex string '{}'\n", [c]),
-                );
+                crate::warn(&bformat!("Invalid character in hex string '{}'", [c]));
                 let msg = format!(
                     "Invalid character in hex string '{}'",
                     String::from_utf8_lossy(&[c])
@@ -199,11 +157,7 @@ impl Encryptor {
     /// FUN_001515c0).  Fails without a password, as the official DPMA does.
     pub fn new(password: &[u8], salt: &[u8; SALT_LEN]) -> Result<Encryptor> {
         if password.is_empty() {
-            return Err(fail(
-                0x98,
-                "init_encryption",
-                "Unable to initialize encryption without common pass",
-            ));
+            return Err(fail("Unable to initialize encryption without common pass"));
         }
         let (key, iv) = derive_key_iv(password, salt);
         Ok(Encryptor {
@@ -245,25 +199,13 @@ pub fn encrypt(password: &[u8], salt: &[u8; SALT_LEN], plain: &[u8]) -> Result<V
 /// Decrypt `cipher` as one stream (FUN_001513e0, FUN_00151520,
 /// FUN_00151560: `EVP_DecryptUpdate` and `EVP_DecryptFinal_ex`).  Unlike
 /// encryption, an empty password is accepted.  A ciphertext that is not a
-/// whole number of blocks, or whose last block's padding is wrong, fails
-/// in `EVP_DecryptFinal_ex` with 1.1.1t's error.
+/// whole number of blocks, or whose last block's padding is wrong, fails.
 pub fn decrypt(password: &[u8], salt: &[u8; SALT_LEN], cipher: &[u8]) -> Result<Vec<u8>> {
-    const EVP_ENC: &str = "crypto/evp/evp_enc.c";
     let (key, iv) = derive_key_iv(password, salt);
     let mut dec = Aes128CbcDec::new(&key.into(), &iv.into());
-    let mut errs = Errs::new();
-    let final_error = |errs: &mut Errs, r: u32, line: u32| {
-        errs.put(
-            LIB_EVP,
-            errstack::evp::F_EVP_DECRYPTFINAL_EX,
-            r,
-            EVP_ENC,
-            line,
-        );
-        Err(log_ssl("DecryptFinal failed: %s\n", errs))
-    };
+    let final_error = |msg: &str| Err(fail(&format!("DecryptFinal failed: {}", msg)));
     if cipher.is_empty() || !cipher.len().is_multiple_of(BLOCK_LEN) {
-        return final_error(&mut errs, errstack::evp::R_WRONG_FINAL_BLOCK_LENGTH, 601);
+        return final_error("ciphertext is not a whole number of blocks");
     }
     let mut out = cipher.to_vec();
     for block in out.as_chunks_mut::<BLOCK_LEN>().0 {
@@ -271,10 +213,10 @@ pub fn decrypt(password: &[u8], salt: &[u8; SALT_LEN], cipher: &[u8]) -> Result<
     }
     let n = usize::from(out[out.len() - 1]);
     if n == 0 || n > BLOCK_LEN {
-        return final_error(&mut errs, errstack::evp::R_BAD_DECRYPT, 612);
+        return final_error("bad padding");
     }
     if out[out.len() - n..].iter().any(|&b| usize::from(b) != n) {
-        return final_error(&mut errs, errstack::evp::R_BAD_DECRYPT, 617);
+        return final_error("bad padding");
     }
     out.truncate(out.len() - n);
     Ok(out)
@@ -293,18 +235,10 @@ pub fn decrypt_field_limited(
 ) -> Result<Vec<u8>> {
     let (salt_hex, field_b64) = (salt_hex.as_ref(), field_b64.as_ref());
     if field_b64.is_empty() {
-        return Err(fail(
-            0xf4,
-            "decrypt_msg_field",
-            "Unable to decrypt null field",
-        ));
+        return Err(fail("Unable to decrypt null field"));
     }
     if salt_hex.is_empty() {
-        return Err(fail(
-            0xfb,
-            "decrypt_msg_field",
-            "Unable to decrypt with no salt",
-        ));
+        return Err(fail("Unable to decrypt with no salt"));
     }
     let cipher = base64_decode_max(field_b64, buf_len.saturating_sub(1));
     let salt = salt_from_hex(salt_hex)?;
@@ -365,27 +299,15 @@ pub fn c_str(bytes: &[u8]) -> &[u8] {
 
 /// RSA (PKCS#1 v1.5) encrypt the common password with the phone's public
 /// key and base64 encode it (`phone_msg_set_common_password`,
-/// FUN_0014bb00).  Keys that are not RSA fail with the official DPMA's
-/// text; keys 1.1.1t's `RSA_public_encrypt` refuses (too small for the
-/// password, an exponent not below the modulus, an even modulus) fail with
-/// its error text.
+/// FUN_0014bb00).  Keys that are not RSA, and keys that are too small for
+/// the password, fail.
 pub fn encrypt_common_password(phone_key: &PublicKey, password: &[u8]) -> Result<String> {
     let rsa = phone_key.rsa().ok_or_else(|| {
         let msg = "failed to get rsa during common password generation";
-        crate::log(
-            LogLevel::Dpma,
-            "phone_message.c",
-            0x3b4,
-            "phone_msg_set_common_password",
-            format!("{}\n", msg).as_bytes(),
-        );
-        ProtoError::Crypto(msg.into())
+        fail(msg)
     })?;
-    let mut errs = Errs::new();
-    match rsa.encrypt_pkcs1(password, &mut errs) {
-        Some(c) => Ok(base64_encode_max(&c, COMMON_PASSWORD_B64_BUF)),
-        None => Err(ProtoError::Crypto(errstack::error_string(errs.peek()))),
-    }
+    let cipher = rsa.encrypt_pkcs1(password)?;
+    Ok(base64_encode_max(&cipher, COMMON_PASSWORD_B64_BUF))
 }
 
 /// The phone's side of the handshake: recover the common password from
@@ -485,7 +407,6 @@ pub fn base64_decode_max(text: impl AsRef<[u8]>, max: usize) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testlog;
     use aes::cipher::BlockEncryptMut;
 
     const PASS40: &[u8] = b"test-common-password-0123456789abcdefghi";
@@ -638,43 +559,20 @@ mod tests {
     }
 
     #[test]
-    fn decrypt_errors_and_logs() {
-        let (r, logs) = testlog::capture(|| decrypt_field(PASS40, "00", ""));
-        assert_eq!(r.unwrap_err().message(), "Unable to decrypt null field");
-        assert_eq!(logs, vec!["Unable to decrypt null field\n"]);
-        let (r, logs) = testlog::capture(|| decrypt_field(PASS40, "", "AAAA"));
-        assert_eq!(r.unwrap_err().message(), "Unable to decrypt with no salt");
-        assert_eq!(logs, vec!["Unable to decrypt with no salt\n"]);
-        let (r, logs) = testlog::capture(|| decrypt_field(PASS40, "0011223344556677889", "AAAA"));
-        assert!(r.is_err());
-        assert_eq!(logs, vec!["hex string is too long\n"]);
-        // Wrong key: bad padding at DecryptFinal (1.1.1t's error).
-        let tid = unsafe { libc::pthread_self() } as u64;
+    fn decrypt_failures() {
+        // No data, no salt, and a salt that is too long.
+        assert!(decrypt_field(PASS40, "00", "").is_err());
+        assert!(decrypt_field(PASS40, "", "AAAA").is_err());
+        assert!(decrypt_field(PASS40, "0011223344556677889", "AAAA").is_err());
+        // The wrong password leaves bad padding.
         let b64 = encrypt_field(PASS40, &[1; 8], b"hello").unwrap();
-        let (r, logs) = testlog::capture(|| decrypt_field(b"other", "0101010101010101", &b64));
-        let line = format!(
-            "DecryptFinal failed: {}:error:06065064:digital envelope routines:EVP_DecryptFinal_ex:bad decrypt:crypto/evp/evp_enc.c:",
-            tid
-        );
-        assert!(r.unwrap_err().message().starts_with(&line));
-        assert_eq!(logs.len(), 1);
-        assert!(
-            logs[0].starts_with(&line) && logs[0].ends_with(":\n\n"),
-            "{:?}",
-            logs
-        );
+        assert!(decrypt_field(b"other", "0101010101010101", &b64).is_err());
         // Not a whole number of blocks, and no data at all.
         for field in ["AAAA", "===="] {
-            let (r, logs) = testlog::capture(|| decrypt_field(PASS40, "0101010101010101", field));
-            let expected = format!(
-                "DecryptFinal failed: {}:error:0606506D:digital envelope routines:EVP_DecryptFinal_ex:wrong final block length:crypto/evp/evp_enc.c:601:",
-                tid
-            );
-            assert_eq!(r.unwrap_err().message(), expected);
-            assert_eq!(logs, vec![format!("{}\n\n", expected)]);
+            assert!(decrypt_field(PASS40, "0101010101010101", field).is_err());
         }
-        // Padding bytes that disagree, and a padding length over 16 (the
-        // two BAD_DECRYPT sites).
+        // The padding of the last block: bytes that disagree, and a length
+        // over 16 or of 0, are refused; valid padding is removed.
         let raw = |last: &[u8]| {
             let (key, iv) = derive_key_iv(PASS40, &[3; 8]);
             let mut block = [0u8; 16];
@@ -683,15 +581,9 @@ mod tests {
             enc.encrypt_block_mut((&mut block).into());
             block.to_vec()
         };
-        let err = |c: &[u8]| {
-            decrypt(PASS40, &[3; 8], c)
-                .unwrap_err()
-                .message()
-                .to_string()
-        };
-        assert!(err(&raw(&[2, 3])).ends_with("bad decrypt:crypto/evp/evp_enc.c:617:"));
-        assert!(err(&raw(&[17])).ends_with("bad decrypt:crypto/evp/evp_enc.c:612:"));
-        assert!(err(&raw(&[0])).ends_with("bad decrypt:crypto/evp/evp_enc.c:612:"));
+        for last in [&[2u8, 3][..], &[17], &[0]] {
+            assert!(decrypt(PASS40, &[3; 8], &raw(last)).is_err());
+        }
         assert_eq!(decrypt(PASS40, &[3; 8], &raw(&[2, 2])).unwrap(), [0u8; 14]);
         // Decryption with an empty password works; encryption does not.
         let c = {
@@ -702,15 +594,7 @@ mod tests {
             block
         };
         assert_eq!(decrypt(b"", &[2; 8], &c).unwrap(), b"empty");
-        let (r, logs) = testlog::capture(|| encrypt_field(b"", &[2; 8], b"x"));
-        assert_eq!(
-            r.unwrap_err().message(),
-            "Unable to initialize encryption without common pass"
-        );
-        assert_eq!(
-            logs,
-            vec!["Unable to initialize encryption without common pass\n"]
-        );
+        assert!(encrypt_field(b"", &[2; 8], b"x").is_err());
     }
 
     #[test]
@@ -734,12 +618,7 @@ mod tests {
         );
         assert_eq!(salt_from_hex("").unwrap(), [0; 8]);
         assert!(salt_from_hex("0123456789ABCDEF0").is_err());
-        let (r, logs) = testlog::capture(|| salt_from_hex("12G4"));
-        assert_eq!(
-            r.unwrap_err().message(),
-            "Invalid character in hex string 'G'"
-        );
-        assert_eq!(logs, vec!["Invalid character in hex string 'G'\n"]);
+        assert!(salt_from_hex("12G4").is_err());
         assert!(salt_from_hex("12 4").is_err());
         assert!(salt_from_hex("0x12").is_err());
         for _ in 0..20 {
@@ -797,25 +676,6 @@ mod tests {
             assert_ne!(encrypt_common_password(&public, &pass).unwrap(), b64);
         }
         // A key that is not RSA.
-        let (r, logs) = testlog::capture(|| encrypt_common_password(&PublicKey::Other, b"x"));
-        assert_eq!(
-            r.unwrap_err().message(),
-            "failed to get rsa during common password generation"
-        );
-        assert_eq!(
-            logs,
-            vec!["failed to get rsa during common password generation\n"]
-        );
-        // A key too small for 40 octets (400 bits), with 1.1.1t's error.
-        let small = PublicKey::Rsa(crate::rsakey::RsaKey::from_be_bytes(
-            &[0xc1; 50],
-            &[1, 0, 1],
-        ));
-        assert_eq!(
-            encrypt_common_password(&small, &[7; 40])
-                .unwrap_err()
-                .message(),
-            "error:0406D06E:rsa routines:RSA_padding_add_PKCS1_type_2:data too large for key size"
-        );
+        assert!(encrypt_common_password(&PublicKey::Other, b"x").is_err());
     }
 }

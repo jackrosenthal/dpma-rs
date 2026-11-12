@@ -1,8 +1,8 @@
 //! Outgoing messages.
 //!
-//! Every message but a HandshakeResponse is encrypted with the session's
-//! common password and a fresh salt; the body is split into chunks (see
-//! `dpma_proto::framing`), each sent as its own `ast_msg` through the
+//! `dpma_proto::message::Outgoing::encode` builds the MESSAGEs (every one
+//! but a HandshakeResponse encrypted with the session's common password and
+//! a fresh salt); each is sent as its own `ast_msg` through the
 //! `digium_phone_module` extension, `message_delay` ms apart.  The
 //! session's lock is held for the whole send.
 
@@ -10,30 +10,10 @@ use super::{now, Outgoing, Session, Transaction};
 use crate::transport;
 use dpma_ast::msg::Msg;
 use dpma_ast::{dpma_debug, dpma_log};
-use dpma_proto::crypto::{self, Encryptor, SALT_LEN};
+use dpma_proto::message::SendContext;
 use dpma_proto::{framing, headers as h};
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
-
-/// The request id counter (0x5e8060): 1..100000, advanced once per send.
-static COUNTER: AtomicI32 = AtomicI32::new(0);
-
-fn next_counter() -> i32 {
-    let mut cur = COUNTER.load(Ordering::Relaxed);
-    loop {
-        let next = if cur + 1 > 100000 { 1 } else { cur + 1 };
-        match COUNTER.compare_exchange_weak(cur, next, Ordering::Relaxed, Ordering::Relaxed) {
-            Ok(_) => return next,
-            Err(c) => cur = c,
-        }
-    }
-}
-
-/// Encrypt a header field with the message's salt
-/// (`send_encrypt_hdr_helper`, 0x515-byte buffer).
-fn encrypt_header(plain: &[u8], password: &[u8], salt: &[u8; SALT_LEN]) -> Vec<u8> {
-    super::persist::encrypt_helper(plain, password, salt, crypto::CIPHERTEXT_B64_BUF)
-}
 
 /// Send `out` to the phone of `session` (or log that there is none), as
 /// `phone_msg_outgoing_send` does when called with a NULL session.
@@ -41,7 +21,7 @@ pub fn send_maybe(out: &Outgoing, session: Option<&Arc<Session>>) -> Result<(), 
     match session {
         Some(s) => send(out, s),
         None => {
-            if message_type(out).is_some() {
+            if out.message_type().is_some() {
                 dpma_log!("Outgoing message not sent due to missing session");
             } else {
                 dpma_log!("Outgoing message is not request, response, or event type");
@@ -52,71 +32,36 @@ pub fn send_maybe(out: &Outgoing, session: Option<&Arc<Session>>) -> Result<(), 
     }
 }
 
-/// The type the official DPMA logs: the response type, else the request
-/// type, else the event name, else "Error" for an error reply.
-fn message_type(out: &Outgoing) -> Option<&[u8]> {
-    [&out.response_type, &out.request_type, &out.event_name]
-        .into_iter()
-        .find(|t| !t.is_empty())
-        .map(|t| t.as_slice())
-        .or((out.error != 0).then_some(b"Error"))
-}
-
 /// `phone_msg_outgoing_send` (FUN_0014c6b0): send `out` to the phone of
 /// `session`.
 pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
-    let Some(type_name) = message_type(out) else {
+    let Some(type_name) = out.message_type() else {
         dpma_log!("Outgoing message is not request, response, or event type");
         dpma_log!("error sending phone msg, session id {}", session.id);
         return Err(());
     };
     let mut st = session.lock();
-    let counter = next_counter();
-
-    let handshake = out.response_type.eq_ignore_ascii_case(b"HandshakeResponse");
-    let (encrypted, handshake_version, salt) = if handshake {
-        (false, (st.intermediate_serial != 0).then_some("1"), None)
-    } else {
-        // FUN_00151840 logs its own failure; the salt is used regardless.
-        (
-            true,
-            None,
-            Some(crypto::new_salt().unwrap_or([0; SALT_LEN])),
-        )
+    let messages = out.encode(&SendContext {
+        password: &st.common_password,
+        session_id: &session.id,
+        origination_network: &st.origination_network,
+        chain_certificate: st.intermediate_serial != 0,
+    });
+    let messages = match messages {
+        Ok(m) => m,
+        Err(e) => {
+            dpma_log!("{}", e.message());
+            dpma_log!("error sending phone msg, session id {}", session.id);
+            return Err(());
+        }
     };
-    let salt_hex = salt.as_ref().map(crypto::salt_to_hex).unwrap_or_default();
-
-    let mut body = out.body.clone();
-    let error_id = if out.error != 0 {
-        body.extend_from_slice(framing::error_body(out.error).as_bytes());
-        out.error.to_string().into_bytes()
-    } else {
-        Vec::new()
-    };
-    let limit = framing::chunk_limit(encrypted, framing::is_tcp(&out.response_uri));
-    if body.is_empty() {
-        body.extend_from_slice(framing::EMPTY_BODY.as_bytes());
-    }
-
-    // Header fields encrypted with this message's salt (encrypted messages
-    // only).
-    let (enc_password, enc_token) = match salt.as_ref() {
-        Some(salt) => (
-            (!out.encrypted_password.is_empty())
-                .then(|| encrypt_header(&out.encrypted_password, &st.common_password, salt)),
-            (!out.config_token.is_empty())
-                .then(|| encrypt_header(&out.config_token, &st.common_password, salt)),
-        ),
-        None => (None, None),
-    };
-
-    if error_id.is_empty() {
+    if out.error == 0 {
         dpma_debug!(
             3,
             "Sending to {} '{}' body length {}",
             out.response_uri,
             type_name,
-            body.len()
+            out.body.len()
         );
     } else {
         dpma_debug!(
@@ -125,111 +70,21 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
             out.response_uri,
             type_name,
             out.error,
-            body.len()
+            out.body.len()
         );
     }
-
-    let prefix = if !out.event_name.is_empty() || !error_id.is_empty() {
-        framing::COMMAND_PREFIX
-    } else {
-        ""
-    };
-    let chunks = framing::split(&body, prefix, limit, handshake);
-    let mut encryptor = match salt.as_ref() {
-        Some(salt) => match Encryptor::new(&st.common_password, salt) {
-            Ok(e) => Some(e),
-            Err(_) => {
-                dpma_log!("Call to init_encryption failed");
-                None
-            }
-        },
-        None => None,
-    };
     let delay = crate::config::get().message_delay;
-
-    let n = chunks.len();
-    for (i, chunk) in chunks.iter().enumerate() {
-        let last = i + 1 == n;
+    let n = messages.len();
+    for (i, message) in messages.iter().enumerate() {
         let Some(mut m) = transport::new_outgoing(&out.response_uri) else {
             dpma_log!("error sending phone msg, session id {}", session.id);
             return Err(());
         };
         let mut ok = m.set_exten(transport::SEND_EXTEN);
-        let mut set = |name: &str, value: &[u8]| ok &= m.set_var(name, value);
-        if !out.response_type.is_empty() {
-            set(h::RESPONSE_TYPE, &out.response_type);
-        } else if !out.request_type.is_empty() {
-            set(h::REQUEST_TYPE, &out.request_type);
+        for (name, value) in &message.headers {
+            ok &= m.set_var(name, value);
         }
-        if let Some(v) = handshake_version {
-            set(h::HANDSHAKE_VERSION, v.as_bytes());
-        }
-        for (name, value) in [
-            (h::USERNAME, &out.username),
-            (h::RESPONSE_URI, &out.response_uri),
-            (h::RESPONSE_FULLCONTACT, &out.full_contact),
-            (h::TOKEN_AUTH_REQUIREMENTS, &out.token_auth_requirements),
-            (
-                h::USERLIST_AUTH_REQUIREMENTS,
-                &out.userlist_auth_requirements,
-            ),
-            (h::PASSWORD, &out.password),
-            (h::EVENT_NAME, &out.event_name),
-            (h::SESSION, &session.id),
-            (h::ORIGINATION_NETWORK, &st.origination_network),
-            (h::HTTP_STATUS, &out.http_status),
-            (h::MD5, &out.md5),
-            (h::ERROR_ID, &error_id),
-        ] {
-            if !value.is_empty() {
-                set(name, value);
-            }
-        }
-        if let Some(v) = &enc_password {
-            set(h::PASSWORD, v);
-        }
-        if let Some(v) = &enc_token {
-            set(h::CONFIG_TOKEN, v);
-        }
-
-        // The body: plaintext, or this chunk's part of the CBC stream (the
-        // last one with the padding), base64 encoded on its own.
-        if encrypted {
-            let text = match encryptor.as_mut().map(|e| e.update(&chunk.plain)) {
-                Some(Ok(mut c)) => {
-                    if !last {
-                        crypto::base64_encode_max(&c, crypto::CIPHERTEXT_B64_BUF)
-                    } else if let Some(Ok(f)) = encryptor.take().map(Encryptor::finish) {
-                        c.extend(f);
-                        crypto::base64_encode_max(&c, crypto::CIPHERTEXT_B64_BUF)
-                    } else {
-                        dpma_log!("Call to encrypt_final returned failure");
-                        String::new()
-                    }
-                }
-                _ => {
-                    dpma_log!("Call to encrypt_data returned failure");
-                    String::new()
-                }
-            };
-            ok &= m.set_body(&text);
-        } else {
-            ok &= m.set_body(&chunk.plain);
-        }
-        if !salt_hex.is_empty() {
-            ok &= m.set_var(h::MESSAGE_SALT, &salt_hex);
-        }
-        if let Some(seq) = chunk.sequence {
-            m.set_var(h::MESSAGE_SEQUENCE, seq.to_string());
-        }
-        if chunk.finished {
-            m.set_var(h::MESSAGE_FINISHED, "1");
-        }
-        if !out.id.is_empty() {
-            m.set_var(h::APPSERVER_ID, &out.id);
-        } else if !out.request_type.is_empty() {
-            m.set_var(h::APPSERVER_ID, counter.to_string());
-        }
+        ok &= m.set_body(&message.body);
         if !ok {
             drop(m);
             dpma_log!("Outgoing message failure res={}", -1);
@@ -243,7 +98,7 @@ pub fn send(out: &Outgoing, session: &Arc<Session>) -> Result<(), ()> {
                 type_name
             );
         }
-        if !last {
+        if i + 1 != n {
             std::thread::sleep(std::time::Duration::from_millis(u64::from(delay)));
         }
     }

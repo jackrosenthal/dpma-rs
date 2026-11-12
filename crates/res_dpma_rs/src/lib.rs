@@ -218,19 +218,51 @@ fn load_full() -> Result<Full, ()> {
     })
 }
 
-/// Log hook for dpma-proto: its messages carry the official DPMA's file,
-/// line, and function names.
-fn proto_log(level: dpma_proto::LogLevel, file: &str, line: u32, func: &str, msg: &[u8]) {
-    match level {
-        dpma_proto::LogLevel::Dpma => {
-            dpma_ast::log::log(dpma_ast::log::custom_level(), file, line, func, msg)
-        }
-        dpma_proto::LogLevel::Debug(n) => {
-            if dpma_ast::log::debug_atleast(n) {
-                dpma_ast::log::log(dpma_ast::log::LOG_DEBUG, file, line, func, msg);
-            }
-        }
+/// Forwards what `dpma-proto` logs through the `log` crate to Asterisk:
+/// warnings and errors at the module's custom `DPMA` level, and debug
+/// messages as `ast_debug`.
+struct AsteriskLogger;
+
+static LOGGER: AsteriskLogger = AsteriskLogger;
+
+impl log::Log for AsteriskLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        // Other crates (the mDNS library, for one) use `log` too.
+        metadata.target().starts_with("dpma_proto")
     }
+
+    fn log(&self, record: &log::Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+        let level = match record.level() {
+            log::Level::Error | log::Level::Warn | log::Level::Info => {
+                dpma_ast::log::custom_level()
+            }
+            log::Level::Debug | log::Level::Trace => {
+                if !dpma_ast::log::debug_atleast(1) {
+                    return;
+                }
+                dpma_ast::log::LOG_DEBUG
+            }
+        };
+        dpma_ast::log::log(
+            level,
+            record.file().unwrap_or("dpma-proto"),
+            record.line().unwrap_or(0),
+            record.module_path().unwrap_or("dpma_proto"),
+            record.args().to_string().as_bytes(),
+        );
+    }
+
+    fn flush(&self) {}
+}
+
+/// Start forwarding `dpma-proto`'s log messages to Asterisk.  The logger
+/// can be set only once per process, so a second load keeps the first.
+fn install_logger() {
+    let _ = log::set_logger(&LOGGER);
+    log::set_max_level(log::LevelFilter::Debug);
 }
 
 /// `load_module` of res_digium_phone (FUN_001472a0): 0, or 1 when the
@@ -240,14 +272,14 @@ fn load_main() -> i32 {
         ast_log!(LOG_ERROR, "Failed to register LOG_DPMA_NAME");
         return 1;
     }
-    dpma_proto::set_log_hook(Some(proto_log));
+    install_logger();
     let settings_cli = CliGroup::register(&settings_cli::commands());
     let full = match load_full() {
         Ok(f) => f,
         Err(()) => {
             unload_components(None);
             drop(settings_cli);
-            dpma_proto::set_log_hook(None);
+            log::set_max_level(log::LevelFilter::Off);
             dpma_ast::log::unregister_custom_level(LOG_LEVEL_NAME);
             return 1;
         }
@@ -266,7 +298,7 @@ fn unload_main() {
             unload_components(Some(full));
         }
     }
-    dpma_proto::set_log_hook(None);
+    log::set_max_level(log::LevelFilter::Off);
     dpma_ast::log::unregister_custom_level(LOG_LEVEL_NAME);
 }
 

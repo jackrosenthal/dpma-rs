@@ -3,7 +3,6 @@
 //! has no tel: handling).
 
 use super::*;
-use crate::testlog;
 
 /// The parser's results as text (every input here is ASCII).
 trait AsStr {
@@ -248,9 +247,8 @@ fn chan_sip_parse_uri() {
         (false, "", "", "host:port", "tcp")
     );
     // Tests 10 and 11: a missing scheme is an error, but the parts are
-    // still filled in (and the official DPMA logs it).
-    let (r, logs) =
-        testlog::capture(|| parse_uri(format!("host:port;transport=tcp{}", tail), S, true, true));
+    // still filled in.
+    let r = parse_uri(format!("host:port;transport=tcp{}", tail), S, true, true);
     assert_eq!(
         (
             r.error,
@@ -261,7 +259,6 @@ fn chan_sip_parse_uri() {
         ),
         (true, "", "", "host:port", "tcp")
     );
-    assert_eq!(logs, vec![format!("No supported scheme found in 'host:port;transport=tcp{}' using the scheme[s] sip:,sips:\n", tail)]);
     let r = parse_uri("host", S, true, true);
     assert_eq!(
         (
@@ -438,9 +435,8 @@ fn chan_sip_get_calleridname() {
     );
     assert_eq!(name.len(), 39);
     let input = " \"quoted-text no end <stuff>";
-    let ((name, rest), logs) = testlog::capture(|| get_calleridname(input, 40));
+    let (name, rest) = get_calleridname(input, 40);
     assert_eq!((name.as_str(), rest.as_str()), ("", input));
-    assert_eq!(logs, vec!["No ending quote for display-name was found\n"]);
     let (name, rest) = get_calleridname(" sip:blah@blah", 40);
     assert_eq!((name.as_str(), rest.as_str()), ("", " sip:blah@blah"));
     let (name, rest) = get_calleridname("blah@blah", 40);
@@ -466,29 +462,16 @@ fn chan_sip_get_in_brackets() {
         in_brackets
     );
     let missing_end_quote = format!("\"I'm a quote string <{}>", in_brackets);
-    let (r, logs) = testlog::capture(|| get_in_brackets(&missing_end_quote));
-    assert_eq!(r.as_str(), missing_end_quote);
     assert_eq!(
-        logs,
-        vec![format!(
-            "No closing quote found in '{}'\n",
-            missing_end_quote
-        )]
+        get_in_brackets(&missing_end_quote).as_str(),
+        missing_end_quote
     );
     assert_eq!(
         get_in_brackets(format!("name not in quotes <{}>", in_brackets)).as_str(),
         in_brackets
     );
     let no_end_bracket = format!("name not in quotes <{}", in_brackets);
-    let (r, logs) = testlog::capture(|| get_in_brackets(&no_end_bracket));
-    assert_ne!(r.as_str(), in_brackets);
-    assert_eq!(
-        logs,
-        vec![format!(
-            "No closing bracket found in '{}'\n",
-            no_end_bracket
-        )]
-    );
+    assert_ne!(get_in_brackets(&no_end_bracket).as_str(), in_brackets);
     assert_eq!(get_in_brackets("").as_str(), "");
     assert_eq!(get_in_brackets("sip:name@host").as_str(), "sip:name@host");
     assert_eq!(
@@ -615,12 +598,7 @@ fn to_header_host_and_port() {
         to_host_port("sips:[2001:db8::1]:5061"),
         Some(("s:[2001:db8::1]:5061".into(), None))
     );
-    let (r, logs) = testlog::capture(|| to_host_port("<tel:+15551234>"));
-    assert_eq!(r, None);
-    assert_eq!(
-        logs,
-        vec!["No supported scheme found in 'tel:+15551234' using the scheme[s] sip,sips\n"]
-    );
+    assert_eq!(to_host_port("<tel:+15551234>"), None);
     assert_eq!(to_host_port(""), None);
 }
 

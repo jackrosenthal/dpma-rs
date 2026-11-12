@@ -29,6 +29,7 @@ libc = "0.2"
 xmltree = "0.11"
 serde = "1.0"
 base64 = "0.22"
+log = "0.4"
 hex = "0.4"
 # Cryptography (RustCrypto).
 aes = "0.8"

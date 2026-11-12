@@ -379,6 +379,11 @@ impl<M> Reassembly<M> {
         &self.parts
     }
 
+    /// The parts in sequence order, by value.
+    pub fn into_parts(self) -> Vec<Part<M>> {
+        self.parts
+    }
+
     /// The first part's data; its message supplies the variables.
     pub fn first(&self) -> Option<&M> {
         self.parts.first().map(|p| &p.meta)

@@ -118,53 +118,7 @@ impl Session {
     }
 }
 
-/// An outgoing message being built (`phone_msg_outgoing_alloc`, 0xc0
-/// bytes).  One of `request_type`, `response_type`, or `event_name` (or a
-/// non-zero `error`) must be set.
-#[derive(Debug, Default, Clone)]
-pub struct Outgoing {
-    /// +0x00.
-    pub body: Vec<u8>,
-    /// Message error code (`dpma_proto::errors::msg`, +0x08); non-zero
-    /// appends `<error msg="..." />` to the body, sets Error-ID, and
-    /// prefixes every chunk with "Command: ".
-    pub error: i32,
-    pub request_type: Vec<u8>,
-    pub response_type: Vec<u8>,
-    pub response_uri: Vec<u8>,
-    pub full_contact: Vec<u8>,
-    pub userlist_auth_requirements: Vec<u8>,
-    pub token_auth_requirements: Vec<u8>,
-    /// Sent encrypted in `X-Digium-AppServer-Config-Token`.
-    pub config_token: Vec<u8>,
-    pub username: Vec<u8>,
-    /// Sent verbatim in `X-Digium-AppServer-Password` (the RSA-encrypted
-    /// common password in a HandshakeResponse).
-    pub password: Vec<u8>,
-    /// Sent encrypted in `X-Digium-AppServer-Password`.
-    pub encrypted_password: Vec<u8>,
-    /// Overrides `X-Digium-AppServer-ID` (requests get a counter).
-    pub id: Vec<u8>,
-    /// `X-Event-Name`; also selects the "Command: " body prefix.
-    pub event_name: Vec<u8>,
-    pub http_status: Vec<u8>,
-    pub md5: Vec<u8>,
-}
-
-impl Outgoing {
-    pub fn new() -> Outgoing {
-        Outgoing::default()
-    }
-
-    /// `phone_msg_body_append` (FUN_0014c650).
-    pub fn append(&mut self, data: &[u8]) {
-        self.body.extend_from_slice(data);
-    }
-
-    pub fn append_str(&mut self, s: &str) {
-        self.body.extend_from_slice(s.as_bytes());
-    }
-}
+pub use dpma_proto::message::Outgoing;
 
 /// One complete incoming request (`struct transaction`, 0x168 bytes).
 /// Immutable once built, except for `outgoing`, `configured`, and

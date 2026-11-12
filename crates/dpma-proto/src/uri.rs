@@ -9,14 +9,7 @@
 //! chan_sip's versions, this copy logs its warnings at the `DPMA` level.
 
 use crate::cbuf::{c_bytes, contains_ignore_case, eq_ignore_case, CBuf, EMPTY};
-use crate::LogLevel;
 use dpma_bytes::bformat;
-
-const FILE: &str = "reqresp_parser.c";
-
-fn log(line: u32, func: &str, msg: &[u8]) {
-    crate::log(LogLevel::Dpma, FILE, line, func, msg);
-}
 
 /// `sip_reqresp_parser_init` (FUN_00187f10): nothing to do; kept so the
 /// load order matches the official DPMA's.
@@ -180,15 +173,11 @@ fn parse_uri_full_buf(b: &mut CBuf, start: usize, scheme: Option<&str>, opts: Pa
             }
         }
         if !matched {
-            log(
-                0x60,
-                "parse_uri_full",
-                &bformat!(
-                    "No supported scheme found in '{}' using the scheme[s] {}\n",
-                    b.get(uri),
-                    scheme
-                ),
-            );
+            crate::warn(&bformat!(
+                "No supported scheme found in '{}' using the scheme[s] {}\n",
+                b.get(uri),
+                scheme
+            ));
             r.error = true;
         }
     }
@@ -386,11 +375,7 @@ fn get_calleridname_buf(b: &CBuf, input: usize, outputsize: usize) -> (Vec<u8>, 
             i += 1;
         }
         if b.at(i) != b'"' {
-            log(
-                0x146,
-                "get_calleridname",
-                b"No ending quote for display-name was found\n",
-            );
+            crate::warn(b"No ending quote for display-name was found\n");
             return (Vec::new(), input);
         }
         (out, i + 1)
@@ -464,11 +449,7 @@ fn get_in_brackets_full_buf(b: &mut CBuf, tmp: usize) -> (i32, usize, usize) {
                 // The bracket is within quotes, so skip the quoted part.
                 let s = find_closing_quote(b, q + 1);
                 if b.at(s) == 0 {
-                    log(
-                        0x195,
-                        "get_in_brackets_full",
-                        &bformat!("No closing quote found in '{}'\n", b.get(tmp)),
-                    );
+                    crate::warn(&bformat!("No closing quote found in '{}'\n", b.get(tmp)));
                     return (-1, EMPTY, EMPTY);
                 }
                 parse = s + 1;
@@ -482,11 +463,7 @@ fn get_in_brackets_full_buf(b: &mut CBuf, tmp: usize) -> (i32, usize, usize) {
         return (0, p, sb + 1);
     }
     if first_bracket.is_some() {
-        log(
-            0x1b0,
-            "get_in_brackets_full",
-            &bformat!("No closing bracket found in '{}'\n", b.get(tmp)),
-        );
+        crate::warn(&bformat!("No closing bracket found in '{}'\n", b.get(tmp)));
         return (-1, EMPTY, EMPTY);
     }
     (1, tmp, EMPTY)

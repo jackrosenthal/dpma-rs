@@ -6,19 +6,18 @@
 //! Every message read from the transport is checked (a request other than
 //! Handshake, Echo, or Preconfig needs a known session that validates;
 //! unencrypted AsteriskRequests and UserlistResponses with a body are
-//! dropped) and added to the transaction `"<ID>-<MAC>"`.  When the
-//! transaction is complete its bodies are concatenated in sequence order
-//! and, when the first part carries a salt, base64 decoded once and
-//! decrypted with the session's common password, together with the
-//! Password, ConfigPassword, and Config-Token headers.
+//! dropped) and added to the transaction `"<ID>-<MAC>"`
+//! (`dpma_proto::message::Transactions`).  When the transaction is complete
+//! `dpma_proto::message::Collector::decode` reassembles and decrypts it with
+//! the session's common password.
 
 use super::{now, or_null, user_agent_of, Session, Transaction};
 use dpma_ast::dpma_bytes::ByteSlice;
-use dpma_ast::log::LOG_ERROR;
 use dpma_ast::msg::Msg;
-use dpma_ast::{ast_log, bformat, dpma_debug, dpma_log};
-use dpma_proto::framing::{self, Reassembly};
-use dpma_proto::{crypto, headers as h, types};
+use dpma_ast::{bformat, dpma_debug, dpma_log};
+use dpma_proto::framing;
+use dpma_proto::message::{Message, Sender, Transactions, INCOMING};
+use dpma_proto::{headers as h, types};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -32,30 +31,17 @@ const TRANSACTION_AGE: i64 = 0x28;
 /// Pruning runs when more than this many seconds have passed (5).
 const PRUNE_INTERVAL: i64 = 5;
 
-/// A transaction being reassembled (`struct transaction` before
-/// `incoming_check_finalize`).
-struct Pending {
-    /// `"<ID>-<MAC or unknown>"`; empty when the message had no ID.
-    key: Vec<u8>,
-    /// The ID as received (None when absent).
-    app_server_id: Option<Vec<u8>>,
-    session: Option<Arc<Session>>,
-    /// Ordering and completion; each part's data is an index into `msgs`.
-    parts: Reassembly<usize>,
-    msgs: Vec<Option<Msg>>,
-    /// Last update (+0x158).
-    updated: i64,
-}
-
-/// The transaction container (0x5f4e48).
-static PENDING: Mutex<Vec<Pending>> = Mutex::new(Vec::new());
+/// The incomplete transactions (0x5f4e48), each with the session it is for
+/// and the SIP message of each part.
+static PENDING: Mutex<Transactions<Option<Arc<Session>>, Msg>> =
+    Mutex::new(Transactions::new(Sender::Phone));
 
 /// When sessions and transactions were last pruned (0x5ee008).
 static LAST_PRUNE: AtomicI64 = AtomicI64::new(0);
 
 /// Drop every incomplete transaction (load and unload).
 pub(crate) fn reset() {
-    let pending = std::mem::take(&mut *PENDING.lock().unwrap_or_else(|e| e.into_inner()));
+    let pending = PENDING.lock().unwrap_or_else(|e| e.into_inner()).clear();
     drop(pending);
     LAST_PRUNE.store(0, Ordering::SeqCst);
 }
@@ -71,9 +57,7 @@ pub(crate) fn force_prune() {
 #[cfg(feature = "devtest")]
 pub(crate) fn backdate_pending(secs: i64) -> usize {
     let mut g = PENDING.lock().unwrap_or_else(|e| e.into_inner());
-    for p in g.iter_mut() {
-        p.updated -= secs;
-    }
+    g.age(secs);
     force_prune();
     g.len()
 }
@@ -113,14 +97,10 @@ fn prune_inactive() {
             super::store::invalidate(&s);
         }
     }
-    let gone: Vec<Pending> = {
-        let mut g = PENDING.lock().unwrap_or_else(|e| e.into_inner());
-        let (old, keep) = std::mem::take(&mut *g)
-            .into_iter()
-            .partition(|p| t - p.updated > TRANSACTION_AGE);
-        *g = keep;
-        old
-    };
+    let gone = PENDING
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .prune(t, TRANSACTION_AGE);
     drop(gone);
 }
 
@@ -220,113 +200,50 @@ fn validate_message(m: &Msg) -> Option<&'static str> {
     None
 }
 
-/// The message's transaction (`find_transaction`, or `transaction_alloc`
-/// when there is none), with the message added (`incoming_add_msg`).
-/// Returns the completed transaction, if this message completed it.
-fn add_message(m: Msg, session: Option<Arc<Session>>) -> Option<Pending> {
-    let id = m.get_var(h::APPSERVER_ID);
-    let mac = m.get_var(h::MAC_ADDRESS);
-    let key = framing::transaction_key(id.as_deref().unwrap_or(b""), mac.as_deref());
-    let mut g = PENDING.lock().unwrap_or_else(|e| e.into_inner());
-    let found = match id.as_deref() {
-        Some(i) if !i.is_empty() => g
-            .iter()
-            .position(|p| !p.key.is_empty() && p.key.eq_ignore_ascii_case(&key)),
-        _ => None,
-    };
-    let idx = match found {
-        Some(i) => i,
-        None => {
-            g.push(Pending {
-                key: if id.is_some() { key } else { Vec::new() },
-                app_server_id: id,
-                session,
-                parts: Reassembly::default(),
-                msgs: Vec::new(),
-                updated: 0,
-            });
-            g.len() - 1
-        }
-    };
-    let p = &mut g[idx];
-    p.updated = now();
-    let sequence = m.get_var(h::MESSAGE_SEQUENCE);
-    let finished = m
-        .get_var(h::MESSAGE_FINISHED)
-        .is_some_and(|f| !f.is_empty());
-    let n = p.msgs.len();
-    p.parts
-        .add_part(sequence.as_deref(), finished, Vec::new(), n);
-    p.msgs.push(Some(m));
-    if !p.parts.is_complete() {
-        return None;
-    }
-    Some(g.remove(idx))
-}
-
 /// `incoming_check_finalize` (FUN_0014a000): build the transaction from
 /// its parts.  None when decryption fails (the transaction is dropped).
-fn finalize(mut p: Pending) -> Option<Transaction> {
-    let order: Vec<usize> = p.parts.parts().iter().map(|part| part.meta).collect();
-    let mut body: Vec<u8> = Vec::new();
-    for &i in &order {
-        if let Some(b) = p.msgs[i].as_ref().and_then(Msg::body) {
-            body.extend(b);
+fn finalize(
+    session: Option<Arc<Session>>,
+    parts: dpma_proto::message::Collector<Msg>,
+) -> Option<Transaction> {
+    let password = session.as_ref().map(|s| s.lock().common_password.clone());
+    let inc = match parts.decode(Sender::Phone, password.as_deref()) {
+        Ok(inc) => inc,
+        Err(e) => {
+            dpma_log!("{}", e.message());
+            return None;
         }
-    }
-    let first = p.msgs[order[0]].take()?;
+    };
+    let first = parts.into_metas().remove(0);
     let var = |name: &str| first.get_var(name);
+    let has_id = inc.first.header(h::APPSERVER_ID).is_some();
     let mut tx = Transaction {
-        key: p.key.clone(),
-        app_server_id: p.app_server_id.clone().unwrap_or_default(),
-        session: p.session.take(),
+        key: if has_id {
+            framing::transaction_key(&inc.id, Some(&inc.mac))
+        } else {
+            Vec::new()
+        },
+        app_server_id: inc.id,
+        session,
+        request_type: inc.request_type,
+        response_type: inc.response_type,
+        username: inc.username,
+        mac: inc.mac,
+        full_contact: inc.full_contact,
+        password: inc.password,
+        config_password: inc.config_password,
+        config_token: inc.config_token,
+        origination_network: inc.origination_network,
+        body: inc.body,
         ..Default::default()
     };
-
-    if let Some(salt) = var(h::MESSAGE_SALT).filter(|s| !s.is_empty()) {
-        let Some(session) = tx.session.clone() else {
-            ast_log!(LOG_ERROR, "Encryption salt present without session");
-            return None;
-        };
-        let password = session.lock().common_password.clone();
-        if !body.is_empty() {
-            match crypto::decrypt_body(&password, &salt, &body) {
-                Ok(plain) => body = plain,
-                Err(_) => {
-                    dpma_log!("Call to decrypt_msg_field failed body");
-                    return None;
-                }
-            }
-        }
-        for (name, what, slot) in [
-            (h::PASSWORD, "password", &mut tx.password),
-            (h::CONFIG_PASSWORD, "config pass", &mut tx.config_password),
-            (h::CONFIG_TOKEN, "config token", &mut tx.config_token),
-        ] {
-            if let Some(field) = var(name).filter(|f| !f.is_empty()) {
-                match crypto::decrypt_header_field(&password, &salt, &field) {
-                    Ok(plain) => *slot = plain,
-                    Err(_) => {
-                        dpma_log!("Call to decrypt_msg_field failed {}", what);
-                        return None;
-                    }
-                }
-            }
-        }
-    }
-
-    if let Some(uri) = var(h::RESPONSE_URI) {
+    if inc.first.header(h::RESPONSE_URI).is_some() {
         tx.response_uri = framing::response_uri(
-            &uri,
+            &inc.response_uri,
             var(h::PJSIP_TRANSPORT).as_deref(),
             framing::RESPONSE_URI_BUF,
         );
     }
-    tx.full_contact = var(h::RESPONSE_FULLCONTACT).unwrap_or_default();
-    tx.request_type = var(h::REQUEST_TYPE).unwrap_or_default();
-    tx.response_type = var(h::RESPONSE_TYPE).unwrap_or_default();
-    tx.username = var(h::USERNAME).unwrap_or_default();
-    tx.mac = var(h::MAC_ADDRESS).unwrap_or_default();
     if let Some(ua) = user_agent_of(&first) {
         tx.model = phone_model(&ua).unwrap_or_default();
         tx.user_agent = ua;
@@ -335,8 +252,6 @@ fn finalize(mut p: Pending) -> Option<Transaction> {
         tx.to_host = host;
         tx.to_port = port.unwrap_or_default();
     }
-    tx.origination_network = var(h::ORIGINATION_NETWORK).unwrap_or_default();
-    tx.body = body;
     tx.first_msg = Some(first);
     dpma_debug!(
         3,
@@ -366,11 +281,7 @@ fn build(m: Msg) -> Option<Transaction> {
     let id = m.get_var(h::APPSERVER_ID);
     let session_id = m.get_var(h::SESSION).filter(|s| !s.is_empty());
     let request = m.get_var(h::REQUEST_TYPE);
-    let needs_session = !request.as_deref().is_some_and(|r| {
-        [types::HANDSHAKE, types::ECHO, types::PRECONFIG]
-            .iter()
-            .any(|t| r.eq_ignore_ascii_case(t.as_bytes()))
-    });
+    let needs_session = request.as_deref().is_none_or(types::needs_session);
     let mut session = None;
     if needs_session {
         let Some(session_id) = session_id else {
@@ -424,8 +335,13 @@ fn build(m: Msg) -> Option<Transaction> {
         );
         return None;
     }
-    let complete = add_message(m, session)?;
-    finalize(complete)
+    let message = Message::collect(INCOMING, |n| m.get_var(n), m.body().unwrap_or_default());
+    let (session, parts) =
+        PENDING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .add(message, m, now(), session)?;
+    finalize(session, parts)
 }
 
 /// `incoming_build_transaction` (FUN_0014f280): prune idle sessions and

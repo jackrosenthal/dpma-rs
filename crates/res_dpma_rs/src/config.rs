@@ -18,8 +18,7 @@ pub mod auth {
     pub const USERLIST_GLOBALPIN: u32 = 1 << 4;
 }
 
-pub const DEFAULT_APPSERVER_CERTIFICATE: &[u8] = include_bytes!("trust/appserver.pem");
-pub const DEFAULT_PHONE_CA: &[u8] = include_bytes!("trust/phone_ca.pem");
+pub use dpma_proto::cert::{DEFAULT_APPSERVER_CERTIFICATE, DEFAULT_PHONE_CA};
 
 pub const DEFAULT_SERVICE_NAME: &str = "Digium Phone Config Server";
 pub const DEFAULT_PJSIP_MESSAGE_CONTEXT: &str = "dpma_pjsip_message_context";
