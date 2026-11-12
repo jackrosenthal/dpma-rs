@@ -20,8 +20,8 @@ rust-version = "1.99"
 [workspace.dependencies]
 dpma-ast = { path = "crates/dpma-ast" }
 dpma-sys = { path = "crates/dpma-sys" }
-dpma-bytes = { path = "crates/dpma-bytes" }
-dpma-proto = { path = "crates/dpma-proto" }
+dpma-bytes = { path = "crates/dpma-bytes", version = "0.1.1" }
+dpma-proto = { path = "crates/dpma-proto", version = "0.1.1" }
 bstr = { version = "1.13", default-features = false, features = ["std"] }
 bindgen = "0.73"
 serde_json = { version = "1.0", features = ["preserve_order"] }
