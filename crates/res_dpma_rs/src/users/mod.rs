@@ -195,6 +195,9 @@ pub struct Phone {
     /// Open DPhone: `1` or `0` when `dphone_ignore_provisioned_firmware` is
     /// set, else empty.
     pub dphone_ignore_provisioned_firmware: Vec<u8>,
+    /// Open DPhone: `1` or `0` when `dphone_metrics_enabled` is set, else
+    /// empty.
+    pub dphone_metrics_enabled: Vec<u8>,
     /// Open DPhone: each `dphone_ssh_authorized_key`, a public key line.
     pub dphone_ssh_authorized_keys: Vec<Vec<u8>>,
     pub multicastpages: Vec<Vec<u8>>,
@@ -365,6 +368,7 @@ impl Phone {
             alerts: Vec::new(),
             dphone_ssh_enabled: Vec::new(),
             dphone_ignore_provisioned_firmware: Vec::new(),
+            dphone_metrics_enabled: Vec::new(),
             dphone_ssh_authorized_keys: Vec::new(),
             multicastpages: Vec::new(),
             logos: Vec::new(),

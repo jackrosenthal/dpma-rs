@@ -982,6 +982,13 @@ fn build_config(
             p.dphone_ignore_provisioned_firmware
         );
     }
+    if !p.dphone_metrics_enabled.is_empty() {
+        ap!(
+            o,
+            "<setting id=\"dphone_metrics_enabled\" value=\"{}\" />\n",
+            p.dphone_metrics_enabled
+        );
+    }
     if !p.accept_local_calls.is_empty() {
         ap!(
             o,

@@ -119,12 +119,13 @@ fn config(ctx: &mut Ctx) -> Result<()> {
     Ok(())
 }
 
-/// Open DPhone's settings as `fullphone` sets them: the two settings, and
+/// Open DPhone's settings as `fullphone` sets them: the three settings, and
 /// the two acceptable keys of the six configured (a duplicate, a private
 /// key header, a line with options, and a short blob are left out).
 const DPHONE_SETTINGS: &str = concat!(
     "<setting id=\"dphone_ssh_enabled\" value=\"0\" />\n",
     "<setting id=\"dphone_ignore_provisioned_firmware\" value=\"1\" />\n",
+    "<setting id=\"dphone_metrics_enabled\" value=\"0\" />\n",
 );
 const DPHONE_KEYS: &str = concat!(
     "<dphone_ssh_authorized_keys>\n",

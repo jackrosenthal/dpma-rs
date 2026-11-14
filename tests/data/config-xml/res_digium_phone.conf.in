@@ -187,6 +187,7 @@ active_locale=de_DE
 login_password=9876
 dphone_ssh_enabled=no
 dphone_ignore_provisioned_firmware=yes
+dphone_metrics_enabled=no
 dphone_ssh_authorized_key=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa alice@laptop
 dphone_ssh_authorized_key=ssh-ed25519   AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  bob <desk> & co
 dphone_ssh_authorized_key=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa alice@laptop

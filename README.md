@@ -62,9 +62,16 @@ none of them.  The stock firmware ignores them.
 
 | Option | Meaning |
 |---|---|
-| `dphone_ssh_enabled=yes\|no` | Whether the phone's SSH server runs.  The phone's own default is yes. |
+| `dphone_ssh_enabled=yes\|no` | Whether the phone's SSH server runs.  The phone's own default is no. |
 | `dphone_ignore_provisioned_firmware=yes\|no` | With yes, the phone does not load the firmware this configuration offers it (for development).  The phone's own default is no. |
+| `dphone_metrics_enabled=yes\|no` | Whether the phone serves `/metrics`.  The phone's own default is yes. |
 | `dphone_ssh_authorized_key=<public key>` | An SSH public key that may log in to the phone, as a line of an `authorized_keys` file without options: `ssh-ed25519 AAAA... name`.  Repeat it for more keys.  A value that is not a public key is refused and reported like any invalid option. |
+
+The phone's web configuration is the official DPMA's `web_ui_enabled`
+phone option.  The phone's own default is yes, but as the official DPMA
+does, the module sends this setting to every phone, as off unless the
+option is set to yes; so set `web_ui_enabled=yes` for a phone that is to
+have web configuration.
 
 For example:
 

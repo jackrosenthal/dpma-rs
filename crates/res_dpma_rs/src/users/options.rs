@@ -134,6 +134,7 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], value:
         b"dphone_ignore_provisioned_firmware" => {
             return tristate_opt(&mut phone.dphone_ignore_provisioned_firmware, value)
         }
+        b"dphone_metrics_enabled" => return tristate_opt(&mut phone.dphone_metrics_enabled, value),
         b"dphone_ssh_authorized_key" => match ssh_public_key_line(value) {
             Some(line) => {
                 if !phone.dphone_ssh_authorized_keys.contains(&line) {
