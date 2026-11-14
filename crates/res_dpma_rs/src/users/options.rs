@@ -44,6 +44,50 @@ fn tristate_opt(field: &mut Vec<u8>, value: &[u8]) -> Res {
     Ok(())
 }
 
+/// A host's IPv4 address in dotted form: not the unspecified address, and
+/// not a loopback, multicast, reserved, or broadcast one.
+fn host_ipv4(value: &[u8]) -> Option<std::net::Ipv4Addr> {
+    let a: std::net::Ipv4Addr = std::str::from_utf8(value).ok()?.parse().ok()?;
+    let first = a.octets()[0];
+    (first != 0 && first != 127 && first < 224).then_some(a)
+}
+
+/// `address/prefix length` for a host on a network: the prefix length is 1
+/// to 30, and the address is neither the network's own nor its broadcast
+/// address.  Returns the value as it is to be sent.
+pub(super) fn static_address(value: &[u8]) -> Option<Vec<u8>> {
+    let slash = value.iter().position(|c| *c == b'/')?;
+    let address = host_ipv4(&value[..slash])?;
+    let digits = &value[slash + 1..];
+    if digits.is_empty() || digits.len() > 2 || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let prefix: u32 = std::str::from_utf8(digits).ok()?.parse().ok()?;
+    if !(1..=30).contains(&prefix) {
+        return None;
+    }
+    let host = u32::from(address) & (u32::MAX >> prefix);
+    if host == 0 || host == u32::MAX >> prefix {
+        return None;
+    }
+    Some(format!("{address}/{prefix}").into_bytes())
+}
+
+/// Adds the addresses of a comma-separated list to `list`, each once.
+/// Nothing is added when one of them is not a host's address.
+fn add_addresses(list: &mut Vec<std::net::Ipv4Addr>, value: &[u8]) -> Res {
+    let mut found = Vec::new();
+    for item in value.split(|c| *c == b',') {
+        found.push(host_ipv4(item.trim_ascii()).ok_or(())?);
+    }
+    for a in found {
+        if !list.contains(&a) {
+            list.push(a);
+        }
+    }
+    Ok(())
+}
+
 /// Longest SSH public key line accepted (an RSA 16384 key is about 2800).
 const SSH_KEY_LINE_MAX: usize = 0x2000;
 
@@ -135,6 +179,16 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], value:
             return tristate_opt(&mut phone.dphone_ignore_provisioned_firmware, value)
         }
         b"dphone_metrics_enabled" => return tristate_opt(&mut phone.dphone_metrics_enabled, value),
+        b"dphone_serial_console" => return tristate_opt(&mut phone.dphone_serial_console, value),
+        b"dphone_static_address" => match static_address(value) {
+            Some(address) => phone.dphone_static_address = address,
+            None => return Err(()),
+        },
+        b"dphone_static_gateway" => match host_ipv4(value) {
+            Some(gateway) => phone.dphone_static_gateway = Some(gateway),
+            None => return Err(()),
+        },
+        b"dphone_static_dns" => return add_addresses(&mut phone.dphone_static_dns, value),
         b"dphone_ssh_authorized_key" => match ssh_public_key_line(value) {
             Some(line) => {
                 if !phone.dphone_ssh_authorized_keys.contains(&line) {

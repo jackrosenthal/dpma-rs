@@ -989,6 +989,36 @@ fn build_config(
             p.dphone_metrics_enabled
         );
     }
+    if !p.dphone_serial_console.is_empty() {
+        ap!(
+            o,
+            "<setting id=\"dphone_serial_console\" value=\"{}\" />\n",
+            p.dphone_serial_console
+        );
+    }
+    // The gateway and the DNS servers belong to the static address.
+    if !p.dphone_static_address.is_empty() {
+        ap!(
+            o,
+            "<setting id=\"dphone_static_address\" value=\"{}\" />\n",
+            p.dphone_static_address
+        );
+        if let Some(gateway) = p.dphone_static_gateway {
+            ap!(
+                o,
+                "<setting id=\"dphone_static_gateway\" value=\"{}\" />\n",
+                gateway.to_string()
+            );
+        }
+        if !p.dphone_static_dns.is_empty() {
+            let servers: Vec<String> = p.dphone_static_dns.iter().map(|a| a.to_string()).collect();
+            ap!(
+                o,
+                "<setting id=\"dphone_static_dns\" value=\"{}\" />\n",
+                servers.join(",")
+            );
+        }
+    }
     if !p.accept_local_calls.is_empty() {
         ap!(
             o,

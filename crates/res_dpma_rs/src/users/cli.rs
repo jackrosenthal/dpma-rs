@@ -347,6 +347,27 @@ fn show_phone(a: &CliArgs) -> CliResult {
     );
     bwriteln!(
         o,
+        "Open DPhone serial console: {}",
+        tristate(&p.dphone_serial_console)
+    );
+    bwriteln!(
+        o,
+        "Open DPhone static address: {}",
+        or(&p.dphone_static_address, "<Not Set>")
+    );
+    bwriteln!(
+        o,
+        "Open DPhone static gateway: {}",
+        p.dphone_static_gateway
+            .map_or("<Not Set>".to_string(), |a| a.to_string())
+    );
+    bwriteln!(
+        o,
+        "Open DPhone static DNS servers: {}",
+        p.dphone_static_dns.len()
+    );
+    bwriteln!(
+        o,
         "Open DPhone SSH authorized keys: {}",
         p.dphone_ssh_authorized_keys.len()
     );

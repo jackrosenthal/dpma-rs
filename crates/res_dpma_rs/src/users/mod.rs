@@ -198,6 +198,16 @@ pub struct Phone {
     /// Open DPhone: `1` or `0` when `dphone_metrics_enabled` is set, else
     /// empty.
     pub dphone_metrics_enabled: Vec<u8>,
+    /// Open DPhone: `1` or `0` when `dphone_serial_console` is set, else
+    /// empty.
+    pub dphone_serial_console: Vec<u8>,
+    /// Open DPhone: `dphone_static_address` as `address/prefix length`, else
+    /// empty.
+    pub dphone_static_address: Vec<u8>,
+    /// Open DPhone: `dphone_static_gateway`.
+    pub dphone_static_gateway: Option<std::net::Ipv4Addr>,
+    /// Open DPhone: each address of `dphone_static_dns`.
+    pub dphone_static_dns: Vec<std::net::Ipv4Addr>,
     /// Open DPhone: each `dphone_ssh_authorized_key`, a public key line.
     pub dphone_ssh_authorized_keys: Vec<Vec<u8>>,
     pub multicastpages: Vec<Vec<u8>>,
@@ -369,6 +379,10 @@ impl Phone {
             dphone_ssh_enabled: Vec::new(),
             dphone_ignore_provisioned_firmware: Vec::new(),
             dphone_metrics_enabled: Vec::new(),
+            dphone_serial_console: Vec::new(),
+            dphone_static_address: Vec::new(),
+            dphone_static_gateway: None,
+            dphone_static_dns: Vec::new(),
             dphone_ssh_authorized_keys: Vec::new(),
             multicastpages: Vec::new(),
             logos: Vec::new(),

@@ -63,6 +63,10 @@ Open DPhone.
 | `dphone_ssh_enabled=yes\|no` | Whether the phone's SSH server runs.  Default is no. |
 | `dphone_ssh_authorized_key=<public key>` | An SSH public key that may log in to the phone, e.g., `ssh-ed25519 AAAA... name`.  Repeat it for more keys. |
 | `dphone_metrics_enabled=yes\|no` | Whether the phone serves `/metrics`.  Default is yes. |
+| `dphone_serial_console=yes\|no` | Whether the phone's serial port is a console.  Default is no. |
+| `dphone_static_address=<address>/<prefix length>` | The phone's static IPv4 address, e.g., `192.0.2.20/24`.  Default is DHCP. |
+| `dphone_static_gateway=<address>` | The gateway with the static address. |
+| `dphone_static_dns=<address>[,<address>...]` | The DNS servers with the static address. |
 | `dphone_ignore_provisioned_firmware=yes\|no` | Whether the phone ignores the firmware this configuration offers it.  Default is no. |
 
 The official DPMA's `web_ui_enabled=yes|no` controls the phone's web
