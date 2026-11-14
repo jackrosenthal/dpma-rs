@@ -469,7 +469,7 @@ dependencies = [
 
 [[package]]
 name = "dpma-ast"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "dpma-bytes",
  "dpma-sys",
@@ -478,14 +478,14 @@ dependencies = [
 
 [[package]]
 name = "dpma-bytes"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "bstr",
 ]
 
 [[package]]
 name = "dpma-proto"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -508,14 +508,14 @@ dependencies = [
 
 [[package]]
 name = "dpma-sys"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "bindgen",
 ]
 
 [[package]]
 name = "dpma-tests"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1541,7 +1541,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "res_dpma_rs"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "dpma-ast",
  "dpma-proto",
@@ -2477,7 +2477,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
