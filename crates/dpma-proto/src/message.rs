@@ -493,6 +493,10 @@ impl<M> Collector<M> {
     /// Reassemble and decrypt the transaction.  `password` is the session's
     /// common password, needed when the MESSAGEs are encrypted (they carry
     /// a `Message-Salt`).
+    ///
+    /// A phone that may hold no password, or a different one from the
+    /// sender's, should call [`Collector::decode_reply`] so that it still
+    /// sees an error reply.
     pub fn decode(&self, from: Sender, password: Option<&[u8]>) -> Result<Incoming> {
         let bodies: Vec<&[u8]> = self
             .parts
@@ -500,23 +504,9 @@ impl<M> Collector<M> {
             .iter()
             .map(|p| p.body.as_slice())
             .collect();
-        let mut parts = self.parts.parts().iter();
-        let Some(first) = parts.next() else {
-            return Err(ProtoError::Invalid("no messages".into()));
-        };
-        let (first_msg, _) = &first.meta;
-        let get = |name: &str| {
-            first_msg
-                .header(name)
-                .map(<[u8]>::to_vec)
-                .unwrap_or_default()
-        };
-
+        let mut incoming = self.envelope()?;
         let mut body: Vec<u8> = bodies.concat();
-        let mut password_field = get(h::PASSWORD);
-        let mut config_password = get(h::CONFIG_PASSWORD);
-        let mut config_token = get(h::CONFIG_TOKEN);
-        if let Some(salt) = first_msg.header(h::MESSAGE_SALT).and_then(non_empty) {
+        if let Some(salt) = incoming.first.header(h::MESSAGE_SALT).and_then(non_empty) {
             let key = password.ok_or_else(|| {
                 ProtoError::Invalid("the message is encrypted but there is no password".into())
             })?;
@@ -526,16 +516,50 @@ impl<M> Collector<M> {
                     Sender::Server => framing::decrypt_chunks(&bodies, key, salt)?,
                 };
             }
-            for field in [&mut password_field, &mut config_password, &mut config_token] {
-                if !field.is_empty() {
-                    *field = crypto::decrypt_header_field(key, salt, &*field)?;
+            for (name, field) in [
+                (h::PASSWORD, &mut incoming.password),
+                (h::CONFIG_PASSWORD, &mut incoming.config_password),
+                (h::CONFIG_TOKEN, &mut incoming.config_token),
+            ] {
+                if let Some(value) = incoming.first.header(name).and_then(non_empty) {
+                    *field = crypto::decrypt_header_field(key, salt, value)?;
                 }
             }
         }
-        let error = first_msg
-            .header(h::ERROR_ID)
-            .map_or(0, framing::parse_sequence);
-        let mut incoming = Incoming {
+        incoming.payload = body.clone();
+        incoming.body = body;
+        if from == Sender::Server
+            && (incoming.error != 0 || incoming.first.header(h::EVENT_NAME).is_some())
+        {
+            incoming.payload = strip_command_prefixes(&incoming.body, &bodies, incoming.encrypted)?;
+        }
+        Ok(incoming)
+    }
+
+    /// What the transaction's headers say, without decrypting anything:
+    /// the ids, the types, and the error are never encrypted.  The body and
+    /// the payload are empty; so are the password, the configuration
+    /// password, and the configuration token when the MESSAGEs are
+    /// encrypted (without a `Message-Salt` they are as they came).
+    ///
+    /// This is all a receiver can read of a transaction encrypted under a
+    /// session it does not share.
+    pub fn envelope(&self) -> Result<Incoming> {
+        let Some(first) = self.parts.parts().first() else {
+            return Err(ProtoError::Invalid("no messages".into()));
+        };
+        let (first_msg, _) = &first.meta;
+        let get = |name: &str| {
+            first_msg
+                .header(name)
+                .map(<[u8]>::to_vec)
+                .unwrap_or_default()
+        };
+        let encrypted = first_msg
+            .header(h::MESSAGE_SALT)
+            .is_some_and(|s| !s.is_empty());
+        let secret = |name: &str| if encrypted { Vec::new() } else { get(name) };
+        Ok(Incoming {
             id: get(h::APPSERVER_ID),
             request_type: get(h::REQUEST_TYPE),
             response_type: get(h::RESPONSE_TYPE),
@@ -546,23 +570,42 @@ impl<M> Collector<M> {
             full_contact: get(h::RESPONSE_FULLCONTACT),
             origination_network: get(h::ORIGINATION_NETWORK),
             handshake_version: get(h::HANDSHAKE_VERSION),
-            error,
-            password: password_field,
-            config_password,
-            config_token,
-            encrypted: first_msg
-                .header(h::MESSAGE_SALT)
-                .is_some_and(|s| !s.is_empty()),
-            payload: body.clone(),
-            body,
+            error: first_msg
+                .header(h::ERROR_ID)
+                .map_or(0, framing::parse_sequence),
+            password: secret(h::PASSWORD),
+            config_password: secret(h::CONFIG_PASSWORD),
+            config_token: secret(h::CONFIG_TOKEN),
+            encrypted,
+            body: Vec::new(),
+            payload: Vec::new(),
             first: first_msg.clone(),
-        };
-        if from == Sender::Server
-            && (incoming.error != 0 || incoming.first.header(h::EVENT_NAME).is_some())
-        {
-            incoming.payload = strip_command_prefixes(&incoming.body, &bodies, incoming.encrypted)?;
+        })
+    }
+
+    /// [`Collector::decode`] for a phone, which must not lose an error
+    /// reply that it cannot decrypt.
+    ///
+    /// A server encrypts "Session Timeout" (-398) under the session it has
+    /// for the id the phone sent, when the request fails that session's
+    /// checks (another MAC address or contact), and it encrypts the
+    /// reassignment push (`bootcReset`, -398) likewise.  A phone that has
+    /// handshaken again since, or that never held that session's common
+    /// password, cannot decrypt either, yet both tell it to handshake
+    /// again, and `X-Digium-AppServer-Error-ID` is not encrypted.
+    ///
+    /// So when the transaction carries an error and cannot be decrypted
+    /// with `password`, the result is its [`Collector::envelope`]: the
+    /// error and the ids, with an empty body.  A transaction without an
+    /// error that cannot be decrypted is still an `Err`.
+    pub fn decode_reply(&self, password: Option<&[u8]>) -> Result<Incoming> {
+        match self.decode(Sender::Server, password) {
+            Ok(incoming) => Ok(incoming),
+            Err(e) => match self.envelope() {
+                Ok(envelope) if envelope.error != 0 => Ok(envelope),
+                _ => Err(e),
+            },
         }
-        Ok(incoming)
     }
 }
 
@@ -768,5 +811,109 @@ impl<D, M> Transactions<D, M> {
             .into_iter()
             .map(|e| e.data)
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::errors::msg::SESSION_TIMEOUT;
+
+    fn collect(messages: Vec<Message>) -> Collector {
+        let mut c = Collector::new();
+        for m in messages {
+            c.add(m, ());
+        }
+        assert!(c.is_complete());
+        c
+    }
+
+    fn ctx<'a>(password: &'a [u8], session_id: &'a [u8]) -> SendContext<'a> {
+        SendContext {
+            password,
+            session_id,
+            origination_network: b"",
+            chain_certificate: false,
+        }
+    }
+
+    /// "Session Timeout" as a server sends it for a request that failed
+    /// its session's checks: encrypted under that session's password.
+    fn timeout(password: &[u8]) -> Collector {
+        let out = Outgoing {
+            error: SESSION_TIMEOUT,
+            id: b"17".to_vec(),
+            response_type: b"FileResponse".to_vec(),
+            ..Default::default()
+        };
+        collect(out.encode(&ctx(password, b"9999")).unwrap())
+    }
+
+    #[test]
+    fn session_timeout_under_another_password() {
+        let theirs = crypto::new_common_password().unwrap();
+        let ours = crypto::new_common_password().unwrap();
+        let c = timeout(&theirs);
+
+        // Without the password there is nothing to decrypt it with.
+        assert!(c.decode(Sender::Server, None).is_err());
+        let m = c.decode_reply(None).unwrap();
+        assert!(m.body.is_empty() && m.payload.is_empty());
+
+        // With another password the padding check nearly always fails;
+        // either way the error and the ids come through.
+        for password in [Some(&ours[..]), None] {
+            let m = c.decode_reply(password).unwrap();
+            assert_eq!(m.error, SESSION_TIMEOUT);
+            assert_eq!(m.id, b"17");
+            assert_eq!(m.response_type, b"FileResponse");
+            assert_eq!(m.session_id, b"9999");
+            assert!(m.encrypted);
+        }
+    }
+
+    #[test]
+    fn decode_reply_decrypts_when_it_can() {
+        let password = crypto::new_common_password().unwrap();
+        let c = timeout(&password);
+        let m = c.decode_reply(Some(&password)).unwrap();
+        let plain = c.decode(Sender::Server, Some(&password)).unwrap();
+        assert_eq!(m.error, SESSION_TIMEOUT);
+        assert_eq!(m.payload, plain.payload);
+        assert_eq!(m.payload, framing::error_body(SESSION_TIMEOUT).as_bytes());
+    }
+
+    #[test]
+    fn decode_reply_keeps_the_error_for_other_messages() {
+        // An undecryptable reply without an error is not passed off as
+        // an empty one.
+        let theirs = crypto::new_common_password().unwrap();
+        let out = Outgoing {
+            id: b"18".to_vec(),
+            response_type: b"FileResponse".to_vec(),
+            body: b"RIFFdata".to_vec(),
+            ..Default::default()
+        };
+        let c = collect(out.encode(&ctx(&theirs, b"9999")).unwrap());
+        assert!(c.decode_reply(None).is_err());
+        assert!(Collector::<()>::new().decode_reply(None).is_err());
+    }
+
+    #[test]
+    fn envelope_of_a_plain_message_keeps_its_fields() {
+        // The handshake-required reply for an unknown session: not
+        // encrypted, no body.
+        let mut m = Message::default();
+        m.set(h::RESPONSE_TYPE, "HandshakeResponse");
+        m.set(h::ERROR_ID, "-398");
+        m.set(h::APPSERVER_ID, "5");
+        m.set(h::PASSWORD, "abc");
+        let c = collect(vec![m]);
+        let e = c.envelope().unwrap();
+        assert_eq!((e.error, e.encrypted), (SESSION_TIMEOUT, false));
+        assert_eq!(e.password, b"abc");
+        let d = c.decode_reply(None).unwrap();
+        assert_eq!((d.error, &d.id[..]), (SESSION_TIMEOUT, &b"5"[..]));
+        assert_eq!(d.password, b"abc");
     }
 }

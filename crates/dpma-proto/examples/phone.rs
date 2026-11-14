@@ -14,7 +14,7 @@ mod common;
 use std::net::SocketAddr;
 
 use common::{uri, Error, Sip};
-use dpma_proto::message::{Collector, Request, Sender};
+use dpma_proto::message::{Collector, Request};
 use dpma_proto::{crypto, types};
 use rsa::pkcs1::DecodeRsaPrivateKey;
 
@@ -84,7 +84,7 @@ async fn receive(
     while let Some(received) = sip.receive().await {
         parts.add(received.message, ());
         if parts.is_complete() {
-            return Ok(parts.decode(Sender::Server, password)?);
+            return Ok(parts.decode_reply(password)?);
         }
     }
     Err("the server went away".into())
