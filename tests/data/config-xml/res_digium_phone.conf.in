@@ -185,6 +185,14 @@ d65_logo_file=d65_logo.png
 wallpaper_file=wall.png
 active_locale=de_DE
 login_password=9876
+dphone_ssh_enabled=no
+dphone_ignore_provisioned_firmware=yes
+dphone_ssh_authorized_key=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa alice@laptop
+dphone_ssh_authorized_key=ssh-ed25519   AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  bob <desk> & co
+dphone_ssh_authorized_key=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa alice@laptop
+dphone_ssh_authorized_key=-----BEGIN OPENSSH PRIVATE KEY-----
+dphone_ssh_authorized_key=command="sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+dphone_ssh_authorized_key=ssh-ed25519 short
 accept_local_calls=host
 name_format=last_first
 lan_port_mode=1000

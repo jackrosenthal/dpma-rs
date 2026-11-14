@@ -22,6 +22,15 @@ fn or<'a, D: AsRef<[u8]> + ?Sized>(s: &'a [u8], default: &'a D) -> &'a [u8] {
     }
 }
 
+/// A yes/no option without a default, stored as `1`, `0`, or empty.
+fn tristate(s: &[u8]) -> &'static str {
+    match s {
+        b"1" => "Yes",
+        b"0" => "No",
+        _ => "<Not Set>",
+    }
+}
+
 fn set_or_not(s: &[u8]) -> &'static str {
     if s.is_empty() {
         "<Not Set>"
@@ -321,6 +330,21 @@ fn show_phone(a: &CliArgs) -> CliResult {
     }
     bwriteln!(o, "Lock Phone Preferences: {}", yes_no(p.lock_preferences));
     bwriteln!(o, "Login Password: {}", set_or_not(&p.login_password));
+    bwriteln!(
+        o,
+        "Open DPhone SSH enabled: {}",
+        tristate(&p.dphone_ssh_enabled)
+    );
+    bwriteln!(
+        o,
+        "Open DPhone ignore provisioned firmware: {}",
+        tristate(&p.dphone_ignore_provisioned_firmware)
+    );
+    bwriteln!(
+        o,
+        "Open DPhone SSH authorized keys: {}",
+        p.dphone_ssh_authorized_keys.len()
+    );
     bwriteln!(o, "Logout enabled: {}", yes_no(p.logout_enabled));
     bwriteln!(o, "MAC: {}", or(&p.mac, "<none>"));
     for x in &p.multicastpages {

@@ -53,6 +53,60 @@ module fails to load, and Asterisk does not start.
 Configure it as the official DPMA, in `res_digium_phone.conf`; the
 official DPMA's documentation and sample configuration apply.
 
+### Additions for Open DPhone
+
+Phones that run the Open DPhone firmware take a few settings that the
+stock firmware does not have.  A phone section (`type=phone`) can set
+them; each is sent only when it is set, so the configuration of a phone
+without them is exactly the official DPMA's.  The stock firmware ignores
+them.
+
+| Option | Meaning |
+|---|---|
+| `dphone_ssh_enabled=yes\|no` | Whether the phone's SSH server runs.  The phone's own default is yes. |
+| `dphone_ignore_provisioned_firmware=yes\|no` | With yes, the phone does not load the firmware this configuration offers it (for development).  The phone's own default is no. |
+| `dphone_ssh_authorized_key=<public key>` | An SSH public key that may log in to the phone, as a line of an `authorized_keys` file without options: `ssh-ed25519 AAAA... name`.  Repeat it for more keys.  A value that is not a public key is refused and reported like any invalid option. |
+
+For example:
+
+```
+[phone101]
+type=phone
+dphone_ssh_enabled=yes
+dphone_ssh_authorized_key=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa alice@laptop
+```
+
+adds this to the phone's configuration:
+
+```xml
+<setting id="dphone_ssh_enabled" value="1" />
+<dphone_ssh_authorized_keys>
+<key id="1" value="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa alice@laptop" />
+</dphone_ssh_authorized_keys>
+```
+
+A phone keeps the keys the server gives it apart from the keys added on
+the phone, and drops them when the server no longer sends them.
+
+The module also states the checksum of each firmware file it can read.
+Open DPhone decides whether to load offered firmware by checksum, not by
+version, and with the checksum in the configuration it need not fetch the
+start of the file to find out.  A `<firmware>` entry gets the attribute
+
+```
+checksum="<kernel CRC>-<kernel bytes>-<rootfs CRC>-<rootfs bytes>"
+```
+
+(the CRCs as eight lowercase hexadecimal digits, the sizes in decimal;
+e.g., `checksum="297347df-1961984-69ddc1bc-30000456"`) when its file is a
+firmware image found on the server: a firmware section's `file` in
+`file_directory`, or a firmware package's file in
+`firmware_package_directory`.  The file must be named plainly, not by a
+URL or an absolute path, and what the network's `file_url_prefix` serves
+under that name must be that file.  Any other entry, and every
+`<public_firmware>` entry, is as the official DPMA writes it; a phone
+without the attribute reads the checksum from the file's header.
+
 ## Development
 
 - `crates/`: the module (`res_dpma_rs`) and its libraries.

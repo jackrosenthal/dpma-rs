@@ -13,6 +13,7 @@ base64.workspace = true
 cbc.workspace = true
 dpma-bytes.workspace = true
 getrandom.workspace = true
+md-5.workspace = true
 log.workspace = true
 rsa.workspace = true
 serde.workspace = true

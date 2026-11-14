@@ -22,7 +22,7 @@ pub const CONFIG_XML_CONF: &str = include_str!("../../data/config-xml/res_digium
 
 /// The files the configuration document test configuration refers to, by
 /// their path under its `file_directory`.
-pub const CONFIG_XML_FILES: [(&str, &[u8]); 5] = [
+pub const CONFIG_XML_FILES: [(&str, &[u8]); 7] = [
     (
         "cfgphone.xml",
         include_bytes!("../../data/config-xml/digium_phones/cfgphone.xml"),
@@ -42,6 +42,16 @@ pub const CONFIG_XML_FILES: [(&str, &[u8]); 5] = [
     (
         "firmware/digium_phones_firmware.conf",
         include_bytes!("../../data/config-xml/digium_phones/firmware/digium_phones_firmware.conf"),
+    ),
+    // The start of a made-up firmware image (label and headers, no
+    // components), twice: as a package file and as a profile's file.
+    (
+        "firmware/2_9_17_D65_firmware.eff",
+        include_bytes!("../../data/config-xml/digium_phones/firmware/2_9_17_D65_firmware.eff"),
+    ),
+    (
+        "1_1_0_0_48178_D40_firmware.eff",
+        include_bytes!("../../data/config-xml/digium_phones/1_1_0_0_48178_D40_firmware.eff"),
     ),
 ];
 

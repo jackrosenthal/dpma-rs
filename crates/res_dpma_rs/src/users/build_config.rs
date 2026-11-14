@@ -24,6 +24,11 @@ use dpma_ast::{bformat, dpma_log};
 /// Size of the official DPMA's escape buffers.
 const ESC_BUF: usize = 0x100;
 
+/// Escape buffer for an SSH public key line, which does not fit the
+/// official DPMA's 256 bytes: every character of the longest accepted line
+/// as a six-byte entity.
+const SSH_KEY_ESC_BUF: usize = 0xc001;
+
 /// Allocated size of the `ast_str` the official DPMA's ConfigRequest
 /// handler builds the document in (`ast_str_create(0x400)`).
 pub const INITIAL_BUF: usize = 0x400;
@@ -416,6 +421,8 @@ fn add_external_line_account(o: &mut Out, line: &Line, net: &Network, index: i32
 /// `add_firmware_settings` (with `add_option_firmware_settings` and the
 /// firmware package fallback).
 fn add_firmware_settings(o: &mut Out, reg: &Registry, phone: &Phone) {
+    // Where the files that the networks' URL prefixes serve are kept.
+    let file_dir = crate::util::truncate(&crate::config::get().file_directory, 0x1000);
     for net_name in &phone.networks {
         let Some(net) = reg.networks.get(net_name) else {
             dpma_log!("Failed to find network '{}'", net_name);
@@ -438,12 +445,13 @@ fn add_firmware_settings(o: &mut Out, reg: &Registry, phone: &Phone) {
             if !net.file_url_prefix.is_empty() && !fw.version.is_empty() && !fw.file.is_empty() {
                 ap!(
                     o,
-                    "<firmware model=\"{}\" version=\"{}\" url=\"{}{}\" network_id=\"{}\" />\n",
+                    "<firmware model=\"{}\" version=\"{}\" url=\"{}{}\" network_id=\"{}\"{} />\n",
                     fw.model,
                     fw.version,
                     url_prefix(&fw.file, &net.file_url_prefix),
                     fw.file,
-                    net.name
+                    net.name,
+                    crate::firmware::checksum_attr(&file_dir, &fw.file)
                 );
             }
         }
@@ -955,6 +963,23 @@ fn build_config(
             o,
             "<setting id=\"login_password\" value=\"{}\" />\n",
             p.login_password
+        );
+    }
+    // Open DPhone's own settings: only when set, so that the document for a
+    // phone without them is what the official DPMA builds.  Stock firmware
+    // ignores them.
+    if !p.dphone_ssh_enabled.is_empty() {
+        ap!(
+            o,
+            "<setting id=\"dphone_ssh_enabled\" value=\"{}\" />\n",
+            p.dphone_ssh_enabled
+        );
+    }
+    if !p.dphone_ignore_provisioned_firmware.is_empty() {
+        ap!(
+            o,
+            "<setting id=\"dphone_ignore_provisioned_firmware\" value=\"{}\" />\n",
+            p.dphone_ignore_provisioned_firmware
         );
     }
     if !p.accept_local_calls.is_empty() {
@@ -1574,6 +1599,20 @@ fn build_config(
         }
     }
     ap!(o, "</smart_blf>\n");
+
+    // Open DPhone: SSH public keys, only when there are any.
+    if !p.dphone_ssh_authorized_keys.is_empty() {
+        ap!(o, "<dphone_ssh_authorized_keys>\n");
+        for (i, key) in p.dphone_ssh_authorized_keys.iter().enumerate() {
+            ap!(
+                o,
+                "<key id=\"{}\" value=\"{}\" />\n",
+                i + 1,
+                xmlutil::escape(key, SSH_KEY_ESC_BUF)
+            );
+        }
+        ap!(o, "</dphone_ssh_authorized_keys>\n");
+    }
     ap!(o, "</config>\n");
 
     insert_display_rules(&p.contacts_display_rules, &mut o, dir);

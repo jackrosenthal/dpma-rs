@@ -31,6 +31,58 @@ fn i32_opt(field: &mut i32, value: &[u8]) -> Res {
     }
 }
 
+/// A yes/no option that has no default: `1` or `0`, or an error for a value
+/// that is neither true nor false.
+fn tristate_opt(field: &mut Vec<u8>, value: &[u8]) -> Res {
+    if ast_true(value) {
+        *field = b"1".to_vec();
+    } else if ast_false(value) {
+        *field = b"0".to_vec();
+    } else {
+        return Err(());
+    }
+    Ok(())
+}
+
+/// Longest SSH public key line accepted (an RSA 16384 key is about 2800).
+const SSH_KEY_LINE_MAX: usize = 0x2000;
+
+/// An SSH public key line (`type base64 [comment]`) with single spaces
+/// between its fields, or `None` when `value` is not one.  Lines that
+/// start with options are not accepted, and neither is anything else that
+/// is not a public key, such as a private key.
+pub(super) fn ssh_public_key_line(value: &[u8]) -> Option<Vec<u8>> {
+    if value.len() > SSH_KEY_LINE_MAX || value.iter().any(|c| c.is_ascii_control() && *c != b'\t') {
+        return None;
+    }
+    let mut fields = value
+        .split(|c| *c == b' ' || *c == b'\t')
+        .filter(|f| !f.is_empty());
+    let kind = fields.next()?;
+    let blob = fields.next()?;
+    let known_kind = [&b"ssh-"[..], b"ecdsa-sha2-", b"sk-"]
+        .iter()
+        .any(|p| kind.starts_with(p))
+        && kind
+            .iter()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'@' | b'.'));
+    let base64 = blob.len() >= 16
+        && blob
+            .iter()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'+' | b'/' | b'='));
+    if !known_kind || !base64 {
+        return None;
+    }
+    let mut line = kind.to_vec();
+    line.push(b' ');
+    line.extend_from_slice(blob);
+    for f in fields {
+        line.push(b' ');
+        line.extend_from_slice(f);
+    }
+    Some(line)
+}
+
 /// Context needed while applying phone options.
 pub struct UserCtx<'a> {
     pub lines: &'a mut NamedMap<Line>,
@@ -78,6 +130,18 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], value:
         b"active_locale" => phone.active_locale = s,
         b"active_ringtone" => phone.active_ringtone = s,
         b"login_password" => phone.login_password = s,
+        b"dphone_ssh_enabled" => return tristate_opt(&mut phone.dphone_ssh_enabled, value),
+        b"dphone_ignore_provisioned_firmware" => {
+            return tristate_opt(&mut phone.dphone_ignore_provisioned_firmware, value)
+        }
+        b"dphone_ssh_authorized_key" => match ssh_public_key_line(value) {
+            Some(line) => {
+                if !phone.dphone_ssh_authorized_keys.contains(&line) {
+                    phone.dphone_ssh_authorized_keys.push(line);
+                }
+            }
+            None => return Err(()),
+        },
         b"accept_local_calls" => phone.accept_local_calls = s,
         b"name_format" => phone.name_format = s,
         b"ntp_resync" => return u32_opt(&mut phone.ntp_resync, value),

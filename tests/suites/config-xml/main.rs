@@ -96,12 +96,88 @@ fn config(ctx: &mut Ctx) -> Result<()> {
             );
         }
     }
+    dphone_options(ctx)?;
     let doc = document(ctx, "dpmadev config cfgphone D65")?;
     ctx.c.check(
         "cfgphone: the config_file",
         doc == "<config>\n<setting id=\"x\" value=\"1\" />\n</config>\n",
         format!("{doc:?}"),
     );
+    Ok(())
+}
+
+/// Open DPhone's settings as `fullphone` sets them: the two settings, and
+/// the two acceptable keys of the six configured (a duplicate, a private
+/// key header, a line with options, and a short blob are left out).
+const DPHONE_SETTINGS: &str = concat!(
+    "<setting id=\"dphone_ssh_enabled\" value=\"0\" />\n",
+    "<setting id=\"dphone_ignore_provisioned_firmware\" value=\"1\" />\n",
+);
+const DPHONE_KEYS: &str = concat!(
+    "<dphone_ssh_authorized_keys>\n",
+    "<key id=\"1\" value=\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa alice@laptop\" />\n",
+    "<key id=\"2\" value=\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb bob &lt;desk&gt; &amp; co\" />\n",
+    "</dphone_ssh_authorized_keys>\n",
+    "</config>\n",
+);
+
+/// The Open DPhone options: present as configured for `fullphone`, and
+/// absent from the document of a phone that does not set them.
+fn dphone_options(ctx: &mut Ctx) -> Result<()> {
+    let doc = document(ctx, "dpmadev config fullphone D65")?;
+    ctx.c.check(
+        "fullphone: Open DPhone settings",
+        doc.contains_str(DPHONE_SETTINGS),
+        "",
+    );
+    ctx.c.check(
+        "fullphone: Open DPhone SSH keys",
+        doc.contains_str(DPHONE_KEYS) && !doc.contains_str("PRIVATE KEY"),
+        "",
+    );
+    // A firmware file found on the server has its checksum stated; one
+    // named by URL, or not found, has the entry of the official DPMA.
+    ctx.c.check(
+        "fullphone: checksum of a profile's local file",
+        doc.contains_str(
+            "1_1_0_0_48178_D40_firmware.eff\" network_id=\"network1\" checksum=\"0a1b2c3d-1500000-ffffffff-39321600\" />\n",
+        ),
+        "",
+    );
+    ctx.c.check(
+        "fullphone: no checksum for a URL",
+        doc.contains_str(
+            "url=\"http://fw.example.com/2_9_17_D65_firmware.eff\" network_id=\"network1\" />\n",
+        ),
+        "",
+    );
+    // altphone has no firmware options, so it is offered the packages;
+    // its document is rewritten when the display rules are merged in, so
+    // only the attribute is looked for.  One of the two packages with a
+    // version is a file in the package directory, and altphone has two
+    // networks.
+    let doc = document(ctx, "dpmadev config altphone D65")?;
+    ctx.c.check(
+        "altphone: checksum of the package file that is here, and no other",
+        doc.find_iter("checksum=\"0a1b2c3d-1500000-ffffffff-39321600\"")
+            .count()
+            == 2
+            && doc.find_iter("checksum=").count() == 2
+            && doc.find_iter("<firmware ").count() == 4,
+        doc.lines()
+            .filter(|l| l.contains_str("firmware"))
+            .map(|l| l.to_str_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(" | "),
+    );
+    for phone in ["minphone", "altphone", "nolinephone"] {
+        let doc = document(ctx, &format!("dpmadev config {phone} D65"))?;
+        ctx.c.check(
+            format!("{phone}: no Open DPhone options"),
+            !doc.contains_str("dphone_"),
+            "",
+        );
+    }
     Ok(())
 }
 

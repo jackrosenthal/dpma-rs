@@ -7,7 +7,10 @@ use crate::util::NamedMap;
 use dpma_ast::cli::CliArgs;
 use dpma_ast::config::{self, LoadResult};
 use dpma_ast::{bformat, dpma_bytes::ByteSlice, dpma_log};
-use std::sync::RwLock;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Mutex, RwLock};
+use std::time::SystemTime;
 
 pub const PACKAGE_CONFIG_FILE: &str = "digium_phones_firmware.conf";
 
@@ -99,13 +102,75 @@ pub fn all() -> Vec<Package> {
         .unwrap_or_default()
 }
 
+/// Checksums of firmware files already read, by path, with the
+/// modification time and size they were read at.
+type ChecksumCache = HashMap<PathBuf, (Option<SystemTime>, u64, Option<String>)>;
+static CHECKSUMS: Mutex<Option<ChecksumCache>> = Mutex::new(None);
+
+/// The `checksum` attribute for a `<firmware>` entry whose file is `file`
+/// in the local directory `dir`, with its leading space, or nothing.
+///
+/// The attribute states the CRCs and sizes of the image's kernel and root
+/// file system (see [`dpma_proto::firmware`]), so that a phone which
+/// compares firmware by checksum sees that it already runs the image
+/// without fetching it.  The official DPMA has no such attribute, and the
+/// stock firmware does not read it.
+///
+/// It is only given when the file can be found here: `file` must be a
+/// plain relative name (not a URL or an absolute path) of a readable
+/// firmware image in `dir`.  Otherwise the entry is as the official DPMA
+/// writes it.  The header is read once for each change of the file.
+pub fn checksum_attr(dir: &[u8], file: &[u8]) -> Vec<u8> {
+    if dir.is_empty() || file.is_empty() || file.starts_with(b"/") || file.contains_str("//") {
+        return Vec::new();
+    }
+    let path = crate::util::path(&crate::util::truncate(
+        &bformat!("{}/{}", dir, file),
+        0x1000,
+    ))
+    .to_path_buf();
+    let Ok(meta) = std::fs::metadata(&path) else {
+        return Vec::new();
+    };
+    if !meta.is_file() {
+        return Vec::new();
+    }
+    let stamp = (meta.modified().ok(), meta.len());
+    let mut g = CHECKSUMS.lock().unwrap();
+    let cache = g.get_or_insert_with(HashMap::new);
+    let sum = match cache.get(&path) {
+        Some((mtime, len, sum)) if (*mtime, *len) == stamp => sum.clone(),
+        _ => {
+            let sum = std::fs::File::open(&path)
+                .ok()
+                .and_then(dpma_proto::firmware::ImageChecksum::read)
+                .map(|c| c.to_string());
+            if sum.is_none() {
+                log::debug!(
+                    "{} is not a readable firmware image; no checksum is given for it",
+                    path.display()
+                );
+            }
+            cache.insert(path, (stamp.0, stamp.1, sum.clone()));
+            sum
+        }
+    };
+    match sum {
+        Some(sum) => bformat!(" checksum=\"{}\"", sum),
+        None => Vec::new(),
+    }
+}
+
 /// `firmwares_no_option_settings` (FUN_0017a9f0): the `<firmwares>`
 /// element of a phone configuration document for a phone without
 /// `firmware=` options, listing every package for network `network` with
-/// URLs under `url_prefix` (the network's `file_url_prefix`).  Each piece
+/// URLs under `url_prefix` (the network's `file_url_prefix`), and the
+/// checksum of each package file found in the package directory (see
+/// [`checksum_attr`]).  Each piece
 /// goes through `append`, one call per piece, as in the official DPMA.
 /// Nothing is emitted when the packages were never loaded.
 pub fn no_option_settings(append: &mut dyn FnMut(&[u8]), url_prefix: &[u8], network: &[u8]) {
+    let package_dir = crate::config::get().firmware_package_directory.clone();
     let g = PACKAGES.read().unwrap();
     let Some(map) = g.as_ref() else { return };
     append(b"<firmwares>\n");
@@ -119,12 +184,13 @@ pub fn no_option_settings(append: &mut dyn FnMut(&[u8]), url_prefix: &[u8], netw
             url_prefix
         };
         append(&bformat!(
-            "<firmware model=\"{}\" version=\"{}\" url=\"{}{}\" network_id=\"{}\" />\n",
+            "<firmware model=\"{}\" version=\"{}\" url=\"{}{}\" network_id=\"{}\"{} />\n",
             p.model,
             p.version,
             prefix,
             p.file,
-            network
+            network,
+            checksum_attr(&package_dir, &p.file)
         ));
     }
     append(b"</firmwares>\n");

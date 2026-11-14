@@ -190,6 +190,13 @@ pub struct Phone {
     pub ringtones: Vec<Vec<u8>>,
     pub firmware: Vec<Vec<u8>>,
     pub alerts: Vec<Vec<u8>>,
+    /// Open DPhone: `1` or `0` when `dphone_ssh_enabled` is set, else empty.
+    pub dphone_ssh_enabled: Vec<u8>,
+    /// Open DPhone: `1` or `0` when `dphone_ignore_provisioned_firmware` is
+    /// set, else empty.
+    pub dphone_ignore_provisioned_firmware: Vec<u8>,
+    /// Open DPhone: each `dphone_ssh_authorized_key`, a public key line.
+    pub dphone_ssh_authorized_keys: Vec<Vec<u8>>,
     pub multicastpages: Vec<Vec<u8>>,
     /// (model, file) from the `<model>_logo_file` options.
     pub logos: Vec<(Vec<u8>, Vec<u8>)>,
@@ -356,6 +363,9 @@ impl Phone {
             ringtones: Vec::new(),
             firmware: Vec::new(),
             alerts: Vec::new(),
+            dphone_ssh_enabled: Vec::new(),
+            dphone_ignore_provisioned_firmware: Vec::new(),
+            dphone_ssh_authorized_keys: Vec::new(),
             multicastpages: Vec::new(),
             logos: Vec::new(),
             codecs: Vec::new(),

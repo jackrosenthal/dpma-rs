@@ -16,6 +16,7 @@ pub mod client;
 pub mod crypto;
 pub mod documents;
 pub mod errors;
+pub mod firmware;
 pub mod framing;
 pub mod headers;
 pub mod json;
