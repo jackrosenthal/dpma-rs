@@ -140,7 +140,23 @@ pub struct Outgoing {
     /// `X-Event-Name`; also selects the "Command: " body prefix.
     pub event_name: Vec<u8>,
     pub http_status: Vec<u8>,
+    /// `X-Digium-AppServer-MD5`: the digest of a configuration document
+    /// ([`md5_hex`] of the body of the ConfigResponse that carries it).
+    /// A phone keeps the value it got with the document and skips the
+    /// download when a VerifyResponse states the same value.
     pub md5: Vec<u8>,
+}
+
+/// The MD5 of `data` as 32 lowercase hexadecimal digits: the form of
+/// `X-Digium-AppServer-MD5`, and of the digest a phone computes over a
+/// downloaded document whose response states none.
+pub fn md5_hex(data: &[u8]) -> Vec<u8> {
+    use md5::{Digest, Md5};
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    Md5::digest(data)
+        .iter()
+        .flat_map(|b| [DIGITS[usize::from(b >> 4)], DIGITS[usize::from(b & 15)]])
+        .collect()
 }
 
 /// The session a server sends in.
@@ -835,6 +851,33 @@ mod tests {
             origination_network: b"",
             chain_certificate: false,
         }
+    }
+
+    /// A reply that states a digest carries it in the clear, in the form
+    /// a phone compares: 32 lowercase hexadecimal digits.
+    #[test]
+    fn md5_header() {
+        assert_eq!(md5_hex(b""), b"d41d8cd98f00b204e9800998ecf8427e");
+        let doc = b"<config>\n</config>\n";
+        let out = Outgoing {
+            id: b"3".to_vec(),
+            response_type: b"VerifyResponse".to_vec(),
+            md5: md5_hex(doc),
+            ..Default::default()
+        };
+        let messages = out.encode(&ctx(b"0123456789abcdef", b"9999")).unwrap();
+        assert_eq!(
+            messages[0].header(crate::headers::MD5),
+            Some(&md5_hex(doc)[..])
+        );
+        // Without a digest there is no header.
+        let out = Outgoing {
+            id: b"4".to_vec(),
+            response_type: b"VerifyResponse".to_vec(),
+            ..Default::default()
+        };
+        let messages = out.encode(&ctx(b"0123456789abcdef", b"9999")).unwrap();
+        assert_eq!(messages[0].header(crate::headers::MD5), None);
     }
 
     /// "Session Timeout" as a server sends it for a request that failed

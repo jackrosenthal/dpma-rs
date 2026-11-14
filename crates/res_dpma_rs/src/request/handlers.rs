@@ -8,6 +8,7 @@ use crate::users;
 use dpma_ast::dpma_bytes::ByteSlice;
 use dpma_ast::{astxml, bformat, dpma_debug, dpma_log, json};
 use dpma_proto::errors;
+use dpma_proto::message::md5_hex;
 use std::io::Read;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -293,20 +294,41 @@ fn phone_for_token(tx: &Transaction) -> Option<Vec<u8>> {
     .phone
 }
 
+/// The configuration document of `phone` for the transaction's model, as
+/// a ConfigResponse carries it.
+fn config_document(tx: &Transaction, phone: &[u8]) -> Vec<u8> {
+    // The official DPMA builds the document in an ast_str of 0x400
+    // bytes; get_config reproduces that buffer's behavior.
+    let mut buf = Vec::with_capacity(crate::users::build_config::INITIAL_BUF);
+    let dir = config_file_dir(b"");
+    let _ = crate::users::build_config::get_config(phone, &mut buf, &dir, &tx.model);
+    buf
+}
+
+/// State the digest of configuration document `doc` in the reply's
+/// `X-Digium-AppServer-MD5`.  No document, no digest: a phone then
+/// downloads.
+fn set_digest(tx: &Transaction, doc: &[u8]) {
+    if !doc.is_empty() {
+        with_out(tx, |o| o.md5 = md5_hex(doc));
+    }
+}
+
 /// `handle_request_config` (FUN_00175be0): the configuration document of
 /// the phone the `Config-Token` belongs to (built for the model in the
 /// request's user agent); error -192 (Invalid Token) when the token does
 /// not match.  A successful answer marks the session configured.
+///
+/// Deviation: the answer states the document's digest in
+/// `X-Digium-AppServer-MD5` (see `handle_verify`).  The official DPMA
+/// never sets the header.
 pub fn handle_config(tx: Arc<Transaction>) -> i32 {
     match phone_for_token(&tx) {
         None => set_error(&tx, errors::msg::INVALID_TOKEN),
         Some(phone) => {
-            // The official DPMA builds the document in an ast_str of 0x400
-            // bytes; get_config reproduces that buffer's behavior.
-            let mut buf = Vec::with_capacity(crate::users::build_config::INITIAL_BUF);
-            let dir = config_file_dir(b"");
-            let _ = crate::users::build_config::get_config(&phone, &mut buf, &dir, &tx.model);
-            append(&tx, &buf);
+            let doc = config_document(&tx, &phone);
+            append(&tx, &doc);
+            set_digest(&tx, &doc);
             tx.configured.store(true, Ordering::SeqCst);
         }
     }
@@ -318,6 +340,16 @@ pub fn handle_config(tx: Arc<Transaction>) -> i32 {
 /// -192 (Invalid Token) when it is missing or does not match.  The session
 /// is marked configured whenever a token was presented, even one that
 /// does not match (as in the official DPMA).
+///
+/// Deviation: an accepted token is answered with the digest of the
+/// phone's configuration document as a ConfigRequest would get it now, in
+/// `X-Digium-AppServer-MD5`.  A phone compares the value with the one it
+/// kept from its last download (the header of that ConfigResponse, or
+/// without one the MD5 of the document's bytes, which is the same value)
+/// and downloads the configuration only when they differ.  The official
+/// DPMA has the header in its messages (FUN_0014c6b0 sends it when it is
+/// set) but never sets it, so a phone logs "md5sum_missing" and downloads
+/// its configuration at every start.
 pub fn handle_verify(tx: Arc<Transaction>) -> i32 {
     if tx.config_token.is_empty() {
         dpma_log!("Verify request with null token");
@@ -325,8 +357,12 @@ pub fn handle_verify(tx: Arc<Transaction>) -> i32 {
         crate::session::send_and_destroy(&tx);
         return 0;
     }
-    if phone_for_token(&tx).is_none() {
-        set_error(&tx, errors::msg::INVALID_TOKEN);
+    match phone_for_token(&tx) {
+        None => set_error(&tx, errors::msg::INVALID_TOKEN),
+        Some(phone) => {
+            let doc = config_document(&tx, &phone);
+            set_digest(&tx, &doc);
+        }
     }
     tx.configured.store(true, Ordering::SeqCst);
     crate::session::send_and_destroy(&tx);

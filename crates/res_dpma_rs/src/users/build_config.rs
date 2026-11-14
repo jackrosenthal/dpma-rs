@@ -1089,12 +1089,20 @@ fn build_config(
     } else {
         ap!(o, "<setting id=\"allow_insecure_ssl\" value=\"0\" />\n");
     }
-    ap!(
-        o,
-        "<setting id=\"locale\" value=\"{}\" conflict=\"{}\" />\n",
-        p.active_locale,
-        conflict
-    );
+    // Deviation: without an `active_locale` the setting is left out.  The
+    // official DPMA writes it with an empty value; the stock firmware's
+    // boot configuration finds no locale named "" and throws (it logs
+    // "Initializing bootconfig language: fetched-config.xml does not
+    // exist").  Without the setting a phone uses its own locale (en_US
+    // unless one was chosen on the phone).
+    if !p.active_locale.is_empty() {
+        ap!(
+            o,
+            "<setting id=\"locale\" value=\"{}\" conflict=\"{}\" />\n",
+            p.active_locale,
+            conflict
+        );
+    }
     if p.ringer_volume >= 0 {
         ap!(
             o,

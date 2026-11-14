@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use bstr::{BString, ByteSlice};
 use dpma_proto::documents::method_call_json as method_request_json;
 use dpma_proto::json::dump as json_compact;
+use dpma_proto::message::md5_hex;
 use dpma_tests::harness::{ConfFile, Ctx};
 use dpma_tests::sim::{Exchange, Phone};
 use serde_json::{json, Value};
@@ -223,6 +224,15 @@ pub fn token(ctx: &mut Ctx) -> Result<()> {
 // ---------------------------------------------------------------------------
 // ConfigRequest and VerifyRequest
 
+/// The digest a reply states (`X-Digium-AppServer-MD5`; empty without
+/// one).
+fn digest(ex: &Exchange) -> BString {
+    ex.reply()
+        .and_then(|r| r.header("MD5"))
+        .cloned()
+        .unwrap_or_default()
+}
+
 pub fn config(ctx: &mut Ctx) -> Result<()> {
     let files = files_dir(ctx);
     let files_s = files.to_string_lossy().into_owned();
@@ -256,6 +266,8 @@ pub fn config(ctx: &mut Ctx) -> Result<()> {
             Some(-192),
             Body::Default,
         );
+        ctx.c
+            .same_bytes("config with a bad token: no MD5", digest(&ex), "");
         let got = configured(ctx, &sid)?;
         ctx.c.same(
             "failed config leaves the session unconfigured",
@@ -293,6 +305,8 @@ pub fn config(ctx: &mut Ctx) -> Result<()> {
             Some(-192),
             Body::Default,
         );
+        ctx.c
+            .same_bytes("verify with a bad token: no MD5", digest(&ex), "");
         let got = configured(ctx, &sid)?;
         ctx.c.same(
             "verify with a bad token marks the session configured",
@@ -323,7 +337,15 @@ pub fn config(ctx: &mut Ctx) -> Result<()> {
                 r.payload.trim_end_with(|c| c == '\n'),
                 want.trim_end_with(|c| c == '\n'),
             );
+            // What a phone computes over the download when the reply
+            // states no digest.
+            ctx.c.same_bytes(
+                "config states the MD5 of the document",
+                digest(&ex),
+                md5_hex(&r.payload),
+            );
         }
+        let config_digest = digest(&ex);
         let got = configured(ctx, &sid)?;
         ctx.c.same(
             "config marks the session configured",
@@ -352,6 +374,13 @@ pub fn config(ctx: &mut Ctx) -> Result<()> {
             "VerifyResponse",
             None,
             Body::Is(b"empty body"),
+        );
+        // The value a phone kept from the download: it does not download
+        // again.
+        ctx.c.check(
+            "verify states the MD5 the config stated",
+            !config_digest.is_empty() && digest(&ex) == config_digest,
+            format!("verify {:?}, config {config_digest:?}", digest(&ex)),
         );
         let got = configured(ctx, &sid)?;
         ctx.c.same(
@@ -386,6 +415,35 @@ pub fn config(ctx: &mut Ctx) -> Result<()> {
         None,
         Body::Is(&want),
     );
+    ctx.c.same_bytes(
+        "config_file: the MD5 of the file",
+        digest(&ex),
+        md5_hex(&want),
+    );
+    let ex = p.verify().send()?;
+    ctx.c.same_bytes(
+        "config_file: verify states the same MD5",
+        digest(&ex),
+        md5_hex(&want),
+    );
+    // A changed configuration has another digest, so the phone downloads.
+    let changed = b"<config>\n<!-- phonec's changed configuration -->\n</config>\n";
+    std::fs::write(files.join("phonec-config.xml"), changed)?;
+    let ex = p.verify().send()?;
+    expect(
+        ctx,
+        "verify after the configuration changed",
+        &ex,
+        "VerifyResponse",
+        None,
+        Body::Is(b"empty body"),
+    );
+    ctx.c.same_bytes(
+        "verify states the MD5 of the changed configuration",
+        digest(&ex),
+        md5_hex(changed),
+    );
+    std::fs::write(files.join("phonec-config.xml"), &want)?;
     Ok(())
 }
 

@@ -88,6 +88,19 @@ fn config(ctx: &mut Ctx) -> Result<()> {
             err.is_ok(),
             err.err().unwrap_or_default(),
         );
+        // The locale setting only for a phone with an active_locale (the
+        // stock firmware's boot configuration fails on an empty one).
+        let locale: &[u8] = if phone == "fullphone" {
+            b"<setting id=\"locale\" value=\"de_DE\" conflict=\"freeze\" />\n"
+        } else {
+            b""
+        };
+        ctx.c.check(
+            format!("{phone}: the locale setting"),
+            doc.find_iter("<setting id=\"locale\"").count() == usize::from(!locale.is_empty())
+                && doc.contains_str(locale),
+            "",
+        );
         if phone == "altphone" {
             ctx.c.check(
                 "altphone: display rules merged",

@@ -57,9 +57,8 @@ official DPMA's documentation and sample configuration apply.
 
 Phones that run the Open DPhone firmware take a few settings that the
 stock firmware does not have.  A phone section (`type=phone`) can set
-them; each is sent only when it is set, so the configuration of a phone
-without them is exactly the official DPMA's.  The stock firmware ignores
-them.
+them; each is sent only when it is set, so a phone without them gets
+none of them.  The stock firmware ignores them.
 
 | Option | Meaning |
 |---|---|
@@ -106,6 +105,22 @@ URL or an absolute path, and what the network's `file_url_prefix` serves
 under that name must be that file.  Any other entry, and every
 `<public_firmware>` entry, is as the official DPMA writes it; a phone
 without the attribute reads the checksum from the file's header.
+
+### Differences from the official DPMA
+
+Two things that the official DPMA gets wrong for the stock firmware are
+done differently:
+
+- A ConfigResponse and a VerifyResponse state the MD5 of the phone's
+  configuration document in `X-Digium-AppServer-MD5`.  A phone keeps the
+  value with the configuration it downloaded, and at its next start
+  downloads again only when the VerifyResponse states another value.  The
+  official DPMA never sends the header, so a phone downloads its
+  configuration at every start.
+- The `locale` setting is sent only for a phone with an `active_locale`.
+  The official DPMA sends it with an empty value otherwise, on which the
+  stock firmware's boot configuration fails (and logs "Initializing
+  bootconfig language: fetched-config.xml does not exist").
 
 ## Development
 
