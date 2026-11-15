@@ -68,7 +68,7 @@ Open DPhone.
 | `dphone_static_gateway=<address>` | The gateway with the static address. |
 | `dphone_static_dns=<address>[,<address>...]` | The DNS servers with the static address. |
 | `dphone_disabled_apps=<app>[,<app>...]` | The built-in apps the phone does not offer, e.g., `calendar,parking`.  Default is none. |
-| `dphone_idle_softkeys=<softkey>[,<softkey>...]` | The softkeys of the idle screen, in order: `call_log`, `contacts`, `status`, `info`, `menu`, `apps`, `dnd`, `forward`, `redial`, or `app:<app>` for an app, e.g., `call_log,contacts,app:parking,menu`.  Default is the softkeys the other options give. |
+| `dphone_idle_softkeys=<softkey>[,<softkey>...]` | The softkeys of the idle screen, in order: `call_log`, `contacts`, `status`, `menu`, `apps`, `dnd`, `forward`, `redial`, or `app:<app>` for an app, e.g., `call_log,contacts,app:parking,menu`.  Default is `call_log,contacts,status,menu,apps,dnd,forward`. |
 | `dphone_ignore_provisioned_firmware=yes\|no` | Whether the phone ignores the firmware this configuration offers it.  Default is no. |
 
 The official DPMA's `web_ui_enabled=yes|no` controls the phone's web
