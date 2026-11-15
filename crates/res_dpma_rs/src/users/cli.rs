@@ -368,6 +368,11 @@ fn show_phone(a: &CliArgs) -> CliResult {
     );
     bwriteln!(
         o,
+        "Open DPhone disabled apps: {}",
+        p.dphone_disabled_apps.len()
+    );
+    bwriteln!(
+        o,
         "Open DPhone SSH authorized keys: {}",
         p.dphone_ssh_authorized_keys.len()
     );

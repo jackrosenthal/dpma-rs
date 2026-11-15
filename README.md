@@ -67,6 +67,7 @@ Open DPhone.
 | `dphone_static_address=<address>/<prefix length>` | The phone's static IPv4 address, e.g., `192.0.2.20/24`.  Default is DHCP. |
 | `dphone_static_gateway=<address>` | The gateway with the static address. |
 | `dphone_static_dns=<address>[,<address>...]` | The DNS servers with the static address. |
+| `dphone_disabled_apps=<app>[,<app>...]` | The built-in apps the phone does not offer, e.g., `calendar,parking`.  Default is none. |
 | `dphone_ignore_provisioned_firmware=yes\|no` | Whether the phone ignores the firmware this configuration offers it.  Default is no. |
 
 The official DPMA's `web_ui_enabled=yes|no` controls the phone's web

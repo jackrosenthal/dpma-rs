@@ -1019,6 +1019,13 @@ fn build_config(
             );
         }
     }
+    if !p.dphone_disabled_apps.is_empty() {
+        ap!(
+            o,
+            "<setting id=\"dphone_disabled_apps\" value=\"{}\" />\n",
+            p.dphone_disabled_apps.join(&b","[..])
+        );
+    }
     if !p.accept_local_calls.is_empty() {
         ap!(
             o,

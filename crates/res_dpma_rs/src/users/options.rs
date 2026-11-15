@@ -88,6 +88,28 @@ fn add_addresses(list: &mut Vec<std::net::Ipv4Addr>, value: &[u8]) -> Res {
     Ok(())
 }
 
+/// Adds the app names of a comma-separated list to `list`, each once.
+/// Nothing is added when one of them is not an app name (letters, digits,
+/// `_`, `-`, and `.`).
+fn add_app_names(list: &mut Vec<Vec<u8>>, value: &[u8]) -> Res {
+    let mut found = Vec::new();
+    for item in value.split(|c| *c == b',') {
+        let name = item.trim_ascii();
+        if name.is_empty()
+            || !name.iter().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
+        {
+            return Err(());
+        }
+        found.push(name.to_vec());
+    }
+    for name in found {
+        if !list.contains(&name) {
+            list.push(name);
+        }
+    }
+    Ok(())
+}
+
 /// Longest SSH public key line accepted (an RSA 16384 key is about 2800).
 const SSH_KEY_LINE_MAX: usize = 0x2000;
 
@@ -189,6 +211,7 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], value:
             None => return Err(()),
         },
         b"dphone_static_dns" => return add_addresses(&mut phone.dphone_static_dns, value),
+        b"dphone_disabled_apps" => return add_app_names(&mut phone.dphone_disabled_apps, value),
         b"dphone_ssh_authorized_key" => match ssh_public_key_line(value) {
             Some(line) => {
                 if !phone.dphone_ssh_authorized_keys.contains(&line) {
