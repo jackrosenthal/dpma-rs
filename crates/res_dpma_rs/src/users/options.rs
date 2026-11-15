@@ -88,6 +88,36 @@ fn add_addresses(list: &mut Vec<std::net::Ipv4Addr>, value: &[u8]) -> Res {
     Ok(())
 }
 
+/// The functions an idle softkey can have, besides opening an app
+/// (`app:<name>`).
+const IDLE_SOFTKEYS: [&[u8]; 9] = [
+    b"call_log", b"contacts", b"status", b"info", b"menu", b"apps", b"dnd", b"forward", b"redial",
+];
+
+/// Adds the softkeys of a comma-separated list to `list` in order, each
+/// once.  Nothing is added when one of them is neither a function nor
+/// `app:<name>` with an app name (letters, digits, `_`, `-`, and `.`).
+fn add_idle_softkeys(list: &mut Vec<Vec<u8>>, value: &[u8]) -> Res {
+    let mut found = Vec::new();
+    for item in value.split(|c| *c == b',') {
+        let key = item.trim_ascii();
+        let app = key.strip_prefix(b"app:").is_some_and(|name| {
+            !name.is_empty()
+                && name.iter().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
+        });
+        if !app && !IDLE_SOFTKEYS.contains(&key) {
+            return Err(());
+        }
+        found.push(key.to_vec());
+    }
+    for key in found {
+        if !list.contains(&key) {
+            list.push(key);
+        }
+    }
+    Ok(())
+}
+
 /// Adds the app names of a comma-separated list to `list`, each once.
 /// Nothing is added when one of them is not an app name (letters, digits,
 /// `_`, `-`, and `.`).
@@ -212,6 +242,7 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], value:
         },
         b"dphone_static_dns" => return add_addresses(&mut phone.dphone_static_dns, value),
         b"dphone_disabled_apps" => return add_app_names(&mut phone.dphone_disabled_apps, value),
+        b"dphone_idle_softkeys" => return add_idle_softkeys(&mut phone.dphone_idle_softkeys, value),
         b"dphone_ssh_authorized_key" => match ssh_public_key_line(value) {
             Some(line) => {
                 if !phone.dphone_ssh_authorized_keys.contains(&line) {

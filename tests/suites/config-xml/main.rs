@@ -123,7 +123,8 @@ fn config(ctx: &mut Ctx) -> Result<()> {
 /// the static address with its gateway and DNS servers (the values that are
 /// not addresses are left out, and a list with one is left out whole), the
 /// disabled apps (a list with something that is not an app name is left out
-/// whole), and
+/// whole), the idle softkeys (a list with something that is neither a
+/// function nor an app is left out whole), and
 /// the two acceptable keys of the six configured (a duplicate, a private
 /// key header, a line with options, and a short blob are left out).
 const DPHONE_SETTINGS: &str = concat!(
@@ -135,6 +136,7 @@ const DPHONE_SETTINGS: &str = concat!(
     "<setting id=\"dphone_static_gateway\" value=\"192.0.2.1\" />\n",
     "<setting id=\"dphone_static_dns\" value=\"192.0.2.1,192.0.2.2,192.0.2.4\" />\n",
     "<setting id=\"dphone_disabled_apps\" value=\"calendar,parking,queues\" />\n",
+    "<setting id=\"dphone_idle_softkeys\" value=\"call_log,app:parking,menu,dnd\" />\n",
 );
 const DPHONE_KEYS: &str = concat!(
     "<dphone_ssh_authorized_keys>\n",

@@ -373,6 +373,11 @@ fn show_phone(a: &CliArgs) -> CliResult {
     );
     bwriteln!(
         o,
+        "Open DPhone idle softkeys: {}",
+        p.dphone_idle_softkeys.len()
+    );
+    bwriteln!(
+        o,
         "Open DPhone SSH authorized keys: {}",
         p.dphone_ssh_authorized_keys.len()
     );

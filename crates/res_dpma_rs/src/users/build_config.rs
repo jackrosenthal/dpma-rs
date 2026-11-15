@@ -1026,6 +1026,13 @@ fn build_config(
             p.dphone_disabled_apps.join(&b","[..])
         );
     }
+    if !p.dphone_idle_softkeys.is_empty() {
+        ap!(
+            o,
+            "<setting id=\"dphone_idle_softkeys\" value=\"{}\" />\n",
+            p.dphone_idle_softkeys.join(&b","[..])
+        );
+    }
     if !p.accept_local_calls.is_empty() {
         ap!(
             o,
