@@ -91,7 +91,14 @@ fn add_addresses(list: &mut Vec<std::net::Ipv4Addr>, value: &[u8]) -> Res {
 /// The functions an idle softkey can have, besides opening an app
 /// (`app:<name>`).
 const IDLE_SOFTKEYS: [&[u8]; 8] = [
-    b"call_log", b"contacts", b"status", b"menu", b"apps", b"dnd", b"forward", b"redial",
+    b"call_log",
+    b"contacts",
+    b"status",
+    b"menu",
+    b"apps",
+    b"dnd",
+    b"forward",
+    b"redial",
 ];
 
 /// Adds the softkeys of a comma-separated list to `list` in order, each
@@ -103,7 +110,9 @@ fn add_idle_softkeys(list: &mut Vec<Vec<u8>>, value: &[u8]) -> Res {
         let key = item.trim_ascii();
         let app = key.strip_prefix(b"app:").is_some_and(|name| {
             !name.is_empty()
-                && name.iter().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
+                && name
+                    .iter()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
         });
         if !app && !IDLE_SOFTKEYS.contains(&key) {
             return Err(());
@@ -126,7 +135,9 @@ fn add_app_names(list: &mut Vec<Vec<u8>>, value: &[u8]) -> Res {
     for item in value.split(|c| *c == b',') {
         let name = item.trim_ascii();
         if name.is_empty()
-            || !name.iter().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
+            || !name
+                .iter()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
         {
             return Err(());
         }
@@ -242,7 +253,9 @@ pub fn set_user_option(ctx: &mut UserCtx, phone: &mut Phone, name: &[u8], value:
         },
         b"dphone_static_dns" => return add_addresses(&mut phone.dphone_static_dns, value),
         b"dphone_disabled_apps" => return add_app_names(&mut phone.dphone_disabled_apps, value),
-        b"dphone_idle_softkeys" => return add_idle_softkeys(&mut phone.dphone_idle_softkeys, value),
+        b"dphone_idle_softkeys" => {
+            return add_idle_softkeys(&mut phone.dphone_idle_softkeys, value)
+        }
         b"dphone_ssh_authorized_key" => match ssh_public_key_line(value) {
             Some(line) => {
                 if !phone.dphone_ssh_authorized_keys.contains(&line) {
